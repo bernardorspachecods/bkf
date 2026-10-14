@@ -12,7 +12,7 @@ Start with `commands.md` for the installed CLI; the synchronizer brief covers
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
 | What it is | Document |
 | --- | --- |
-| Explains how to install the central bkf command and what bkf validate, bkf inventory, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md. | [commands.md](/tooling/commands.md) |
+| Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md. | [commands.md](/tooling/commands.md) |
 | Specifies the bkf sync preview and write contract for first-time scaffolding and reconciling later declaration changes, including file matching, path renames, and orphan reporting. It also covers the declaration parser and ID allocator it uses. | [workflow-synchronizer.md](/tooling/workflow-synchronizer.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 
@@ -21,6 +21,7 @@ Start with `commands.md` for the installed CLI; the synchronizer brief covers
 - [generate_inventory.py](/tooling/generate_inventory.py) — Implements preview, check, and write modes for BKF member inventories.
 - [bkf_common.py](/tooling/bkf_common.py) — Shares frontmatter parsing and map-scope logic across BKF tools.
 - [validate_bundle.py](/tooling/validate_bundle.py) — Checks BKF bundle structure, metadata, maps, and links.
+- [updates.py](/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.
 - [workflow_ids.py](/tooling/workflow_ids.py) — Allocates workflow, work-unit, and stage IDs by scanning bundle Markdown mentions.
 - [workflow_declaration_checks.py](/tooling/workflow_declaration_checks.py) — Applies the declaration-only checks shared by the validator and sync.
 - [workflow_declaration.py](/tooling/workflow_declaration.py) — Parses workflow declarations, assigns IDs, and resolves keyed references.

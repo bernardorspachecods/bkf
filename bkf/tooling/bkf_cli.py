@@ -9,6 +9,7 @@ import sys
 COMMANDS = {
     "inventory": ("generate_inventory", "Generate, check, or update map inventories"),
     "validate": ("validate_bundle", "Validate a BKF bundle"),
+    "updates": ("updates", "Print the BKF format updates needed by a bundle"),
     "orient": ("orient", "Print session-start bundle orientation"),
     "search": ("search", "Search indexed bundle sections"),
     "log": ("log_entry", "Append an idea or feedback entry to the nearest bundle file"),

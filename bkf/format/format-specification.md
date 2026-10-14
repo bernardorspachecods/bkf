@@ -127,6 +127,30 @@ BKF versions use `<major>.<minor>`:
 - A **minor** version adds backward-compatible rules.
 - A **major** version may introduce breaking changes.
 
+Compare BKF versions numerically by major and then minor component; do not
+compare their text representations (`0.10` is newer than `0.9`). The `bkf/`
+format bundle MUST provide one update document for each released format
+version after `0.1`, under `updates/` at the bundle root (`bkf/updates/`). The
+`updates/` folder is created when the first such update is released; an absent
+folder means that no update documents exist. Each update document's filename
+MUST be its target version with the dot replaced by a hyphen and `.md`
+appended, such as `0-2.md` or `0-10.md`. Update documents are tracked generic
+`document` profile members and MUST appear in the map inventory for their
+scope. The generic filename rule continues to apply.
+
+Each update document MUST describe only the changes needed to bring a bundle
+from the previous released format version to its target version. It MUST state
+what changes in the bundle's documents and maps, give the exact steps to make
+those changes, explain how to verify them, and make setting `bkf_version` to
+the target version the final step. An update that requires no document or map
+edits MUST say explicitly that no such edits are required. Update documents
+are per-version steps, not cumulative instructions.
+
+An agent updating a bundle from version V MUST apply, oldest target version
+first, every update document whose target version is greater than V and no
+greater than the current BKF format version. It MUST NOT read or apply update
+documents for versions already declared by the bundle.
+
 When a consumer does not recognize a declared version, it SHOULD attempt
 best-effort consumption rather than refusing the structure.
 

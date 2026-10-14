@@ -25,6 +25,7 @@ py-modules = [
     "hook_events",
     "log_entry",
     "orient",
+    "updates",
     "search",
     "validate_bundle",
     "workflow_declaration",

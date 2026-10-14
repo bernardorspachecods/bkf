@@ -165,7 +165,13 @@ class Validator:
             self.warning(
                 "MIGRATION_RECOMMENDED",
                 path,
-                "migrate the bundle to the supported major version 0",
+                "run `bkf updates <bundle-root>` on this bundle, then migrate it to the supported major version 0",
+            )
+        elif declared[0] == SUPPORTED_VERSION[0] and declared[1] < SUPPORTED_VERSION[1]:
+            self.warning(
+                "MINOR_MIGRATION_RECOMMENDED",
+                path,
+                f"run `bkf updates <bundle-root>` on this bundle, then migrate it to the supported version {SUPPORTED_VERSION[0]}.{SUPPORTED_VERSION[1]}",
             )
         elif declared[0] > SUPPORTED_VERSION[0]:
             self.warning(

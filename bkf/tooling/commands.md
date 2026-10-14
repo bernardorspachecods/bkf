@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Explains how to install the central bkf command and what bkf validate, bkf inventory, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md."
+description: "Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md."
 tags: [bkf, tooling, installation, validation, map-inventory]
 ---
 
@@ -39,7 +39,9 @@ contents, or remote URLs (URL syntax only).
 - Exit `0`: conformant with the supported version. `1`: non-conformant. `2`: the
   bundle path was invalid, or the declared version is unsupported and
   best-effort checks could not establish conformance.
-- An unrecognized version gets best-effort validation, and the finding says
+- An older declared version gets best-effort validation, and its finding MUST
+  tell the agent to run `bkf updates <bundle-root>` on that bundle. An
+  unrecognized version gets best-effort validation, and the finding says
   whether to update the validator or move the bundle to a supported version.
 - Nested bundles (see [nested bundles](/format/format-specification.md#33-nested-bundles))
   are validated from their own roots with findings grouped by bundle; the exit
@@ -48,6 +50,33 @@ contents, or remote URLs (URL syntax only).
   is a long document without an early section of at least two links to headings
   ([specification §4](/format/format-specification.md#4-bkf-documents-and-profiles)).
   The `feedback` and `ideas` logs are exempt from the long-document warning.
+
+## bkf updates
+
+`bkf updates [PATH]...` finds every bundle under each path, including a bundle
+at the path itself and nested bundles, using the same bundle discovery as
+`bkf validate`. With no paths, it uses `.`. It reports every found bundle in
+one run. For each bundle, it prints the bundle path, its declared version, the
+version supported by the installed `bkf`, and one status:
+
+- `current`: say the bundle is up to date.
+- `behind`: print the applicable update documents, oldest target version
+  first. Read and print their contents from the installed checkout's
+  `bkf/updates/`, placing each under a header that names its target version.
+  If no update document exists for the supported version, report a repository
+  defect as an error.
+- `ahead`: say the installed `bkf` is older than the bundle and the checkout
+  should be updated. Do not print update documents.
+
+Applicable update documents have target versions greater than the bundle's
+declared version and no greater than the installed `bkf` version. The update
+file rules are in the
+[format specification](/format/format-specification.md#31-map-files-and-inventories).
+
+Exit `0` means every bundle is `current`. Exit `1` means at least one bundle
+is `behind` or `ahead`, or a behind bundle has no update document for the
+supported version, or no BKF bundles were found under the searched paths.
+Exit `2` means the command was invoked with invalid usage.
 
 ## bkf inventory
 
