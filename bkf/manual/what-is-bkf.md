@@ -33,7 +33,11 @@ BKF answers this with a few ideas applied consistently, not with a fixed set of 
 | Repo library | `repo-library/` in each repo | A repo's own procedures and modules, added to the library and never restating it | A repo has local rules the library cannot know; the more specific rule wins |
 | Workflows | A parent file in a bundle, shaped by `workflow-types/` | Declared stages with handoffs, independent review, user checkpoints, and going back, for complex tasks | Work that spans agents or sessions needs structure that survives a handoff; small tasks stay plain skills |
 
-The format layer is the only one that checks. The others are judgment, and they are kept honest by review and by the feedback file, where agents record what went wrong so that the rules can be corrected.
+The format defines what a valid bundle is, and its tooling makes the structure checkable. The optional stop hook runs checks on changed bundles because relying on an agent to remember them in every workflow leaves gaps. The other layers guide judgment; review and the feedback file help correct the rules when something goes wrong.
+
+## Hooks
+
+Hooks handle behavior that must run in every session, which a skill cannot guarantee. The optional groups are: modes set talk (`t:`) or work (`w:`) mode; orient provides context at session start; check validates changed bundles when the session stops; log records ideas (`i:`) and feedback (`f:`); rules loads personal instructions. Install hooks using the repository's `INSTALL.md`. The `~/.agent-hooks/rules.md` file is personal and is not shipped with BKF. See the [hook command details](/tooling/commands.md#bkf-hooks).
 
 ## How a task moves through the layers
 
