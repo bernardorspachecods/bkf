@@ -2,6 +2,7 @@
 # Run one Codex task in its own git worktree and record the results.
 # Usage: [CODEX_IN_PLACE=1] run-codex.sh <name> <brief-file> [base-ref] [model] [effort]
 # CODEX_IN_PLACE=1 runs in the main checkout instead of a new worktree.
+# CODEX_RERUN=1 is the intended value to allow reusing a run folder with a status file.
 set -euo pipefail
 
 name=${1:?task name}
@@ -16,6 +17,11 @@ repo_name=$(basename "$repo")
 worktree="$(dirname "$repo")/${repo_name}-codex/${name}"
 branch="codex/${name}"
 runs="${CODEX_RUNS_DIR:-$HOME/.codex-runs}/${repo_name}/${name}"
+
+if [[ -e "$runs/status" && -z "${CODEX_RERUN:-}" ]]; then
+  printf 'Error: run folder already exists: %s\nSet CODEX_RERUN=1 to relaunch it.\n' "$runs" >&2
+  exit 1
+fi
 
 mkdir -p "$runs" "$(dirname "$worktree")"
 cp "$brief" "$runs/brief.md"

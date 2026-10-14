@@ -24,12 +24,12 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## dispatch-codex
 
-- Description: Run planned work as Codex CLI tasks in separate git worktrees and review the resulting diffs. Use when the user approves a plan whose steps Codex should execute, instead of pasting prompts into a Codex window; do not use for work Claude should do itself.
+- Description: Run work as Codex CLI tasks in the current checkout or separate git worktrees, using a script that records run results. Use when Codex should execute a brief instead of pasting prompts into a Codex window.
 - Package: [`agent-skills/skills/dispatch-codex`](skills/dispatch-codex/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Dispatch Codex
-  - `short_description`: Run planned work in Codex worktrees and review diffs
+  - `short_description`: Launch Codex CLI tasks and inspect run diffs
 - Runtime policy: `explicit invocation required`
 
 ## do-research

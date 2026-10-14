@@ -21,7 +21,7 @@ Open the files below before starting; they hold the rules for planning, delegati
 | Defines the syntax and editing rules for `bkf-workflow` declarations, including step types, references, IDs, and sync commands. Workflow mechanics and validation rules are specified by agent-workflow-foundation. | [write-a-declaration.md](../../library/modules/write-a-declaration.md) |
 | Defines a two-axis review workflow that checks a pinned change against repository standards and its originating specification, then reports each axis separately. Correcting review findings is a separate task. | [code-review.md](../../library/workflow-types/code-review.md) |
 | Defines a full council workflow with five independent advisors, five peer reviewers, and a chairman for an explicitly requested question or decision. Every phase is required; ordinary advice and lightweight reviews use other methods. | [council.md](../../library/workflow-types/council.md) |
-| Defines a durable planning workflow with phases, at least two subplans, configurable research and checkpoints, and review for each subplan. Conversation plans stay outside this workflow type. | [plan.md](../../library/workflow-types/plan.md) |
+| Defines a durable planning workflow with phases, at least two subplans, configurable research, checkpoints and subplan reviews, an agreed executor, and optional Claude review. Conversation plans stay outside this workflow type. | [plan.md](../../library/workflow-types/plan.md) |
 <!-- BKF:GENERATED-TAGGED-LIST-END -->
 
 For a specific kind of work, also use its own skill (for example `work-with-code` or `do-research`).
