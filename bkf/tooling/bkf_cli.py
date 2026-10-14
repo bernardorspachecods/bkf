@@ -8,6 +8,7 @@ import sys
 
 COMMANDS = {
     "inventory": ("generate_inventory", "Generate, check, or update map inventories"),
+    "skills": ("skills", "Check or regenerate shared skill lists and catalog"),
     "validate": ("validate_bundle", "Validate a BKF bundle"),
     "updates": ("updates", "Print the BKF format updates needed by a bundle"),
     "orient": ("orient", "Print session-start bundle orientation"),

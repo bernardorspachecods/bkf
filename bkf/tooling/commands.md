@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md."
+description: "Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf skills, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md."
 tags: [bkf, tooling, installation, validation, map-inventory]
 ---
 
@@ -99,6 +99,22 @@ delimited by `<!-- BKF:GENERATED-TAGGED-LIST tags: t1, t2 -->` and
 for the library files with matching tags, grouped `modules/` then
 `workflow-types/` and sorted by filename. Files without markers are unchanged.
 From the repository root, `bkf inventory agent-skills/library --skills agent-skills/skills --write` refreshes these lists; use the same invocation with `--check` to verify them.
+
+## bkf skills
+
+`bkf skills [REPOSITORY-ROOT] [--check|--write]` checks or regenerates the
+agent-skills inventories, generated tagged lists, and skill catalog. The root
+defaults to the current directory and must contain `agent-skills/library` and
+`agent-skills/skills`.
+
+`--check` is the default and never writes. It checks the library map
+inventories and skill tagged lists, then validates skill metadata and links,
+runtime metadata, and whether `agent-skills/SKILL-ARCHITECTURE.md` is current.
+It prints both check results and exits non-zero if either check fails.
+
+`--write` refreshes library map inventories and tagged lists, then writes the
+generated skill catalog. Use it after changing a skill or a library module
+listed by a skill.
 
 ## bkf sync
 

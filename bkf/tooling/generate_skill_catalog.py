@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from catalog_common import (
+from skill_catalog_common import (
     CATALOG_RELATIVE,
     generate_catalog,
     validate_repository,

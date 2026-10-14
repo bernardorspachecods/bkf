@@ -13,7 +13,6 @@ the installed tool's environment, so plain `python3` does not run them.
 
 ```sh
 "$(uv tool dir)/bkf-tooling/bin/python3" -m unittest discover -s bkf/tooling/tests
-python3 -m unittest discover -s agent-skills/tests
 ```
 
 ## Member inventory
@@ -21,13 +20,17 @@ python3 -m unittest discover -s agent-skills/tests
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
 | What it is | Document |
 | --- | --- |
-| Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md. | [commands.md](/tooling/commands.md) |
+| Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf skills, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md. | [commands.md](/tooling/commands.md) |
 | Specifies the bkf sync preview and write contract for first-time scaffolding and reconciling later declaration changes, including file matching, path renames, and orphan reporting. It also covers the declaration parser and ID allocator it uses. | [workflow-synchronizer.md](/tooling/workflow-synchronizer.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 
 ## Artifact references
 
 - [generate_inventory.py](/tooling/generate_inventory.py) — Implements preview, check, and write modes for BKF member inventories.
+- [skills.py](/tooling/skills.py) — Combines inventory, tagged-list, and skill-catalog checks and writes for `bkf skills`.
+- [skill_catalog_common.py](/tooling/skill_catalog_common.py) — Validates skill packages and generates the skill catalog.
+- [generate_skill_catalog.py](/tooling/generate_skill_catalog.py) — Writes or prints the generated skill catalog.
+- [validate_skill_catalog.py](/tooling/validate_skill_catalog.py) — Validates skill metadata and catalog consistency.
 - [bkf_common.py](/tooling/bkf_common.py) — Shares frontmatter parsing and map-scope logic across BKF tools.
 - [validate_bundle.py](/tooling/validate_bundle.py) — Checks BKF bundle structure, metadata, maps, and links.
 - [updates.py](/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.

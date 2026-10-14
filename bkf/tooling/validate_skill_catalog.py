@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from catalog_common import validate_repository
+from skill_catalog_common import validate_repository
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,6 +29,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"status: {report['status']}")
         print(f"packages: {report['summary']['packages']}")
         print(f"issues: {report['summary']['issues']}")
+        if args.check:
+            print(f"catalog: {report['catalog']['status']}")
         for finding in report["issues"]:
             location = f":{finding['line']}" if finding["line"] else ""
             print(f"{finding['severity'].upper()} {finding['code']} {finding['path']}{location} — {finding['explanation']}")

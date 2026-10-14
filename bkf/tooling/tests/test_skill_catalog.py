@@ -8,10 +8,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-sys.path.insert(0, str(SCRIPTS))
+TOOLING = ROOT
+sys.path.insert(0, str(TOOLING))
 
-from catalog_common import generate_catalog, validate_repository  # noqa: E402
+from skill_catalog_common import generate_catalog, validate_repository  # noqa: E402
 
 
 class SkillCatalogTests(unittest.TestCase):
@@ -162,7 +162,7 @@ class SkillCatalogTests(unittest.TestCase):
             "alpha-skill",
             "---\nname: alpha-skill\ndescription: Alpha behavior\n---\n",
         )
-        script = SCRIPTS / "validate_skill_catalog.py"
+        script = TOOLING / "validate_skill_catalog.py"
 
         try:
             result = subprocess.run(
@@ -186,7 +186,7 @@ class SkillCatalogTests(unittest.TestCase):
             "alpha-skill",
             "---\nname: alpha-skill\ndescription: Alpha behavior\n---\n",
         )
-        script = SCRIPTS / "generate_skill_catalog.py"
+        script = TOOLING / "generate_skill_catalog.py"
 
         try:
             written = subprocess.run(
@@ -208,6 +208,60 @@ class SkillCatalogTests(unittest.TestCase):
         self.assertEqual(written.returncode, 0, written.stderr)
         self.assertEqual(checked.returncode, 0, checked.stderr)
         self.assertTrue(markdown_exists)
+
+    def test_bkf_skills_write_then_default_check_covers_lists_and_catalog(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        library = root / "agent-skills" / "library"
+        skills = root / "agent-skills" / "skills"
+        library.mkdir(parents=True)
+        package = skills / "alpha-skill"
+        package.mkdir(parents=True)
+        (library / "MAP.md").write_text(
+            "---\nbkf_version: \"0.1\"\n---\n\n# Library\n\n"
+            "## Member inventory\n\n"
+            "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
+            "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",
+            encoding="utf-8",
+        )
+        (library / "modules").mkdir()
+        (library / "modules" / "alpha.md").write_text(
+            "---\nbkf: document\ndescription: Alpha library rule.\ntags: [always]\n---\n\n# Alpha\n",
+            encoding="utf-8",
+        )
+        (package / "SKILL.md").write_text(
+            "---\nname: alpha-skill\ndescription: Alpha behavior\n---\n\n# Alpha\n\n"
+            "<!-- BKF:GENERATED-TAGGED-LIST tags: always -->\n"
+            "old list\n<!-- BKF:GENERATED-TAGGED-LIST-END -->\n",
+            encoding="utf-8",
+        )
+
+        try:
+            script = TOOLING / "skills.py"
+            written = subprocess.run(
+                [sys.executable, str(script), str(root), "--write"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            checked = subprocess.run(
+                [sys.executable, str(script), str(root)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            tagged = (package / "SKILL.md").read_text(encoding="utf-8")
+        finally:
+            temp_dir.cleanup()
+
+        self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertIn("updated: MAP.md", written.stdout)
+        self.assertIn("wrote agent-skills/SKILL-ARCHITECTURE.md", written.stdout)
+        self.assertIn("Alpha library rule.", tagged)
+        self.assertIn("all BKF map inventories are up to date", checked.stdout)
+        self.assertIn("status: valid", checked.stdout)
+        self.assertIn("catalog: valid", checked.stdout)
 
     def test_validator_checks_runtime_yaml_and_machine_specific_paths(self):
         temp_dir, root, skills = self.make_repo()
@@ -241,7 +295,7 @@ class SkillCatalogTests(unittest.TestCase):
             self.assertIn("## real-skill", generated)
             self.assertNotIn("## empty-skill", generated)
             with self.assertRaises(ValueError):
-                from catalog_common import write_catalog
+                from skill_catalog_common import write_catalog
 
                 write_catalog(root, root / "other.md")
         finally:

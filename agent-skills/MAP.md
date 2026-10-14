@@ -9,8 +9,8 @@ scripts that build and check it are linked as artifact references because the
 entry skill packages are selected by their own metadata.
 
 After adding or editing an entry skill, or changing a library module a skill
-lists, refresh or check the skill's generated library list with the command in
-[bkf inventory](/bkf/tooling/commands.md#bkf-inventory).
+lists, run [`bkf skills`](/bkf/tooling/commands.md#bkf-skills) to check or
+refresh the generated lists and catalog.
 
 ## Member inventory
 
@@ -23,5 +23,3 @@ lists, refresh or check the skill's generated library list with the command in
 ## Artifact references
 
 - [Generated skill catalog](/agent-skills/SKILL-ARCHITECTURE.md) — read the catalog when you need to inspect the skill collection as a whole.
-- [Catalog generator](/agent-skills/scripts/generate_skill_catalog.py) — regenerate the catalog after skill changes; skill folders that git ignores are left out.
-- [Catalog validator](/agent-skills/scripts/validate_skill_catalog.py) — check skill metadata and generated catalog consistency.
