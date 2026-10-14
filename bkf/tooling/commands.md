@@ -98,6 +98,7 @@ delimited by `<!-- BKF:GENERATED-TAGGED-LIST tags: t1, t2 -->` and
 `<!-- BKF:GENERATED-TAGGED-LIST-END -->` and holds the same two-column table
 for the library files with matching tags, grouped `modules/` then
 `workflow-types/` and sorted by filename. Files without markers are unchanged.
+From the repository root, `bkf inventory agent-skills/library --skills agent-skills/skills --write` refreshes these lists; use the same invocation with `--check` to verify them.
 
 ## bkf sync
 

@@ -8,6 +8,10 @@ The inventory routes to the shared library bundle. Catalog output and the
 scripts that build and check it are linked as artifact references because the
 entry skill packages are selected by their own metadata.
 
+After adding or editing an entry skill, or changing a library module a skill
+lists, refresh or check the skill's generated library list with the command in
+[bkf inventory](/bkf/tooling/commands.md#bkf-inventory).
+
 ## Member inventory
 
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->

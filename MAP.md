@@ -7,7 +7,8 @@ description: Routes repository-wide agent guidance and the BKF and agent-skill a
 
 Start from the map for the area you are working in: [BKF](/bkf/MAP.md) or
 [agent skills](/agent-skills/MAP.md). Each area map owns its task routes and
-implementation references.
+implementation references. To learn what BKF is and how its layers fit
+together, read [what BKF is](/bkf/manual/what-is-bkf.md) first.
 
 ## Member inventory
 

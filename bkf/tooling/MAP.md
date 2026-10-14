@@ -7,6 +7,15 @@ description: Defines the BKF command interfaces and implements tools that genera
 Start with `commands.md` for the installed CLI; the synchronizer brief covers
 `bkf sync`, and the implementation files are linked below.
 
+To run the tests, use the commands below from the repository root; they assume
+`bkf` is installed per `INSTALL.md`. The tooling tests need the dependencies in
+the installed tool's environment, so plain `python3` does not run them.
+
+```sh
+"$(uv tool dir)/bkf-tooling/bin/python3" -m unittest discover -s bkf/tooling/tests
+python3 -m unittest discover -s agent-skills/tests
+```
+
 ## Member inventory
 
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
