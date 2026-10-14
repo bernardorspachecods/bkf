@@ -121,7 +121,7 @@ See the [frontmatter profiles](/format/frontmatter-profiles.md#generic-document)
 
 A repository's own collection of procedures and modules under `repo-library/`.
 
-See [the layers](/manual/what-is-bkf.md#the-layers) and repository layer decisions in `design-decisions.md`.
+See [the layers](/manual/what-is-bkf.md#the-layers).
 
 ## Tags
 

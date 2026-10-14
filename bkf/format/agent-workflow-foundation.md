@@ -213,7 +213,7 @@ the parent. Parallel steps follow their declared order when numbered.
   which fields each stage may write is the workflow type's rule.
 - Revisions and criteria references such as `criteria_source` belong in
   document bodies. Review targets are the exception, because the validator
-  checks them (see Metadata in `design-decisions.md`).
+  checks them.
 
 ### Syncing after the declaration changes
 

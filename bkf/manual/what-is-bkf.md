@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Explains what BKF is and why it is built this way: the problem it solves, the layers, how a task moves through them, and what keeps a repo healthy. Does not hold the rules (library modules), the build procedure (build-repo-organization), or the settled decisions (design-decisions)."
+description: "Explains what BKF is and why it is built this way: the problem it solves, the layers, how a task moves through them, and what keeps a repo healthy. Does not hold the rules (library modules) or the build procedure (build-repo-organization)."
 tags: [bkf, manual]
 ---
 
@@ -37,9 +37,9 @@ The format layer is the only one that checks. The others are judgment, and they 
 
 ## How a task moves through the layers
 
-An entry skill matches the request. It lists the library modules that apply, and the agent reads the ones that fit. If the repo has a `repo-library/`, a line in its `AGENTS.md` sends the agent to the repo's map first, and the repo's rules add to the library's. The agent finds the documents it needs through the maps. If the task is complex, a workflow gives it stages, handoffs, and review. When it changes something, it updates the owner document in the same change. The reasons behind each step are in `design-decisions.md`.
+An entry skill matches the request. It lists the library modules that apply, and the agent reads the ones that fit. If the repo has a `repo-library/`, a line in its `AGENTS.md` sends the agent to the repo's map first, and the repo's rules add to the library's. The agent finds the documents it needs through the maps. If the task is complex, a workflow gives it stages, handoffs, and review. When it changes something, it updates the owner document in the same change.
 
-For a complex task the coordinator picks a workflow type, the user approves the declaration, `bkf sync` scaffolds the files, and each stage agent works from an assignment and writes into its stage file. A review can send work back; a new chat resumes from the status recorded in the parent file. The steps for the coordinator are in the library module `coordinate-a-workflow`, and the file mechanics are in the [workflow foundation](/format/agent-workflow-foundation.md). Small skills such as `chat-start` run anywhere in this flow.
+For a complex task the coordinator picks a workflow type, the user approves the declaration, `bkf sync` scaffolds the files, and each stage agent works from an assignment and writes into its stage file. A review can send work back; a new chat resumes from the status recorded in the parent file. The steps for the coordinator are in the library module `coordinate-a-workflow`, and the file mechanics are in the [workflow foundation](/format/agent-workflow-foundation.md). Small skills such as `write-text` run anywhere in this flow.
 
 ## Keeping a BKF repo healthy
 

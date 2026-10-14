@@ -51,7 +51,7 @@ entry the hook writes holds the date, the user's words, the working folder, and
 your last message, and omits the place it came up; the ideas session adds more.
 
 When an idea is built or merged into a decision, put the outcome in
-`design-decisions.md` or the document that owns it, and
+the document that owns it, and
 delete the entry from [ideas.md](/ideas.md). When it is rejected, delete the
 entry and record nothing, not even the reason. Do this in the ideas session where
 the user settles it.
