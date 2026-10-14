@@ -1,0 +1,3 @@
+interface:
+  display_name: "Maintain knowledge"
+  short_description: "Rules for documentation, repo organization, glossaries, decisions"

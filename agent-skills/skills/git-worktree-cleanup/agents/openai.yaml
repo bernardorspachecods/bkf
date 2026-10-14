@@ -1,0 +1,5 @@
+interface:
+  display_name: "Git Worktree Cleanup"
+  short_description: "Commit relevant worktree changes"
+policy:
+  allow_implicit_invocation: false

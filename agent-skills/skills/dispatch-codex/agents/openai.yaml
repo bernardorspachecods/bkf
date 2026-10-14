@@ -1,0 +1,5 @@
+interface:
+  display_name: "Dispatch Codex"
+  short_description: "Run planned work in Codex worktrees and review diffs"
+policy:
+  allow_implicit_invocation: false

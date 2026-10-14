@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Editors and local tooling
+.vscode/
+.idea/
+
+# Anthropic-synced skills are written here by the app; never published.
+/agent-skills/skills/synced/
+
+# A personal skill that stays on the author's machine only.
+/agent-skills/skills/evaluate-relevance/
