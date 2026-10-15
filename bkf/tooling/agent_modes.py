@@ -35,7 +35,7 @@ READONLY_CMDS = {
     # inspect
     "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "fd", "find", "tree",
     "file", "stat", "du", "df", "less", "more", "nl", "od", "xxd", "strings", "column",
-    "shasum", "md5", "md5sum", "sha256sum", "diff", "cmp", "jq", "yq", "awk",
+    "base64", "shasum", "md5", "md5sum", "sha256sum", "diff", "cmp", "jq", "yq", "awk",
     # path / text helpers
     "pwd", "basename", "dirname", "realpath", "readlink", "sort", "uniq", "cut", "tr",
     "echo", "printf", "true", "false", "date", "env", "printenv",
@@ -76,6 +76,18 @@ def state_file(session_id):
     return STATE_DIR / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', session_id or 'unknown')}.json"
 
 
+def gh_api_is_readonly(args):
+    """gh api reads unless it sets a non-GET method or sends a body (-f/-F/--input make it POST)."""
+    for i, arg in enumerate(args):
+        if arg in ("-f", "-F", "--field", "--raw-field", "--input") or arg.startswith(("-f", "-F", "--field=", "--raw-field=", "--input=")):
+            return False
+        if arg.startswith("--method=") or arg.startswith("-X") or arg == "--method":
+            method = arg.split("=", 1)[1] if "=" in arg else (arg[2:] if arg.startswith("-X") and len(arg) > 2 else (args[i + 1] if i + 1 < len(args) else ""))
+            if method.upper() != "GET":
+                return False
+    return True
+
+
 def segment_is_readonly(words):
     name = words[0].rsplit("/", 1)[-1]
     rest = words[1:]
@@ -92,6 +104,8 @@ def segment_is_readonly(words):
             return bool(GIT_READ_ONLY_WHEN[sub] & set(args)) or (sub == "branch" and not args)
         return sub in READONLY_GIT
     if name == "gh":
+        if rest[:1] == ["api"]:
+            return gh_api_is_readonly(rest[1:])
         return len(rest) >= 2 and rest[1] in GH_READ.get(rest[0], set())
     if name == "bkf":
         sub = rest[0] if rest else ""
@@ -301,6 +315,27 @@ def bash_is_readonly(command):
     return True
 
 
+def git_stash_writes(command):
+    """True if the command runs git stash other than `list` or `show`."""
+    segments = _shell_segments(HEREDOC.sub(r"\3\n", command))
+    if segments is None:
+        return bool(re.search(r"\bgit\b[^;&|\n]*\bstash\b(?!\s+(list|show)\b)", command))
+    for segment, _ in segments:
+        try:
+            words = shlex.split(segment)
+        except ValueError:
+            continue
+        if not words or words[0].rsplit("/", 1)[-1] != "git":
+            continue
+        rest = words[1:]
+        i = 0
+        while i < len(rest) and rest[i].startswith("-"):
+            i += 2 if rest[i] in ("-C", "-c") else 1
+        if rest[i:i + 1] == ["stash"] and rest[i + 1:i + 2] not in (["list"], ["show"]):
+            return True
+    return False
+
+
 def on_prompt(data):
     path = state_file(data.get("session_id"))
     match = PREFIX.match(data.get("prompt", ""))
@@ -314,6 +349,17 @@ def on_prompt(data):
 
 
 def on_tool(data):
+    command = data.get("tool_input", {}).get("command", "")
+    if data.get("tool_name") == "Bash" and git_stash_writes(command):
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": (
+                "git stash is blocked: the checkout is shared, and stashing moves other agents' "
+                "uncommitted changes. Ask the user; they can run it themselves with '! git stash'."
+            ),
+        }}))
+        return
     try:
         mode = json.loads(state_file(data.get("session_id")).read_text()).get("mode")
     except (OSError, ValueError):

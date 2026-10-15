@@ -229,7 +229,10 @@ a tool whose folder is missing is skipped.
   cannot show to be read-only. The Bash guard recognizes separators and
   redirects outside quotes and checks command substitutions recursively. A
   prompt without a prefix is free and clears the mode. The mode is kept per
-  session in `~/.agent-hooks/state/`.
+  session in `~/.agent-hooks/state/`. In every mode, including no mode, the hook
+  also denies a `Bash` command that runs `git stash` other than `git stash list`
+  or `git stash show`, because the checkout is shared and a stash moves other
+  agents' uncommitted changes. The user can still run it with `!`.
 - **orient** registers a `SessionStart` hook that runs `bkf orient`, described
   above, using the absolute path of the installed `bkf` command.
 - **rules** registers a `SessionStart` hook that prints

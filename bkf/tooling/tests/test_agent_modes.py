@@ -12,6 +12,33 @@ import agent_modes
 from agent_modes import bash_is_readonly
 
 
+class GitStash(unittest.TestCase):
+    def test_stash_that_moves_changes_is_detected(self):
+        for command in [
+            "git stash", "git stash -q 2>/dev/null; echo '(not stashing - skip)'", "git stash pop",
+            "git stash push -m x", "git -C /repo stash", "ls && git stash apply", "git stash drop", "git stash clear",
+            "git stash $(", 
+        ]:
+            with self.subTest(command=command):
+                self.assertTrue(agent_modes.git_stash_writes(command))
+
+    def test_other_commands_are_not(self):
+        for command in [
+            "git stash list", "git stash show -p", "git -C r stash list", 'echo "git stash"',
+            "git status", "grep stash f", "git log --stat",
+        ]:
+            with self.subTest(command=command):
+                self.assertFalse(agent_modes.git_stash_writes(command))
+
+    def test_hook_denies_in_every_mode(self):
+        data = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s-none",
+                "tool_input": {"command": "git stash"}}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            agent_modes.on_tool(data)
+        self.assertIn("deny", out.getvalue())
+
+
 class ReadonlyBash(unittest.TestCase):
     def check(self, commands, expected):
         for command in commands:
@@ -31,6 +58,8 @@ class ReadonlyBash(unittest.TestCase):
             "git branch", "git branch -a", "git stash list", "git config --get user.name",
             "git worktree list", "git remote -v",
             "gh pr view 12", "gh issue list",
+            "gh api repos/o/r/contents/f.md --jq .content | base64 -d",
+            "gh api -X GET /x", "gh api --method GET /x", "gh api /x -H 'Accept: a' --paginate",
             "bkf validate .", "bkf inventory .", "bkf search foo",
             "sed -n 1,20p f", "awk '{print $1}' f", "test -f x && echo yes",
             "find . -name '*.py'", "sort f | uniq -c",
@@ -46,6 +75,8 @@ class ReadonlyBash(unittest.TestCase):
             "git stash pop", "git config user.name x", "git remote add o url",
             "git worktree add ../w", "git reset --hard",
             "gh pr create", "gh pr merge 1", "gh api -X POST /x",
+            "gh api --method=DELETE /x", "gh api -XPATCH /x", "gh api /x -f a=b", "gh api /x -F a=b",
+            "gh api /x --input body.json", "gh api graphql -f query=q",
             "bkf inventory . --write", "bkf sync .",
             "sed -i s/a/b/ f", "find . -delete", "find . -exec rm {} +",
             "sort -o out in", "awk 'BEGIN{system(\"rm x\")}'", "awk '{print > \"f\"}' in",

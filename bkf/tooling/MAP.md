@@ -44,7 +44,7 @@ the installed tool's environment, so plain `python3` does not run them.
 - [workflow_validation.py](/tooling/workflow_validation.py) — Applies the workflow foundation's validation checks.
 - [hook_events.py](/tooling/hook_events.py) — Records the files a session edits and checks their bundles when it stops.
 - [bkf_hooks.py](/tooling/bkf_hooks.py) — Previews, installs, and reports the agent prefix-mode and orientation hooks for Claude Code and Codex.
-- [agent_modes.py](/tooling/agent_modes.py) — Implements the `w:` and `t:` prompt-prefix hook, copied to the user's home on install.
+- [agent_modes.py](/tooling/agent_modes.py) — Implements the `w:` and `t:` prompt-prefix hook and the `git stash` block, copied to the user's home on install.
 - [bkf_cli.py](/tooling/bkf_cli.py) — Dispatches the installed `bkf` command to the focused tooling modules.
 - [pyproject.toml](/tooling/pyproject.toml) — Declares the installable BKF tooling package, dependencies, and `bkf` command entry point.
 - [orient.py](/tooling/orient.py) — Prints the map chain and validation health for session-start orientation.

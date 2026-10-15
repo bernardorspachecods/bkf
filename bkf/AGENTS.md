@@ -58,6 +58,4 @@ the user settles it.
 
 ## Design work
 
-Take design work one decision at a time, and settle each before moving to the
-next. Record decisions and flags in the file the user reviews, not only in the
-chat.
+Record decisions and flags in the file the user reviews, not only in the chat.
