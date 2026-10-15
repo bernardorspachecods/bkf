@@ -393,7 +393,7 @@ bundle. A workflow has no closed marker: its parent always has a `description`
 and is tracked, so the tooling validates and syncs every workflow in the bundle.
 To redo a closed workflow, restore it from version control. Turning a
 workflow's repeated procedures into repo-library entries is a separate process
-that this foundation does not define; see the `grow-repo-library` module.
+that this foundation does not define; see the `grow-libraries` module.
 
 ## Validation
 

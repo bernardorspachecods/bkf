@@ -150,7 +150,7 @@ A recommended default for plans with agent assignments is `each_handoff`.
 When the plan is complete, the coordinator verifies outputs, dependencies,
 consumers, and owned information, looks in the reconciled outputs for
 procedures worth adding to the repo library, and reports them as candidates
-or says none were found. Candidates follow `grow-repo-library`.
+or says none were found. Candidates follow `grow-libraries`.
 The user then chooses to delete the plan or keep it for its history; until
 they choose, it stays in place, is not continued, and no replacement plan is
 created. With `real` parallelism, closing includes merging the plan branch

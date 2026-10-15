@@ -16,7 +16,7 @@ A repository can define its own procedures and guidelines for how work is done i
 <!-- BKF:GENERATED-TAGGED-LIST tags: repo-library -->
 | What it is | Document |
 | --- | --- |
-| Defines how to identify, propose, write, and validate reusable procedures in a repository's repo-library. Day-to-day document organization is covered by organize-documents. | [grow-repo-library.md](../../library/modules/grow-repo-library.md) |
+| Defines how to identify, propose, write, and validate reusable procedures in a repository's repo-library, or in the general library when the rule applies to any repository, including when it comes from an external source. Day-to-day document organization is covered by organize-documents. | [grow-libraries.md](../../library/modules/grow-libraries.md) |
 <!-- BKF:GENERATED-TAGGED-LIST-END -->
 
 This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).
