@@ -84,7 +84,8 @@ owning skill's tooling validates them. Tracking them would flood the map.
 Every generic document MUST include all fields in this table. Empty strings,
 null values, empty sequences, and other empty values are invalid. For strings,
 whitespace-only content is empty. Tags are how a document is selected for a
-task, so a document without them cannot be found by tag.
+task, so a document without them cannot be found by tag. A generic document
+MAY also carry the optional [`ext` field](#repo-specific-fields-ext).
 
 The generic filename rule is lowercase kebab-case. It does not apply to files
 using workflow profiles, including names such as `W-01.md` and `WORK-UNIT.md`,
@@ -103,6 +104,44 @@ description: Instructions for setting up and running the build.
 tags: [setup, build]
 ---
 ```
+
+### Repo-specific fields (`ext`)
+
+A repository whose documents need fields BKF does not define keeps them in
+`ext`, an optional mapping on the `document` profile. No other profile accepts
+it. Repo-specific fields never sit beside the BKF fields, so a future BKF field
+cannot collide with them.
+
+```yaml
+---
+bkf: document
+description: Explains why the pipeline uses queues instead of polling.
+tags: [architecture]
+ext:
+  adr_number: 14
+  supersedes: ADR-009
+---
+```
+
+`ext` is validated against the `ext-schema.yaml` file at the bundle root. The
+file is a [JSON Schema](https://json-schema.org/draft/2020-12) (draft 2020-12)
+written in YAML, and BKF applies it to the object `{ext: <value>}`, so the
+schema describes `ext` under `properties`. A bundle owns one schema for all its
+documents; where documents have different shapes, the schema tells them apart
+by a field inside `ext` with `if` and `then`.
+
+- A document with `ext` in a bundle without `ext-schema.yaml` is invalid
+  (`EXT_SCHEMA_MISSING`). A schema that is not valid JSON Schema is invalid
+  (`EXT_SCHEMA_INVALID`).
+- A value that does not satisfy the schema is invalid (`EXT_INVALID`); the
+  message names its location, such as `ext/connections/0/relation`.
+- BKF does not require the schema to be closed. A schema that omits
+  `unevaluatedProperties: false` on `ext` accepts any extra field, which
+  removes the protection against invented fields. Use `unevaluatedProperties`,
+  not `additionalProperties`, because `additionalProperties` inside an `if` or
+  `then` branch does not see the `properties` declared outside it.
+- The file is not a member: BKF does not list it in the map, and it is
+  referenced from the map as an artifact reference.
 
 ## Feedback file
 

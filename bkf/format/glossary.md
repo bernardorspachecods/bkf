@@ -45,6 +45,12 @@ A thin trigger for one situation that carries a generated list of the modules th
 
 See [the layers](/manual/what-is-bkf.md#the-layers).
 
+## Ext
+
+The optional `document` frontmatter field that holds a repository's own metadata, validated against the bundle-root `ext-schema.yaml`.
+
+See the [frontmatter profiles](/format/frontmatter-profiles.md#repo-specific-fields-ext).
+
 ## Feedback file
 
 The optional bundle-root `feedback.md`, where agents record what went wrong in their work.

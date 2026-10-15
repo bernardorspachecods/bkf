@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 from markdown_it import MarkdownIt
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
 
 from bkf_common import (
     BKFInputError,
@@ -44,7 +48,9 @@ PROFILE_FIELDS = {
     "workflow.file": {"bkf", "stage_ids"},
 }
 GENERIC_FIELDS = {"bkf", "description", "tags"}
+EXT_SCHEMA_NAME = "ext-schema.yaml"
 OPTIONAL_FIELDS = {
+    "generic": {"ext"},
     "workflow": {"execution_status", "unit_status"},
     "workflow.work_unit": {"description"},
     "workflow.stage": {"description", "reviews", "human_checkpoint"},
@@ -71,6 +77,8 @@ class Validator:
         self.root = root
         self.findings: list[Finding] = []
         self.member_documents: dict[Path, ParsedMarkdown] = {}
+        self._ext_validator: Draft202012Validator | None = None
+        self._ext_schema_reported = False
 
     def add(self, severity: str, code: str, path: Path, message: str) -> None:
         try:
@@ -586,6 +594,42 @@ class Validator:
                 isinstance(tag, str) and bool(tag.strip()) for tag in tags
             ):
                 self.error("METADATA_TAGS", path, "`tags` must be a non-empty list of non-empty strings")
+            if "ext" in metadata:
+                self._validate_ext(path, metadata["ext"])
+
+    def _validate_ext(self, path: Path, value: object) -> None:
+        if not isinstance(value, dict):
+            self.error("EXT_INVALID", path, "`ext` must be a mapping")
+            return
+        validator = self._load_ext_validator(path)
+        if validator is None:
+            return
+        for error in sorted(validator.iter_errors({"ext": value}), key=lambda item: list(map(str, item.absolute_path))):
+            location = "/".join(str(part) for part in error.absolute_path) or "ext"
+            self.error("EXT_INVALID", path, f"`{location}`: {error.message}")
+
+    def _load_ext_validator(self, path: Path) -> Draft202012Validator | None:
+        """Load the bundle's ext schema once; report why it is unusable once."""
+        if self._ext_validator is not None:
+            return self._ext_validator
+        if self._ext_schema_reported:
+            return None
+        self._ext_schema_reported = True
+        schema_path = self.root / EXT_SCHEMA_NAME
+        if not schema_path.is_file():
+            self.error("EXT_SCHEMA_MISSING", path, f"`ext` is only allowed when the bundle root has {EXT_SCHEMA_NAME}")
+            return None
+        yaml = YAML(typ="safe")
+        yaml.version = (1, 2)
+        yaml.allow_duplicate_keys = False
+        try:
+            schema = yaml.load(schema_path.read_text(encoding="utf-8"))
+            Draft202012Validator.check_schema(schema)
+        except (OSError, UnicodeError, YAMLError, SchemaError) as exc:
+            self.error("EXT_SCHEMA_INVALID", schema_path, f"cannot use {EXT_SCHEMA_NAME}: {exc}")
+            return None
+        self._ext_validator = Draft202012Validator(schema)
+        return self._ext_validator
 
     def _validate_links(self, source: Path, markdown: str) -> None:
         for token in self._flatten(MARKDOWN.parse(markdown)):
