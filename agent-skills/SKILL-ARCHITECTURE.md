@@ -97,6 +97,12 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Skill Authoring
   - `short_description`: Create and maintain agent skills
 
+## watch
+
+- Description: Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or local WhisperX / cloud Whisper fallback), and hands the result to the agent so it can answer questions about what's in the video. With a Gemini API key, Google's agentic video model watches the full video instead.
+- Package: [`agent-skills/skills/watch`](skills/watch/SKILL.md)
+- Runtime metadata: `missing`
+
 ## work-in-stages
 
 - Description: Use when work has several stages, hands work to other agents, needs a plan or a review stage, or resumes from a plan.
