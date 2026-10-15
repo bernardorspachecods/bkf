@@ -18,7 +18,7 @@ MAX_BLOCKS = 2
 STATE_MAX_AGE = 14 * 24 * 3600
 REASON_LIMIT = 2500
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
-EVENTS = {"record", "snapshot", "last", "log", "stop"}
+EVENTS = {"record", "snapshot", "last", "log", "stop", "guard"}
 
 
 def report_failure(event: str, exc: Exception, fields: dict | None = None) -> None:
@@ -42,7 +42,9 @@ def _prompt_kind(prompt: object) -> str | None:
 
 
 def _probe(event: str) -> None:
-    if event == "log":
+    if event == "guard":
+        importlib.import_module("read_guard")
+    elif event == "log":
         importlib.import_module("log_entry")
     elif event == "stop":
         for module in ("generate_inventory", "validate_bundle", "bkf_common"):
@@ -355,6 +357,10 @@ def main(argv: list[str]) -> int:
             output = log(data)
         elif event == "stop":
             output = stop(data)
+        elif event == "guard":
+            from read_guard import guard
+
+            output = guard(data)
     except Exception as exc:
         if event == "stop":
             exc = RuntimeError(f"validation did not run: {exc}")

@@ -205,8 +205,8 @@ the [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks).
 
 ## bkf hooks
 
-`bkf hooks install [--write] [--only modes|orient|check|log|rules] [--home PATH]` and
-`bkf hooks status [--only modes|orient|check|log|rules] [--home PATH]` manage five hook groups that
+`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard] [--home PATH]` and
+`bkf hooks status [--only modes|orient|check|log|rules|guard] [--home PATH]` manage six hook groups that
 must run every time, which a skill cannot guarantee. They are registered for
 both Claude Code (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`);
 a tool whose folder is missing is skipped.
@@ -262,6 +262,13 @@ a tool whose folder is missing is skipped.
   failure is reported to the user through `systemMessage` and does not block
   the session; a failed `i:` or `f:` entry still stops the prompt so the entry
   is not lost.
+- **guard** registers a `PreToolUse` hook for `Read` and `Bash`. On the first
+  whole-file read or single-file `cat` of a Markdown file at least 8,000 bytes
+  long with a `## Navigation map`, it denies the read and returns the map's
+  section links with line ranges. A second whole-file read of that resolved
+  path is allowed in the same session. Partial `Read` calls and other shell
+  commands are allowed. Refusals are stored per session in
+  `~/.agent-hooks/state/` and pruned after 14 days.
 
 `install` previews by default and prints one line per script and registration
 as `ok`, `missing`, or `differs`; `--write` applies it. Other settings and

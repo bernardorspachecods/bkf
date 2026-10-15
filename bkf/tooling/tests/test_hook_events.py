@@ -293,6 +293,23 @@ class HookEventsTest(unittest.TestCase):
                 self.assertEqual(stderr, "")
                 self.assertFalse(self.state.exists())
 
+    def test_guard_event_emits_pre_tool_use_deny(self) -> None:
+        target = self.root / "large.md"
+        target.write_text(
+            "## Navigation map\n\n| Need | See |\n| --- | --- |\n| Purpose | [Purpose](#purpose) |\n\n"
+            "## Purpose\n" + "content\n" * 1200,
+            encoding="utf-8",
+        )
+        code, output, stderr = self.invoke(
+            "guard",
+            {"session_id": "s", "cwd": str(self.root), "hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {"file_path": str(target)}},
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        result = json.loads(output)
+        self.assertEqual(result["hookSpecificOutput"]["hookEventName"], "PreToolUse")
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+
     def test_shell_change_blocks_without_a_recorder_call(self) -> None:
         self.init_git()
         self.snapshot()

@@ -25,6 +25,7 @@ py-modules = [
     "hook_events",
     "log_entry",
     "orient",
+    "read_guard",
     "updates",
     "search",
     "skill_catalog_common",

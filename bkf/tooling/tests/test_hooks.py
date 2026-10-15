@@ -110,6 +110,8 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], "python3 " + str((self.home / ".agent-hooks" / "mode.py").resolve()))
             self.assertEqual(hooks["UserPromptSubmit"][1]["hooks"][0]["command"], f"{self.command} hooks run log")
             self.assertEqual(hooks["PreToolUse"][0]["matcher"], "*")
+            self.assertEqual(hooks["PreToolUse"][1]["matcher"], "Read|Bash")
+            self.assertEqual(hooks["PreToolUse"][1]["hooks"][0]["command"], f"{self.command} hooks run guard")
             self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} orient")
             self.assertEqual(len(hooks["SessionStart"]), 3)
             self.assertEqual(hooks["SessionStart"][1]["hooks"][0]["command"], f"{self.command} hooks run rules")
@@ -161,6 +163,14 @@ class HooksTest(unittest.TestCase):
         run("install", "--write", "--only", "orient", "--home", self.home)
         self.assertEqual(set(self.config(".claude", "settings.json")["hooks"]), {"SessionStart"})
         self.assertFalse((self.home / ".agent-hooks").exists())
+
+    def test_only_guard_registers_read_and_bash_pre_tool_use(self) -> None:
+        run("install", "--write", "--only", "guard", "--home", self.home)
+        hooks = self.config(".claude", "settings.json")["hooks"]
+        self.assertEqual(set(hooks), {"PreToolUse"})
+        self.assertEqual(hooks["PreToolUse"][0]["matcher"], "Read|Bash")
+        self.assertEqual(hooks["PreToolUse"][0]["hooks"][0]["command"], f"{self.command} hooks run guard")
+        self.assertEqual(run("status", "--only", "guard", "--home", self.home)[0], 0)
 
     def test_only_check_installs_the_recorder_snapshot_and_stop_check(self) -> None:
         run("install", "--write", "--only", "check", "--home", self.home)
