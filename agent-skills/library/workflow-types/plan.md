@@ -22,68 +22,26 @@ form; see "Required core and optional stages".
 
 ## Declaration
 
-The example has two phases. In the first, subplan 1 is followed by subplan 3
-(which needs its output) while subplan 2 runs beside them. Each subplan is a
-work unit with its own file holding its research, implementation, and review.
-Research is carried only when the user enabled it; review is required for every
-subplan. The checkpoint cadence here is `each_subplan`.
+This workflow type gives no declaration to copy, because a plan's shape
+follows its task. Write the declaration with
+[write-a-declaration](/modules/write-a-declaration.md), composed from these
+rules:
 
-```bkf-workflow
-steps:
-  - work_unit:
-      title: "Plan integrity check"
-      steps:
-        - stage:
-            title: "Integrity check — plan logic, order, and completion conditions"
-            human_checkpoint: true
-
-  - work_unit:
-      title: "Phase 1"
-      steps:
-        - parallel:
-            - work_unit:
-                title: "Subplans 1 and 3"
-                steps:
-                  - work_unit:
-                      title: "Subplan 1"
-                      work_unit_file: true
-                      steps:
-                        - work_unit:
-                            title: "Research"
-                            steps:
-                              - stage: {title: "Research subplan 1"}
-                        - stage: {key: sp1_impl, title: "Implement subplan 1"}
-                        - stage:
-                            title: "Review subplan 1"
-                            reviews: [sp1_impl]
-                            human_checkpoint: true
-                  - work_unit:
-                      title: "Subplan 3"
-                      work_unit_file: true
-                      steps:
-                        - stage: {key: sp3_impl, title: "Implement subplan 3"}
-                        - stage:
-                            title: "Review subplan 3"
-                            reviews: [sp3_impl]
-                            human_checkpoint: true
-            - work_unit:
-                title: "Subplan 2"
-                work_unit_file: true
-                steps:
-                  - stage: {key: sp2_impl, title: "Implement subplan 2"}
-                  - stage:
-                      title: "Review subplan 2"
-                      reviews: [sp2_impl]
-                      human_checkpoint: true
-
-  - work_unit:
-      title: "Phase 2"
-      steps:
-        - stage: {title: "..."}
-```
-
-Phase 2 is a placeholder: phases are work units in order, and each holds
-subplans the same way.
+- The first work unit is the plan integrity check: one stage with
+  `human_checkpoint: true`.
+- Each phase is a top-level work unit, in phase order.
+- Each subplan is a work unit in its phase with `work_unit_file: true`. Its
+  steps are, in order: a research work unit when research is on for that
+  subplan, the implement stage with a `key`, the review stage whose `reviews`
+  names that key, and the Claude review when the settings select it.
+  Checkpoints follow the cadence in "Settings and checkpoints".
+- A subplan that needs another subplan's output comes after it. Independent
+  subplans go in a `parallel` group; a branch that holds a dependent chain is a
+  work unit containing those subplans in order, or uses `after`.
+- A nested workflow type, such as research, brings its own units. Before
+  writing them, read that workflow type and include every stage its "Required
+  core" names, at the level the user chose. A single stage stands for a nested
+  workflow type only when that type's required core allows it.
 
 ## Required core and optional stages
 
@@ -100,7 +58,7 @@ subplans the same way.
 
 | Stage | Receives | Does not receive | Output |
 | --- | --- | --- | --- |
-| Plan integrity check | The root plan and subplans, and the criteria: logical coverage, ordering, dependencies, feasibility, consistent completion conditions | The coordinator's account of why the plan is sound | Findings with evidence from the plan and recommended corrections, in the stage file. It is not a review of completed output. |
+| Plan integrity check | The root plan and subplans, the workflow types the plan nests, and the criteria: logical coverage, ordering, dependencies, feasibility, consistent completion conditions, and the required core of this workflow type and of each nested one | The coordinator's account of why the plan is sound | Findings with evidence from the plan and recommended corrections, in the stage file. It is not a review of completed output. |
 | Research (per subplan, optional) | The subplan brief | | The research workflow's output, at the rigor level set in the [research workflow type](/workflow-types/research.md), passed through unchanged. Each research unit is that workflow type's units, nested in the subplan. The overall plan is researched only when the user explicitly asks. |
 | Implement | The subplan brief | Other subplans' work, except declared inputs | The output, and an outcome section. |
 | Review (per subplan) | The implemented output, the criteria from the brief | The implementer's account of the work | An assessment against the criteria. |
