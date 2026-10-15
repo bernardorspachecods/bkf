@@ -11,7 +11,7 @@ import validate_skill_catalog
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="bkf skills", description=__doc__)
     parser.add_argument("root", nargs="?", type=Path, default=Path.cwd(), help="repository root")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="check inventories, tagged lists, and catalog (default)")

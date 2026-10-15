@@ -4,8 +4,9 @@ description: Defines the BKF command interfaces and implements tools that genera
 
 # BKF Tooling Map
 
-Start with `commands.md` for the installed CLI; the synchronizer brief covers
-`bkf sync`, and the implementation files are linked below.
+Start with `bkf help` for the command list, `commands.md` for the installed CLI;
+the synchronizer brief covers `bkf sync`, and the implementation files are
+linked below.
 
 To run the tests, use the commands below from the repository root; they assume
 `bkf` is installed per `INSTALL.md`. The tooling tests need the dependencies in
@@ -20,7 +21,7 @@ the installed tool's environment, so plain `python3` does not run them.
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
 | What it is | Document |
 | --- | --- |
-| Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf skills, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md. | [commands.md](/tooling/commands.md) |
+| Explains how to install the central bkf command and documents each subcommand's invocation, options, and exit status. The command list is `bkf help`; the rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md. | [commands.md](/tooling/commands.md) |
 | Specifies the bkf sync preview and write contract for first-time scaffolding and reconciling later declaration changes, including file matching, path renames, and orphan reporting. It also covers the declaration parser and ID allocator it uses. | [workflow-synchronizer.md](/tooling/workflow-synchronizer.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 

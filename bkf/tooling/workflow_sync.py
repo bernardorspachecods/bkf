@@ -240,7 +240,7 @@ def sync(parent: Path, *, write: bool = False, confirm_in_progress: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Preview or synchronize workflow files, including first-time scaffolding.")
+    parser = argparse.ArgumentParser(prog="bkf sync", description="Preview or synchronize workflow files, including first-time scaffolding.")
     parser.add_argument("parent", type=Path)
     parser.add_argument("--write", action="store_true", help="apply the synchronization plan")
     parser.add_argument("--confirm-in-progress", action="store_true", help="confirm renames are safe while work is in progress")

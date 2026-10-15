@@ -14,7 +14,7 @@ VALIDATION_TIMEOUT = 5
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="bkf orient", description=__doc__)
     parser.add_argument("--cwd", type=Path, help="directory to orient from (defaults to the current directory)")
     parser.add_argument("--no-validate", action="store_true", help="skip the validation health line")
     parser.add_argument("--debug", action="store_true", help="print failures to stderr and return 1")

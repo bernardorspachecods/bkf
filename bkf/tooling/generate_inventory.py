@@ -144,7 +144,7 @@ def write_atomically(path: Path, content: str) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="bkf inventory", description=__doc__)
     parser.add_argument("bundle_root", type=Path, help="directory containing the root MAP.md")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="write refreshed inventories")

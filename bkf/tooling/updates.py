@@ -90,7 +90,7 @@ def report_bundle(bundle: Path, updates_dir: Path) -> tuple[str, bool]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="bkf updates", description=__doc__)
     parser.add_argument("paths", nargs="*", type=Path, metavar="PATH", help="directory to search (default: .)")
     return parser
 

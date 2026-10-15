@@ -664,7 +664,7 @@ class Validator:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="bkf validate", description=__doc__)
     parser.add_argument("bundle_root", type=Path, help="directory containing the root MAP.md")
     parser.add_argument(
         "--this-bundle",

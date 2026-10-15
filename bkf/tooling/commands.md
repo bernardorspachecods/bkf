@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Explains how to install the central bkf command and what bkf validate, bkf updates, bkf inventory, bkf skills, bkf orient, bkf search, bkf log, and bkf hooks do: invocation, options, and exit status. The rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md."
+description: "Explains how to install the central bkf command and documents each subcommand's invocation, options, and exit status. The command list is `bkf help`; the rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md."
 tags: [bkf, tooling, installation, validation, map-inventory]
 ---
 
@@ -31,6 +31,14 @@ Skills are installed through the symlink `~/.claude/skills`. Their relative
 links to `../../library/` resolve through a second symlink,
 `~/.claude/library`, pointing to `agent-skills/library`. Create both on a new
 machine.
+
+## bkf help
+
+`bkf help` lists commands, summaries, and usage guidance. `bkf help <command>`
+shows that command's options. Both exit with `0`; an unknown command or `help`
+target exits with `2`. The list, summaries, and `use:` lines are owned by
+`COMMANDS` in [bkf_cli.py](/tooling/bkf_cli.py); use `bkf help` for the current
+list instead of repeating it here.
 
 ## bkf validate
 

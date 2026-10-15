@@ -39,7 +39,7 @@ class UpdatesTests(unittest.TestCase):
     def assert_command_modules_are_packaged(self, pyproject: Path) -> None:
         with pyproject.open("rb") as file:
             package_modules = set(tomllib.load(file)["tool"]["setuptools"]["py-modules"])
-        command_modules = {module for module, _ in COMMANDS.values()}
+        command_modules = {module for module, _, _ in COMMANDS.values()}
         self.assertEqual(command_modules - package_modules, set())
 
     def test_all_bundles_current(self) -> None:

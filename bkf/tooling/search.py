@@ -45,7 +45,7 @@ class Section:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="bkf search", description=__doc__)
     parser.add_argument("query", nargs="+", help="question or topic to search for")
     parser.add_argument("--cwd", type=Path, help="directory in the bundle (defaults to current directory)")
     parser.add_argument("--limit", type=int, default=5, help="maximum number of hits (default: 5)")
