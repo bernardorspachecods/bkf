@@ -68,6 +68,12 @@ def make_parent(root: Path) -> Path:
 
 
 class WorkflowTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # sync prints its plan; tests that assert on it capture stdout themselves
+        stdout = redirect_stdout(StringIO())
+        stdout.__enter__()
+        self.addCleanup(stdout.__exit__, None, None, None)
+
     def test_sync_previews_and_applies_first_time_scaffolding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
