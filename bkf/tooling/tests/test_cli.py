@@ -23,7 +23,7 @@ class CliTests(unittest.TestCase):
         expected_commands = [
             *(
                 (name, summary, when)
-                for name, (_, summary, when) in bkf_cli.COMMANDS.items()
+                for name, (_, summary, when, _) in bkf_cli.COMMANDS.items()
             ),
             bkf_cli.HELP_COMMAND,
         ]
@@ -34,8 +34,22 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(status, 0)
                 self.assertEqual(error, "")
                 for name, summary, when in expected_commands:
-                    self.assertIn(f"  {name.ljust(width)}  {summary}", output)
-                    self.assertIn(f"  {' ' * width}  use: {when}", output)
+                    indent = "  " if name == "help" else "    "
+                    self.assertIn(f"{indent}{name.ljust(width)}  {summary}", output)
+                    self.assertIn(f"{indent}{' ' * width}  use: {when}", output)
+                for _, (_, _, _, group) in bkf_cli.COMMANDS.items():
+                    self.assertIn(f"  {group}:\n", output)
+
+    def test_every_command_has_a_help_group(self) -> None:
+        for name, (_, _, when, group) in bkf_cli.COMMANDS.items():
+            with self.subTest(command=name):
+                self.assertTrue(when.strip())
+                self.assertIn(group, bkf_cli.HELP_GROUPS)
+        for group in bkf_cli.HELP_GROUPS:
+            with self.subTest(group=group):
+                self.assertTrue(
+                    any(command_group == group for _, (_, _, _, command_group) in bkf_cli.COMMANDS.items())
+                )
 
     def test_help_for_each_command_shows_bkf_usage(self) -> None:
         for name in bkf_cli.COMMANDS:

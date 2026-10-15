@@ -6,6 +6,13 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 
 # The bkf command
 
+## Contents
+
+- [Install](#install) and [bkf help](#bkf-help)
+- Editing documents: [bkf validate](#bkf-validate), [bkf inventory](#bkf-inventory), [bkf skills](#bkf-skills)
+- Session start and lookup: [bkf orient](#bkf-orient), [bkf search](#bkf-search), [bkf log](#bkf-log), [bkf updates](#bkf-updates)
+- Install and workflows: [bkf hooks](#bkf-hooks), [bkf sync](#bkf-sync)
+
 ## Install
 
 The package is maintained in this directory. Install it in editable mode so
@@ -34,10 +41,13 @@ machine.
 
 ## bkf help
 
-`bkf help` lists commands, summaries, and usage guidance. `bkf help <command>`
-shows that command's options. Both exit with `0`; an unknown command or `help`
-target exits with `2`. The list, summaries, and `use:` lines are owned by
-`COMMANDS` in [bkf_cli.py](/tooling/bkf_cli.py); use `bkf help` for the current
+`bkf help` lists commands, summaries, and usage guidance grouped by situation:
+after editing documents, session start and lookup, and install and workflows.
+The `help` command appears at the end. `bkf help <command>` shows
+that command's options. Both exit with `0`; an unknown command or `help` target
+exits with `2`. `COMMANDS` in [bkf_cli.py](/tooling/bkf_cli.py) owns the list,
+group assignments, summaries, and `use:` lines. `HELP_GROUPS` in the same file
+owns the known groups and their display order; use `bkf help` for the current
 list instead of repeating it here.
 
 ## bkf validate
