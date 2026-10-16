@@ -17,6 +17,7 @@ STATE_DIR = Path.home() / ".agent-hooks" / "state"
 MAX_BLOCKS = 2
 STATE_MAX_AGE = 14 * 24 * 3600
 REASON_LIMIT = 2500
+LOG_PREFIX = re.compile(r"^\s*([if])(-?)\s*:", re.IGNORECASE)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
 EVENTS = {"record", "snapshot", "last", "log", "stop", "guard"}
 
@@ -37,7 +38,7 @@ def report_failure(event: str, exc: Exception, fields: dict | None = None) -> No
 def _prompt_kind(prompt: object) -> str | None:
     if not isinstance(prompt, str):
         return None
-    match = re.match(r"^\s*([if])\s*:", prompt, re.IGNORECASE)
+    match = LOG_PREFIX.match(prompt)
     return match.group(1).lower() if match else None
 
 
@@ -218,19 +219,22 @@ def _log_context(data: dict, state_dir: Path | None) -> str | None:
 
 
 def log(data: dict, state_dir: Path | None = None) -> dict | None:
-    """Log an i: idea or f: feedback prompt without involving a model; the prompt never reaches it."""
+    """Log an i: idea or f: feedback prompt without involving a model; the prompt never reaches it.
+
+    The i-: and f-: forms log the entry without the agent's last message.
+    """
     prompt = data.get("prompt")
     kind = _prompt_kind(prompt)
     if kind is None:
         return None
-    match = re.match(r"^\s*([if])\s*:", prompt, re.IGNORECASE)
+    match = LOG_PREFIX.match(prompt)
     text = prompt[match.end():].strip()
     if not text:
         return None
     from log_entry import display_path, write_entry
 
     cwd = Path(data.get("cwd") or ".").expanduser()
-    context = _log_context(data, state_dir)
+    context = None if match.group(2) else _log_context(data, state_dir)
     path = write_entry("idea" if kind == "i" else "feedback", text, cwd, context)
     rendered = display_path(path, cwd)
     return {"continue": False, "stopReason": f"Logged {'idea' if kind == 'i' else 'feedback'} in {rendered}"}

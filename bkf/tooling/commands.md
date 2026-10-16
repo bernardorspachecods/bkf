@@ -264,7 +264,9 @@ a tool whose folder is missing is skipped.
 - **log** registers a `UserPromptSubmit` hook and a `Stop` hook. New entries go
   at the top of the file, below its introduction. A prompt
   starting with `i:` is logged as an idea, and one starting with `f:` as
-  feedback; neither reaches the model. The excerpt uses the full agent message through 5,000 characters;
+  feedback; neither reaches the model. The `i-:` and `f-:` forms log the
+  same way without the agent-message excerpt, for entries unrelated to the
+  last answer. The excerpt uses the full agent message through 5,000 characters;
   longer messages keep the end at a whitespace boundary and begin with a quoted
   `[message truncated: N earlier characters omitted]` line. The working-folder
   text includes the git repository's folder name and the relative path (or only

@@ -105,6 +105,16 @@ class HookEventsTest(unittest.TestCase):
         self.assertFalse((self.root / "ideas.md").read_text().count("Just before"))
         self.assertIn("Logged idea", json.loads(output)["stopReason"])
 
+    def test_dash_prefixes_log_without_the_last_message(self) -> None:
+        hook_events.last({"session_id": "s", "last_assistant_message": "Previous answer"}, self.state)
+        for prompt, name, label in (("i-: Unrelated idea", "ideas.md", "idea"), ("F- : Unrelated feedback", "feedback.md", "feedback")):
+            code, output, _ = self.invoke("log", {"session_id": "s", "cwd": str(self.root), "prompt": prompt})
+            self.assertEqual(code, 0)
+            self.assertIn(f"Logged {label} in", json.loads(output)["stopReason"])
+            text = (self.root / name).read_text()
+            self.assertIn(prompt.split(":", 1)[1].strip(), text)
+            self.assertNotIn("Previous answer", text)
+
     def test_f_logs_silently_and_does_not_reach_the_model(self) -> None:
         code, output, _ = self.invoke("log", {"session_id": "s", "cwd": str(self.root), "prompt": "f: Fix the answer"})
         self.assertEqual(code, 0)
@@ -133,7 +143,7 @@ class HookEventsTest(unittest.TestCase):
         code, output, _ = self.invoke("log", {"session_id": "s", "cwd": str(self.root), "prompt": "I: Uppercase"})
         self.assertEqual(code, 0)
         self.assertIn("Logged idea", json.loads(output)["stopReason"])
-        for prompt in ("name: x", "nothing", "Please i: idea", "i:   ", "w: implement", "t: talk"):
+        for prompt in ("name: x", "nothing", "Please i: idea", "i:   ", "i-:  ", "i--: x", "w: implement", "t: talk"):
             before = (self.root / "ideas.md").read_text()
             code, output, _ = self.invoke("log", {"session_id": "s", "cwd": str(self.root), "prompt": prompt})
             self.assertEqual((code, output), (0, ""))
