@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,7 +17,8 @@ from workflow_declaration import BLOCK_RE, Declaration, render_declaration
 
 
 def slug(value: str, *, words: int | None = None, limit: int = 48) -> str:
-    value = value.lower()
+    # Accented letters become their base letter instead of being dropped.
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower()
     if words is not None:
         # Title words are whitespace-separated; punctuation inside a word is removed.
         pieces = [w for w in (re.sub(r"[^a-z0-9]", "", raw) for raw in value.split()) if w][:words]

@@ -135,8 +135,9 @@ the parent. Parallel steps follow their declared order when numbered.
 #### A stage file is named from its title prefix
 
 - A stage file is named `<NN>-<title-prefix>.md`. The slug is
-  the first two words of the title, lowercased, with punctuation removed and
-  words joined by hyphens. Stage titles should begin with two words that
+  the first two words of the title, lowercased, with accented letters reduced
+  to their base letter, punctuation removed, and words joined by hyphens. Every
+  title slug, including folder slugs, reduces accented letters the same way. Stage titles should begin with two words that
   identify the stage. A one-word title uses that word; a title with no usable
   slug falls back to `stage`; slugs are capped in length. For example,
   "Final sign-off" becomes `final-signoff`. The number keeps names unique, so

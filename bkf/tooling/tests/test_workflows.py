@@ -425,6 +425,11 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn("%YAML", block)
             self.assertNotIn("\n---\n", block.split("```", 1)[0])
 
+    def test_slug_transliterates_accented_letters(self) -> None:
+        self.assertEqual(slug("Fundação"), "fundacao")
+        self.assertEqual(slug("Inventário e âmbito"), "inventario-e-ambito")
+        self.assertEqual(slug("Guarda revisão", words=2), "guarda-revisao")
+
 
 if __name__ == "__main__":
     unittest.main()

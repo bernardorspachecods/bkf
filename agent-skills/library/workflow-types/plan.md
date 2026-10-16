@@ -60,7 +60,7 @@ rules:
 | --- | --- | --- | --- |
 | Plan integrity check | The root plan and subplans, the workflow types the plan nests, and the criteria: logical coverage, ordering, dependencies, feasibility, consistent completion conditions, and the required core of this workflow type and of each nested one | The coordinator's account of why the plan is sound | Findings with evidence from the plan and recommended corrections, in the stage file. It is not a review of completed output. |
 | Research (per subplan, optional) | The subplan brief | | The research workflow's output, at the rigor level set in the [research workflow type](/workflow-types/research.md), passed through unchanged. Each research unit is that workflow type's units, nested in the subplan. The overall plan is researched only when the user explicitly asks. |
-| Implement | The subplan brief | Other subplans' work, except declared inputs | The output, and an outcome section. |
+| Implement | The subplan brief | Other subplans' work, except declared inputs | The output, and an outcome in the implement stage's own file: what it did, verification, and differences from the brief. |
 | Review (per subplan) | The implemented output, the criteria from the brief | The implementer's account of the work | An assessment against the criteria. |
 | Claude review | The implemented output and criteria. For a phase, the output is the cumulative diff from the first run's base of that phase to the final state; the criteria are the completion conditions of its subplans plus the phase's line in the plan map. | The normal review's findings; the implementer's account | An assessment against the criteria. Findings go to the coordinator, who returns them to the Codex implementer; the coordinator does not fix them. Runs as a Claude agent distinct from the coordinator. |
 | Integration (only with `real` parallelism) | The parallel branches and the verification to run | | Merged branches on the plan branch, conflicts resolved, and the named verification run after merging. |
@@ -74,7 +74,7 @@ The overall objective, approach, boundaries, and completion gate live in the wor
 - Name each run after its stage, using the full workflow and stage ID in lowercase hyphenated form (for example, `w-02-st-01-02-02`).
 - Before launching a stage, check that its run folder does not exist. If it exists and the stage is not being deliberately relaunched, stop. See the dispatch-codex skill for launch and run-folder details.
 - To resume after a session ends, read the plan's `unit_status` and open the in-flight stage's run folder. A missing folder means the stage was never launched; without an `exit` in `status`, check whether it is running or died, then relaunch; `exit=0` means it finished and awaits review.
-- In the implement brief, tell Codex to write the subplan's outcome section in the subplan file: what it did, verification, and differences from the brief, as required by the Implement stage note.
+- In the implement brief, tell Codex to write the outcome in the implement stage's file, as required by the Implement stage note.
 
 ## Settings and checkpoints
 
