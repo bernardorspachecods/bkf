@@ -10,7 +10,7 @@ BKF organizes a repository's knowledge so agents can find the current guidance a
 - **Repo library**: a `repo-library/` folder in your own repository holds its local procedures and modules. They add to the shared library and never restate it.
 - **Workflows** ([workflow foundation](bkf/format/agent-workflow-foundation.md)): for complex tasks, declared stages with handoffs, independent review, and user checkpoints, scaffolded by `bkf sync`.
 
-[Why it is built in layers](bkf/manual/what-is-bkf.md#the-layers). This repository is itself the worked example of BKF.
+[Why it is built in layers](bkf/manual/what-is-bkf.md#the-layers). [How it compares with a single AGENTS.md, editor rules, and skill collections, and when not to use it](bkf/manual/why-bkf.md). This repository is itself the worked example of BKF.
 
 ## A 10-minute path
 

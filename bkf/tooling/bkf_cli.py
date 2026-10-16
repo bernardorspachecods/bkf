@@ -64,8 +64,8 @@ COMMANDS = {
     ),
     "sync": (
         "workflow_sync",
-        "Preview or synchronize workflow files with a declaration",
-        "after creating or changing a workflow declaration",
+        "Preview or synchronize workflow files with a declaration (not map inventories)",
+        "after creating or changing a workflow declaration; for map inventories use inventory",
         "install and workflows",
     ),
 }
