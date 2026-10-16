@@ -115,6 +115,13 @@ class HookEventsTest(unittest.TestCase):
             self.assertIn(prompt.split(":", 1)[1].strip(), text)
             self.assertNotIn("Previous answer", text)
 
+    def test_log_drops_pasted_content_tags(self) -> None:
+        prompt = 'f-: <pasted_content id="ab12">\nFirst line\nSecond line\n</pasted_content id="ab12">'
+        self.invoke("log", {"session_id": "s", "cwd": str(self.root), "prompt": prompt})
+        text = (self.root / "feedback.md").read_text()
+        self.assertIn(": First line\n\n> First line\n> Second line\n", text)
+        self.assertNotIn("pasted_content", text)
+
     def test_f_logs_silently_and_does_not_reach_the_model(self) -> None:
         code, output, _ = self.invoke("log", {"session_id": "s", "cwd": str(self.root), "prompt": "f: Fix the answer"})
         self.assertEqual(code, 0)

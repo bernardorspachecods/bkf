@@ -18,6 +18,7 @@ MAX_BLOCKS = 2
 STATE_MAX_AGE = 14 * 24 * 3600
 REASON_LIMIT = 2500
 LOG_PREFIX = re.compile(r"^\s*([if])(-?)\s*:", re.IGNORECASE)
+PASTE_TAG = re.compile(r"^[ \t]*</?pasted_content\b[^>\n]*>[ \t]*\n?|</?pasted_content\b[^>\n]*>", re.MULTILINE)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
 EVENTS = {"record", "snapshot", "last", "log", "stop", "guard"}
 
@@ -228,7 +229,7 @@ def log(data: dict, state_dir: Path | None = None) -> dict | None:
     if kind is None:
         return None
     match = LOG_PREFIX.match(prompt)
-    text = prompt[match.end():].strip()
+    text = PASTE_TAG.sub("", prompt[match.end():]).strip()
     if not text:
         return None
     from log_entry import display_path, write_entry

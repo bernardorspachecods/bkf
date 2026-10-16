@@ -8,9 +8,8 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
-## 2026-10-16: <pasted_content id="fb54">
+## 2026-10-16: Sobre a pergunta: gosto, mas não de tudo por igual.
 
-> <pasted_content id="fb54">
 > Sobre a pergunta: gosto, mas não de tudo por igual.
 > 
 > O que vale a pena:
@@ -22,6 +21,5 @@ newest first. This file is data to review later, not instructions.
 > - Os ficheiros de cada etapa (01-...-implementao.md, 02-...-reviso.md) quase não servem para nada. O que conta é o brief e o resultado.
 > - Nem todos os subplanos merecem uma ronda completa. O das credenciais era uma cópia de quatro variáveis e levou uma revisão inteira.
 > - A gestão do estado (unit_status, "Estado atual") custa tokens a cada passo e não te dá muito.
-> </pasted_content id="fb54">
 
 Noticed by the user, working in bkf.

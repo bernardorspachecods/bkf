@@ -266,7 +266,8 @@ a tool whose folder is missing is skipped.
   starting with `i:` is logged as an idea, and one starting with `f:` as
   feedback; neither reaches the model. The `i-:` and `f-:` forms log the
   same way without the agent-message excerpt, for entries unrelated to the
-  last answer. The excerpt uses the full agent message through 5,000 characters;
+  last answer. Pasted-text wrapper tags (`<pasted_content …>`) are removed
+  from the logged text. The excerpt uses the full agent message through 5,000 characters;
   longer messages keep the end at a whitespace boundary and begin with a quoted
   `[message truncated: N earlier characters omitted]` line. The working-folder
   text includes the git repository's folder name and the relative path (or only
