@@ -19,8 +19,8 @@ narrow lookup, run the workflow.
 
 The evaluation and audit stages are not known up front: the
 coordinator adds one evaluation stage per source group after discovery, and
-one audit stage per claim after the claim matrix exists. The two groups below
-show the workflow type.
+one audit stage per claim after the claim matrix exists. The evidence check is
+one stage. The groups below show the workflow type.
 
 ```bkf-workflow
 steps:
@@ -43,6 +43,11 @@ steps:
         - parallel:
             - stage: {title: "Evaluate source group 1 and extract evidence"}
             - stage: {title: "Evaluate source group 2 and extract evidence"}
+
+  - work_unit:
+      title: "Evidence check"
+      steps:
+        - stage: {title: "Check the evidence entries against the stored sources"}
 
   - work_unit:
       title: "Synthesis"
@@ -81,6 +86,7 @@ and do not copy the table into their own files.
 | Question framing | One agent | Highest. It fixes what is claimed and sought, so an error contaminates every later stage. |
 | Discovery | One agent, apart from framing | Middle. The work is high-volume and mostly mechanical. |
 | Evaluation | One agent per source group, apart from discovery | Middle. It may not search for new evidence. |
+| Evidence check | One agent, apart from evaluation | Middle. It reads the stored sources in context and does not search. Independence from the evaluator matters more than capability. |
 | Synthesis | One agent, apart from evaluation | High. It must keep the claims coherent. |
 | Audit | One agent per high-importance claim; medium and low claims share one agent | High, and a different model family from synthesis where available. Independence matters more than capability. |
 
@@ -91,6 +97,9 @@ a measurement; the justification column is where a case contradicts them.
 - **Hard rule:** the audit is by an agent other than the synthesizer. If none is
   available, say so (see "Going back and limits" for reopen and caps). The
   coordinator does not accept a table that breaks this.
+- **Hard rule:** the evidence check is by an agent other than the evaluator
+  whose entries it checks. The coordinator does not accept a table that breaks
+  this.
 - **Warned and justified in the table:** one agent doing both discovery and
   evaluation, which anchors evaluation on discovery's notes. Discovery that only registers
   user-supplied sources is a legitimate case.
@@ -113,27 +122,41 @@ a measurement; the justification column is where a case contradicts them.
 | Stage | Receives | Does not receive | Output |
 | --- | --- | --- | --- |
 | Question framing | The request or assignment brief, the approved session table, constraints | | The bounded question and the claim matrix. |
-| Discovery | The claim matrix, the approved session table, a search ceiling per claim, any user-supplied sources | | A source map, collected sources with access mode, search records written to the search log (see below), and a coverage summary with the stop rationale. With user-supplied sources it still runs in a registration-only role: it records them and skips the searches, noting that in the coverage summary. A known relevant document is used as a sentinel to check that collection finds it. |
+| Discovery | The claim matrix, the approved session table, a search ceiling per claim, any user-supplied sources | | A source map, collected sources saved as files in the workflow folder with access mode, search records written to the search log (see below), and a coverage summary with the stop rationale. With user-supplied sources it still runs in a registration-only role: it records them and skips the searches, noting that in the coverage summary. A known relevant document is used as a sentinel to check that collection finds it. |
 | Evaluation (one per source group) | The claim matrix and the source list, each source's collected-for claims as a lead only; its own block of evidence IDs | Discovery's relevance notes, search records, any preliminary answer | The source assessments and evidence entries linked to claims, or a gap record for a claim with none. It may search about a source but not for new evidence on a claim. It writes no support status. |
-| Synthesis (one agent, for coherence) | The claim matrix, the evidence entries, the source assessments, the coverage summary | The working record, discovery notes | Findings per claim with support status and confidence, a conflict log, and the draft answer. |
+| Evidence check | The claim matrix, the evidence entries, the stored sources, the approved session table | The evaluator's reasoning, discovery's relevance notes and search records | A verdict per entry and per claim (see "Evidence check verdicts"). It rewrites no entry and adds no evidence. |
+| Synthesis (one agent, for coherence) | The claim matrix, the evidence entries that passed the check and the gap records, the source assessments, the coverage summary | The working record, discovery notes | Findings per claim with support status and confidence, a conflict log, and the draft answer. |
 | Audit (per the session table) | The claim matrix with status and confidence, the draft, the evidence entries, the ledger, the coverage summary, the conflict log | The synthesizer's reasoning notes, the working record | An audit report with a verdict per claim (pass, weaken, remove, reopen) and any counter-evidence it found. Its own searches do not count against discovery's ceilings. |
 
-The records (claim matrix, source ledger, evidence entries, coverage summary,
-conflict log, reopen log, audit report) form the audit record, kept apart from
-the search log. The search log is a separate document that the discovery
+### Evidence check verdicts
+
+Every fail quotes the source text that justifies it.
+
+- Per entry: `pass`; `fail-quote` (the quote is absent from the cited source or
+  not verbatim); `fail-claim` (the entry belongs to another claim);
+  `fail-context` (read in context, the quote does not support the entry, or its
+  limits are incomplete); `fail-omission` (text in the same source contradicts
+  or weakens the entry and the entry ignores it).
+- Per claim: `covered`, or `fail-coverage` with the source text that answers
+  the claim and no entry cites.
+
+The records (claim matrix, source ledger, evidence entries, evidence check
+report, coverage summary, conflict log, reopen log, audit report) form the
+audit record, kept apart from the search log. The search log is a separate document that the discovery
 stage's body names. Only discovery writes it, and no other stage opens it,
 except discovery again when a reopen sends work back to it. It has no
 lifecycle of its own: it stays with the workflow folder and goes when the
 workflow does. Each field has one stage that writes it: framing
 writes the claim rows, evaluation the evidence links and source assessment,
-synthesis the status and confidence, audit the verdict.
+the evidence check the entry and coverage verdicts, synthesis the status and
+confidence, audit the claim verdict.
 
 ## Going back and limits
 
 - Any stage can send a reopen request through the coordinator: audit may reach
   synthesis, evaluation, or discovery; synthesis may reach evaluation,
-  discovery, or framing; evaluation may reach discovery or framing; discovery
-  may reach framing. A request names the claims affected, the stage it targets,
+  discovery, or framing; the evidence check may reach evaluation; evaluation
+  may reach discovery or framing; discovery may reach framing. A request names the claims affected, the stage it targets,
   what is missing or wrong, and the evidence for that. The coordinator accepts,
   merges, or declines each with a reason and logs it. The coordinator returns the work to the earlier stage, and every later stage runs again. Rework only the parts that
   the claim-to-evidence links show as affected, then re-audit them with a
@@ -144,6 +167,13 @@ synthesis the status and confidence, audit the verdict.
 - A source found by audit goes to discovery, then evaluation; it is not added
   to the evidence by the auditor. A source already in the ledger goes straight
   to evaluation.
+- A fail verdict from the evidence check goes to evaluation as a reopen
+  request. The coordinator accepts, merges, or declines it like any other, and
+  declines one it judges a false positive. Evaluation reworks only the named
+  entries and claims, and the check rechecks them. An entry that fails the
+  recheck is discarded and replaced by a gap record on its claim, and a
+  coverage gap that remains goes in the coverage summary. The work goes on, and
+  audit, which receives both, may reopen from them.
 - A weaken or remove verdict sends the claims to synthesis, which revises, then
   audit rechecks. A reopen verdict goes to the stage that owns the missing
   work, then every downstream stage runs again in order.
@@ -153,6 +183,8 @@ synthesis the status and confidence, audit the verdict.
     lower them, and discovery's stop rationale is still recorded. At the ceiling discovery stops that claim and may request an
     extension; a declined request leaves the claim reported as
     budget-constrained, not covered.
+  - One evaluation rework per source group after the evidence check. It counts
+    against neither cap below, because it comes before the first audit.
   - At most 2 accepted reopen cycles per claim and 3 rework rounds overall
     after the first audit; an accepted extension counts as one. At a cap, apply
     any required audit correction and deliver a bounded conclusion that states
