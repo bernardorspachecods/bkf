@@ -66,8 +66,15 @@ The stages are fixed. Who does them is chosen per session. Before spending
 anything, the coordinator proposes a table with one row per stage and the user
 approves it. Each row gives the agent grouping, the capability tier, and a
 justification. A row that departs from the reference below needs a stronger
-justification that names the risk taken or the cost saved. Every departure is
-recorded in the evidence record.
+justification that names the risk taken or the cost saved. The table is the
+only record of these choices, departures included.
+
+The table lives in the body of the workflow's parent file, which the
+coordinator reads and writes, under a heading naming the research unit (a plan
+with several research units has one table per unit). The coordinator adds the
+evaluation and audit rows once those stages exist. It gives each stage agent
+only that agent's row in its brief; stage agents do not open the parent file
+and do not copy the table into their own files.
 
 | Stage | Reference grouping | Reference tier |
 | --- | --- | --- |
@@ -84,14 +91,14 @@ a measurement; the justification column is where a case contradicts them.
 - **Hard rule:** the audit is by an agent other than the synthesizer. If none is
   available, say so (see "Going back and limits" for reopen and caps). The
   coordinator does not accept a table that breaks this.
-- **Warned and recorded:** one agent doing both discovery and evaluation, which
-  anchors evaluation on discovery's notes. Discovery that only registers
+- **Warned and justified in the table:** one agent doing both discovery and
+  evaluation, which anchors evaluation on discovery's notes. Discovery that only registers
   user-supplied sources is a legitimate case.
 - **Merging stages** to save cost is allowed when justified. A short claim
   matrix of one or two rows, or evaluation as one stage for few sources or one
   claim, are ordinary cases.
 - **Grouping audit claims:** the session may give claims that share sources one
-  auditor, and the grouping is recorded. If most claims in the matrix are high
+  auditor, and the grouping is justified in the table. If most claims in the matrix are high
   importance, framing did not prioritize: the coordinator returns it to framing
   before hiring auditors, and logs why.
 - **Source requirements follow the claim, not the session.** The rules in
@@ -106,14 +113,18 @@ a measurement; the justification column is where a case contradicts them.
 | Stage | Receives | Does not receive | Output |
 | --- | --- | --- | --- |
 | Question framing | The request or assignment brief, the approved session table, constraints | | The bounded question and the claim matrix. |
-| Discovery | The claim matrix, the approved session table, a search ceiling per claim, any user-supplied sources | | A source map, collected sources with access mode, search records (disposable), and a coverage summary with the stop rationale. With user-supplied sources it still runs in a registration-only role: it records them and skips the searches, noting that in the coverage summary. A known relevant document is used as a sentinel to check that collection finds it. |
+| Discovery | The claim matrix, the approved session table, a search ceiling per claim, any user-supplied sources | | A source map, collected sources with access mode, search records written to the search log (see below), and a coverage summary with the stop rationale. With user-supplied sources it still runs in a registration-only role: it records them and skips the searches, noting that in the coverage summary. A known relevant document is used as a sentinel to check that collection finds it. |
 | Evaluation (one per source group) | The claim matrix and the source list, each source's collected-for claims as a lead only; its own block of evidence IDs | Discovery's relevance notes, search records, any preliminary answer | The source assessments and evidence entries linked to claims, or a gap record for a claim with none. It may search about a source but not for new evidence on a claim. It writes no support status. |
 | Synthesis (one agent, for coherence) | The claim matrix, the evidence entries, the source assessments, the coverage summary | The working record, discovery notes | Findings per claim with support status and confidence, a conflict log, and the draft answer. |
 | Audit (per the session table) | The claim matrix with status and confidence, the draft, the evidence entries, the ledger, the coverage summary, the conflict log | The synthesizer's reasoning notes, the working record | An audit report with a verdict per claim (pass, weaken, remove, reopen) and any counter-evidence it found. Its own searches do not count against discovery's ceilings. |
 
 The records (claim matrix, source ledger, evidence entries, coverage summary,
 conflict log, reopen log, audit report) form the audit record, kept apart from
-the disposable search records. Each field has one stage that writes it: framing
+the search log. The search log is a separate document that the discovery
+stage's body names. Only discovery writes it, and no other stage opens it,
+except discovery again when a reopen sends work back to it. It has no
+lifecycle of its own: it stays with the workflow folder and goes when the
+workflow does. Each field has one stage that writes it: framing
 writes the claim rows, evaluation the evidence links and source assessment,
 synthesis the status and confidence, audit the verdict.
 
