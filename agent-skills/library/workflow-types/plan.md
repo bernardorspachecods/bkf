@@ -83,7 +83,7 @@ The declaration records the settings by what it contains.
 | Setting | In the declaration |
 | --- | --- |
 | Number of subplans | The number of subplan work units |
-| Subplan research, off or at a rigor level | Research stages present or absent; the level is passed to the research workflow |
+| Subplan research, on or off | Research stages present or absent; the research workflow proposes its own session table for the user to approve |
 | Root-level research | Off unless requested; if on, a research unit in the first work unit |
 | Retaining discovery logs of the research | A property of the research workflow's records |
 | Checkpoint cadence | `human_checkpoint` on: every agent stage (`each_handoff`), the last stage of each subplan (`each_subplan`), or the last stage of the plan (`plan_completion`) |

@@ -183,7 +183,7 @@ the parent. Parallel steps follow their declared order when numbered.
   those units and stages to the enclosing workflow's declaration; a workflow
   ID always means one distinct piece of work, so a workflow type's part is
   never a separate workflow. BKF defines no reusable-fragment mechanism. Stage-level
-  settings, such as a research rigor level, go in the stage body.
+  settings, such as who does a research stage, go in the stage body.
 - Titles become generated Markdown headings. BKF does not define other body
   sections; the workflow type owns the remaining document content.
 - The workflow's title is the parent file's top-level heading; no title field
