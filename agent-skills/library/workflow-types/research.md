@@ -12,7 +12,8 @@ research unit. There are no fixed levels. A narrow lookup is **Quick**: the
 orchestrator does it alone, with no stages and no audit record (see "Match
 rigor to stakes" in frame-and-collect-evidence.md), and this workflow type does
 not apply. Anything else runs the stages below, with a session table that says
-who does each stage (see "Session table"). When unsure whether a request is a
+who does each stage (see [Session table](#session-table), and its
+[default table](#default-table)). When unsure whether a request is a
 narrow lookup, run the workflow.
 
 ## Declaration
@@ -93,6 +94,30 @@ and do not copy the table into their own files.
 Tiers are capability levels, not model names, so this document does not age
 with model releases. The tiers are a judgment from each stage's function, not
 a measurement; the justification column is where a case contradicts them.
+
+### Default table
+
+The user's default, which the coordinator proposes unless the user names
+another. It is the one place this document names models, so it changes when the
+user's models change, and the user still approves the table per session. It
+keeps the reference grouping and fits a limited Codex budget: Claude holds the
+two judgment stages, and every Codex stage uses `gpt-6-luna` except the audit.
+
+| Stage | Agent | Why |
+| --- | --- | --- |
+| Question framing | Claude Sonnet 5.5, `medium` | An error here contaminates every later stage. |
+| Discovery | Codex `gpt-6-luna`, `high` | High-volume, mostly mechanical; the sentinel catches a weak collection. |
+| Evaluation | Codex `gpt-6-luna`, `xhigh` | Judging sources takes more reasoning than collecting them. |
+| Evidence check | Codex `gpt-6-luna`, `xhigh`, an agent apart from the evaluator | Independence from the evaluator is the hard rule below. |
+| Synthesis | Claude Sonnet 5.5, `medium` | Keeps the claims coherent. |
+| Audit | Codex `gpt-6.1-sol`, `medium`, one agent per high-importance claim | The last check and part of the required core; a different family from the synthesis. The only `gpt-6.1-sol` use. |
+
+Departures from the reference, for the justification the table needs: `luna` is
+described by Codex as a model for easier tasks, so the evidence check's
+`fail-context` and `fail-omission` verdicts are the weakest control, backed
+only by the discovery sentinel and the audit; and framing and synthesis use
+`medium` effort to save budget. If a session shows either is too weak, raise
+the effort of that stage and lower another before dropping a stage.
 
 - **Hard rule:** the audit is by an agent other than the synthesizer. If none is
   available, say so (see "Going back and limits" for reopen and caps). The
