@@ -17,6 +17,7 @@ Run [scripts/run-codex.sh](scripts/run-codex.sh) once per brief: `[CODEX_IN_PLAC
 - In place, the script snapshots tracked files in `base`; review with `git diff $(cat <run-folder>/base)` and compare `status-before.txt` with `status-after.txt` for new files. The brief must forbid git commands that change state.
 - Worktree mode uses a sibling folder `<repo>-codex/<name>`.
 - Defaults: model `gpt-6-luna`, effort `high`; override only when the plan names another setting.
+- `gpt-6-luna` is weak on long work, and research across many sources tends to come back shallow. When it runs a brief, split the work into more and smaller briefs than you would for a stronger model; judge how far to split from the task.
 - If the run folder already has a `status` file, the script stops. Set `CODEX_RERUN=1` to deliberately rerun it with the existing behavior.
 - Start each run with Bash `run_in_background: true`. The script prints the run folder when done.
 
