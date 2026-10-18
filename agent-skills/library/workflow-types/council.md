@@ -52,6 +52,8 @@ steps:
             reviews: [report]
 ```
 
+Every `parallel` group in this workflow type follows run-parallel-work.md: each branch brief declares its gate, and a branch is checked with `bkf gate` before the next step uses it.
+
 ## Required core and optional stages
 
 Every stage is required: the council is run only when the user explicitly asks, and "Use when" already says every session runs the full workflow.
@@ -67,6 +69,8 @@ There are no optional stages and no light run; a smaller question is not a counc
 | Reviewers | The anonymized packet | Other reviewers' work, the key, any persona |
 | Chairman | The brief, the identified responses, the five reviews, and the key | |
 | Completeness check | The report and its sources | |
+
+The coordinator prepares the packet: it strips identity and perspective text from the five responses, assigns randomized labels, and keeps the key from the reviewers. Anonymization is imperfect, since distinctive arguments can still reveal an author.
 
 Each advisor writes its response in its own file: position and confidence, analysis of alternatives and tradeoffs, the strongest counterargument, the key risk or opportunity, and evidence and assumptions. It may research only material factual gaps and cites what it uses. It does not name its own role.
 

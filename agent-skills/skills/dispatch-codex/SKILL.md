@@ -13,7 +13,7 @@ description: Run work as Codex CLI tasks in the current checkout or separate git
 Run [scripts/run-codex.sh](scripts/run-codex.sh) once per brief: `[CODEX_IN_PLACE=1] scripts/run-codex.sh <name> <brief-file> [base-ref] [model] [effort]`.
 
 - Write the brief to the scratchpad. `base-ref` applies in worktree mode and defaults to `HEAD`; for a sequential step, use the prior task's branch.
-- Default to the user's checkout with `CODEX_IN_PLACE=1`, one task at a time. Use worktree mode only for parallel tasks; each gets branch `codex/<name>`. Never run two tasks in one checkout.
+- Default to the user's checkout with `CODEX_IN_PLACE=1`, one task at a time. Use worktree mode only for parallel tasks, which follow [run-parallel-work](../../library/modules/run-parallel-work.md); each gets branch `codex/<name>`. Never run two tasks in one checkout.
 - In place, the script snapshots tracked files in `base`; review with `git diff $(cat <run-folder>/base)` and compare `status-before.txt` with `status-after.txt` for new files. The brief must forbid git commands that change state.
 - Worktree mode uses a sibling folder `<repo>-codex/<name>`.
 - Defaults: model `gpt-6-luna`, effort `high`; override only when the plan names another setting.

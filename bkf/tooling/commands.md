@@ -11,7 +11,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 - [Install](#install) and [bkf help](#bkf-help)
 - Editing documents: [bkf validate](#bkf-validate), [bkf inventory](#bkf-inventory), [bkf skills](#bkf-skills)
 - Session start and lookup: [bkf orient](#bkf-orient), [bkf search](#bkf-search), [bkf log](#bkf-log), [bkf updates](#bkf-updates)
-- Install and workflows: [bkf hooks](#bkf-hooks), [bkf sync](#bkf-sync)
+- Install and workflows: [bkf hooks](#bkf-hooks), [bkf sync](#bkf-sync), [bkf gate](#bkf-gate)
 
 ## Install
 
@@ -143,6 +143,25 @@ listed by a skill.
 ## bkf sync
 
 See the [synchronizer brief](/tooling/workflow-synchronizer.md).
+
+## bkf gate
+
+`bkf gate --base REF --allow PATTERN [--allow PATTERN ...] [--check COMMAND ...] [--allow-empty] [--timeout SECONDS] [CHECKOUT]`
+checks one branch of a parallel group before it is merged. `CHECKOUT` is the
+branch's checkout and defaults to the current directory; `--base` is the git ref
+the branch started from. The gate reads no file content. It runs three checks:
+
+- **scope:** every file that differs from `--base`, committed, uncommitted or
+  untracked, must match an `--allow` pattern. `*` also matches `/`, so
+  `out/*` allows everything under `out/`.
+- **nonempty:** the branch must have changed something, so a run that wrote
+  nothing fails. `--allow-empty` turns this off.
+- **check:** each `--check` command runs in the checkout through the shell and
+  must exit 0. `--timeout` bounds each one (default 300 seconds).
+
+It prints one line per check and a final `gate: pass` or `gate: fail`. It exits
+0 on pass, 1 on fail, and 2 on a usage error such as an unknown base. The `run-parallel-work` module in the agent-skills library says how a brief
+declares the gate.
 
 ## bkf log
 

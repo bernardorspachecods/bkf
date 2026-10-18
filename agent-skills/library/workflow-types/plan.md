@@ -63,7 +63,7 @@ rules:
 | Implement | The subplan brief | Other subplans' work, except declared inputs | The output, and an outcome in the implement stage's own file: the verification it ran and the differences from the brief. What it did is the diff itself, so the outcome does not restate it. A stage file with only its title means there is nothing to record beyond the diff. The coordinator reads the outcome to check the handoff, the user reads it at checkpoints, and a resumed or returned run starts from it; the reviewer does not receive it. |
 | Review (per subplan) | The implemented output, the criteria from the brief | The implementer's account of the work | An assessment against the criteria. |
 | Claude review | The implemented output and criteria. For a phase, the output is the cumulative diff from the first run's base of that phase to the final state; the criteria are the completion conditions of its subplans plus the phase's line in the plan map. | The normal review's findings; the implementer's account | An assessment against the criteria. Findings go to the coordinator, who returns them to the Codex implementer; the coordinator does not fix them. Runs as a Claude agent distinct from the coordinator. |
-| Integration (only with `real` parallelism) | The parallel branches and the verification to run | | Merged branches on the plan branch, conflicts resolved, and the named verification run after merging. Its stage file may hold only its title: the result is the git state. |
+| Integration (only with `real` parallelism) | The parallel branches, their gates, and the verification to run | | Branches that passed their gate, merged on the plan branch as run-parallel-work.md describes, and the named verification run after merging. Its stage file may hold only its title: the result is the git state. |
 
 The overall objective, approach, boundaries, and completion gate live in the workflow document. Each subplan's brief lives in its work unit file.
 
@@ -112,7 +112,7 @@ The user then chooses to delete the plan or keep it for its history; until
 they choose, it stays in place, is not continued, and no replacement plan is
 created. With `real` parallelism, closing includes merging the plan branch
 into `main` with the user's approval. When the user chooses to delete the plan,
-the coordinator lists its Codex runs, worktrees, and `codex/w-NN*` branches and
-asks for confirmation before deleting them. A branch with commits not integrated
+the coordinator lists its Codex runs and any worktrees and `codex/w-NN*` branches
+still present, and asks for confirmation before deleting them. A branch with commits not integrated
 into `main` is not deleted without an explicit warning. Closing deletes or
 untracks the parent work unit.

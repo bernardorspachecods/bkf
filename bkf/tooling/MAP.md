@@ -37,6 +37,7 @@ the installed tool's environment, so plain `python3` does not run them.
 - [updates.py](/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.
 - [workflow_ids.py](/tooling/workflow_ids.py) — Allocates workflow, work-unit, and stage IDs by scanning bundle Markdown mentions.
 - [workflow_declaration_checks.py](/tooling/workflow_declaration_checks.py) — Applies the declaration-only checks shared by the validator and sync.
+- [workflow_gate.py](/tooling/workflow_gate.py) — Checks one parallel branch against its allowed files and completeness commands for `bkf gate`.
 - [workflow_declaration.py](/tooling/workflow_declaration.py) — Parses workflow declarations, assigns IDs, and resolves keyed references.
 - [workflow_files.py](/tooling/workflow_files.py) — Builds generated workflow paths and frontmatter for scaffold and sync.
 - [workflow_scaffold.py](/tooling/workflow_scaffold.py) — Creates workflow folders and files from a parent declaration.

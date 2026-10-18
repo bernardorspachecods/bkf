@@ -39,6 +39,8 @@ steps:
         - stage: {title: "Capture decision — fold the validated decision into the real code and discard the prototype"}
 ```
 
+Every `parallel` group in this workflow type follows run-parallel-work.md: each branch brief declares its gate, and a branch is checked with `bkf gate` before the next step uses it.
+
 UI branch: several radically different variants of one page, switchable with a
 URL parameter and a floating bar. The number of variants defaults to 3 and is
 capped at 5.

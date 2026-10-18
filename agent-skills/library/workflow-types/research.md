@@ -66,6 +66,8 @@ steps:
             - stage: {title: "Audit claim 2", reviews: [draft]}
 ```
 
+Every `parallel` group in this workflow type follows run-parallel-work.md: each branch brief declares its gate, and a branch is checked with `bkf gate` before the next step uses it.
+
 ## Session table
 
 The stages are fixed. Who does them is chosen per session. Before spending

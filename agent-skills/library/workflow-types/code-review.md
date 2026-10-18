@@ -33,6 +33,8 @@ steps:
             title: "Final report — both axes side by side"
 ```
 
+Every `parallel` group in this workflow type follows run-parallel-work.md: each branch brief declares its gate, and a branch is checked with `bkf gate` before the next step uses it.
+
 ## Required core and optional stages
 
 - **Required core:** each axis that has criteria is checked by its own agent, which is not the author of the change, against its own criteria, and the axes are reported separately. The spec axis is skipped when there is no spec (see "Going back and limits"), and the report says so.

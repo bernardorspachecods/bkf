@@ -62,6 +62,12 @@ COMMANDS = {
         "on a new machine, or when a hook seems missing or stale",
         "install and workflows",
     ),
+    "gate": (
+        "workflow_gate",
+        "Check a parallel branch against its allowed files and completeness commands",
+        "before merging a branch of a parallel group, to see whether it passes its gate",
+        "install and workflows",
+    ),
     "sync": (
         "workflow_sync",
         "Preview or synchronize workflow files with a declaration (not map inventories)",

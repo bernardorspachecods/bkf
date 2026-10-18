@@ -37,6 +37,7 @@ py-modules = [
     "workflow_declaration",
     "workflow_declaration_checks",
     "workflow_files",
+    "workflow_gate",
     "workflow_ids",
     "workflow_scaffold",
     "workflow_sync",
