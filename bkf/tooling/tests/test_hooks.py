@@ -131,8 +131,22 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(set(hooks), {"SessionStart"})
             self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} hooks run rules")
             self.assertNotIn("matcher", hooks["SessionStart"][0])
-        self.assertFalse((self.home / ".agent-hooks" / "rules.md").exists())
+        self.assertEqual(
+            (self.home / ".agent-hooks" / "rules.md").read_bytes(),
+            (TOOLING / "default_rules.txt").read_bytes(),
+        )
         self.assertEqual(run("status", "--only", "rules", "--home", self.home)[0], 0)
+
+    def test_install_never_overwrites_existing_rules(self) -> None:
+        path = self.home / ".agent-hooks" / "rules.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("mine\n", encoding="utf-8")
+        run("install", "--write", "--only", "rules", "--home", self.home)
+        self.assertEqual(path.read_text(encoding="utf-8"), "mine\n")
+
+    def test_install_preview_does_not_create_rules(self) -> None:
+        run("install", "--only", "rules", "--home", self.home)
+        self.assertFalse((self.home / ".agent-hooks" / "rules.md").exists())
 
     def test_status_reports_rules_registration_and_file_size(self) -> None:
         run("install", "--write", "--only", "rules", "--home", self.home)

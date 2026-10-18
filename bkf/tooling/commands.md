@@ -257,8 +257,9 @@ a tool whose folder is missing is skipped.
 - **rules** registers a `SessionStart` hook that prints
   `~/.agent-hooks/rules.md` at every session start. Output is capped at 4,000
   characters and cut at a line boundary; a longer file ends with
-  `... rules.md truncated`. The hook never fails a session and installation
-  never creates or overwrites the user's file.
+  `... rules.md truncated`. The hook never fails a session and `bkf hooks install --write`
+  copies `default_rules.txt` to that path only when it does not exist, and never
+  overwrites or edits an existing file.
 - **check** registers a `SessionStart` hook that records a git snapshot,
   a `PostToolUse` hook that records files written by editing tool calls
   (`Edit`, `Write`, `NotebookEdit`, `MultiEdit`, `apply_patch`), and a `Stop`

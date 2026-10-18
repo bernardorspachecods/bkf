@@ -138,6 +138,10 @@ def rules_file(home: Path) -> Path:
     return home / ".agent-hooks" / "rules.md"
 
 
+def default_rules() -> Path:
+    return Path(__file__).with_name("default_rules.txt")
+
+
 def run_rules(home: Path) -> int:
     try:
         content = rules_file(home).read_text(encoding="utf-8")
@@ -298,7 +302,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if current else 1
 
     copy_script = args.only in (None, "modes") and script_state(home) != "ok"
-    changes = bool(pending) or copy_script
+    copy_rules = args.only in (None, "rules") and not rules_file(home).exists()
+    changes = bool(pending) or copy_script or copy_rules
     print("\n".join(lines))
     if not changes:
         print("\nnothing to do")
@@ -320,6 +325,9 @@ def main(argv: list[str] | None = None) -> int:
     if copy_script:
         installed_script(home).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(agent_modes.__file__, installed_script(home))
+    if copy_rules:
+        rules_file(home).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(default_rules(), rules_file(home))
     for _, path, config in pending:
         write_json(path, config)
     print("\napplied")

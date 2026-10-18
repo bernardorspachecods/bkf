@@ -55,7 +55,7 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
    bkf hooks install --write
    ```
 
-   Expected result: hooks are registered in `~/.claude/settings.json` and `~/.codex/hooks.json` where those tools are present, and hook files are placed under `~/.agent-hooks/`. Installation never creates or overwrites your `~/.agent-hooks/rules.md`; that file is yours. The `--only modes|orient|check|log|rules` option limits installation to selected groups, and `--home PATH` targets another home directory.
+   Expected result: hooks are registered in `~/.claude/settings.json` and `~/.codex/hooks.json` where those tools are present, and hook files are placed under `~/.agent-hooks/`. Installation creates `~/.agent-hooks/rules.md` from BKF's default rules only when the file is missing, and never overwrites it; after that the file is yours to edit. The `--only modes|orient|check|log|rules` option limits installation to selected groups, and `--home PATH` targets another home directory.
 
    The five groups are:
 
@@ -63,7 +63,7 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
    - `orient` adds bundle orientation at session start.
    - `check` validates changed bundles and checks their inventories when a session stops. A failing check blocks the stop and gives the agent the output; it blocks at most twice per session.
    - `log` records idea and feedback entries from prompt prefixes, and saves the agent's last message so an entry can quote it.
-   - `rules` prints your `~/.agent-hooks/rules.md` at every session start, so the agent sees your standing instructions before the first prompt. Write the file yourself as plain text; it is optional and BKF does not ship one. Long files are cut at a line boundary, so keep it short; the [limit](bkf/tooling/commands.md#bkf-hooks) is set by the hook.
+   - `rules` prints your `~/.agent-hooks/rules.md` at every session start, so the agent sees your standing instructions before the first prompt. BKF ships default rules (`bkf/tooling/default_rules.txt`) that installation copies the first time; replace or trim them as you like. Long files are cut at a line boundary, so keep it short; the [limit](bkf/tooling/commands.md#bkf-hooks) is set by the hook.
 
 6. Report hook status:
 
@@ -71,4 +71,4 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
    bkf hooks status
    ```
 
-   Expected result: status and probe results are reported for installed hooks. `status` returns 1 when a hook script or registration is not `ok`. The `rules` entry reports `missing` until you create `~/.agent-hooks/rules.md`; that is expected and does not change the exit status. After the first install, Codex asks for a one-time review; run `/hooks` in Codex.
+   Expected result: status and probe results are reported for installed hooks. `status` returns 1 when a hook script or registration is not `ok`. The `rules` file entry reports `missing` only when you have deleted `~/.agent-hooks/rules.md`; that does not change the exit status. After the first install, Codex asks for a one-time review; run `/hooks` in Codex.
