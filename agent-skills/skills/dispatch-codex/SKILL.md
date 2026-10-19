@@ -6,7 +6,8 @@ description: Run work as Codex CLI tasks in the current checkout or separate git
 ## Use
 
 - Prepare briefs by [brief-another-agent](../../library/modules/brief-another-agent.md) and review runs by [review-work](../../library/modules/review-work.md).
-- For a whole plan, use [Plan runs](#plan-runs). For a single task outside a plan, show the brief to the user before launching.
+- For a whole plan, use [Plan runs](#plan-runs).
+- Show the brief to the user before launching only when they ask to see it or the task was not previously defined. If the task was already defined, launch without showing the brief unless requested.
 
 ## Launch
 
