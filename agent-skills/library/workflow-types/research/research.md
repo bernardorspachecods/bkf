@@ -229,6 +229,13 @@ As soon as you create a run folder, or any file the user will read, run
 `open <path>` yourself and give the full path in the same message, without waiting
 to be asked and without handing the user a command to type.
 
+**While runs go on unattended, stay silent unless you need the user.** The
+folder is already open, so the user can see progress themselves and will ask if
+they want something. Do not send progress notes, status tables or summaries of
+what a run did. Speak only when a run stops and needs a decision, or when
+everything is ready for the next step (such as `finish`). Then say it short:
+the decision, your recommendation, and what it costs.
+
 When the research is done, the whole folder goes into `records/research/` at the root of
 the repository, not only the delivery. It is the record of what was asked, where
 it looked and what each step produced.

@@ -58,6 +58,38 @@ The trigger is objective, not your judgment about what matters:
 This applies where there are several sources. For facts about an artifact (code,
 documentation), read the primary source.
 
+## Fit the digest to the objective
+
+The objective, not the volume of what was collected, decides what goes in front.
+The failures that come back most are about this.
+
+- **Priorities decide depth.** Go through the objective's priorities one by one
+  and make sure each has a view or is named in the weak points as thin. Detail
+  that sits outside the priorities (a vendor's own contract, a framework's
+  directory layout) goes to the annex even when it is well sourced and long.
+  Well sourced is not the same as relevant.
+- **Lead with what the use needs.** If the objective says the result supports
+  decisions, open the digest with the decisions or options the views lead to, in
+  the order that narrows them, and label that ordering as synthesis or
+  inference. Evidence follows. A reader who must decide should not read all the
+  evidence to find the decision.
+- **Do not paste the collection.** State each view's position and what supports
+  it. A view that reproduces the collectors' notes in a new order is an index, not
+  a digest.
+- **Say where counterweight is missing.** The objective's niches may include
+  critics and people who use the thing. If they brought little, or a key source
+  the others point to could not be opened, say so in the weak points and name what
+  is missing. Do not let a one-sided view read as settled.
+- **Locators the reader can check.** "Where in it" must let someone with only the
+  original source find the passage: a section heading, page, timestamp, or
+  numbered item. A line number in the joined file or in a collector's copy is not
+  enough on its own; add the heading.
+- **Other areas get a pointer, not a link you cannot make.** When the objective
+  assigns a topic to another area, name the area that owns it in one sentence.
+  You cannot edit, and so cannot require, anything in another run's digest. A
+  reciprocal link between two runs is made when their deliveries are put
+  together, and is not a defect of your digest.
+
 ## Produce the digest
 
 The digest is structure, not prose. It holds what the coordinator needs to write
