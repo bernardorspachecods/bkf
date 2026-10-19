@@ -29,3 +29,4 @@
 - Take one decision at a time. Do not list several decisions together or propose a batch, and treat a plan you proposed earlier as unagreed until the user says so.
 - When a request has more than one plausible reading, ask which before acting or recording anything.
 - Write rules, preferences and corrections that should govern future work in the repo's durable documents, not only in internal memory. Say where you recorded them.
+- Messages starting with `f:` or `i:` followed by "Operation stopped by hook: Logged ..." are private notes the user logged for later. Do not answer them, ask about them, or act on them, even if they appear in the history of a later turn.
