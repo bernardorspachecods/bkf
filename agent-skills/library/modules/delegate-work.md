@@ -1,13 +1,13 @@
 ---
 bkf: document
-description: "Defines how to assign work to agents and reconcile handoffs, including independence, write boundaries, and completion reports. Workflow sequencing and user checkpoints are covered by coordinate-a-workflow."
+description: "Defines how to assign work to agents outside a run script and reconcile their handoffs, including independence, write boundaries, and completion reports. Coordination across a run is covered by coordinate-a-run."
 tags: [delegation]
 ---
 
 # Delegate work
 
 - Advice is lightweight: send only the context needed to answer, return the answer with its uncertainty, and create no packet or artifact unless the work itself needs one.
-- Use one agent for cohesive work. Use several only when their outputs and write boundaries are independent and parallel work materially helps; ask the user about agent count only when it would materially change the assignment. Give each agent non-overlapping files, keep shared files under one writer or have agents return proposed changes, use the smallest isolation that prevents conflicting edits, and do not let implementation and review change the same target at once. Parallel branches follow run-parallel-work.md.
+- Use one agent for cohesive work. Use several only when their outputs and write boundaries are independent and parallel work materially helps; ask the user about agent count only when it would materially change the assignment. Give each agent non-overlapping files, keep shared files under one writer or have agents return proposed changes, use the smallest isolation that prevents conflicting edits, and do not let implementation and review change the same target at once.
 - Delegating or handing over work does not create a new identity for it. The incoming agent continues the same task and scope, receiving the current state, unresolved points, next action, and existing IDs; changing the executor does not make provisional work complete.
 - A delegated implementer does only the named work and edits only its assigned files. It does not certify its own work: it reports where and why it deviated from the brief and leaves judging to a review. When revising after feedback it keeps the earlier version retrievable. It may resolve minor issues within scope; on a blocking ambiguity it pauses the affected work, asks the coordinator, and continues independent work that is still in scope.
 - If a stage cannot be done as assigned, for example because delegation or an independent reviewer is unavailable, say so; do not imply it was done.

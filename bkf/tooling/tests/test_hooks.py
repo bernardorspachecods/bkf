@@ -106,9 +106,10 @@ class HooksTest(unittest.TestCase):
         for directory, name in ((".claude", "settings.json"), (".codex", "hooks.json")):
             hooks = self.config(directory, name)["hooks"]
             self.assertEqual(set(hooks), {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"})
-            self.assertEqual(len(hooks["UserPromptSubmit"]), 2)
+            self.assertEqual(len(hooks["UserPromptSubmit"]), 3)
             self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], "python3 " + str((self.home / ".agent-hooks" / "mode.py").resolve()))
             self.assertEqual(hooks["UserPromptSubmit"][1]["hooks"][0]["command"], f"{self.command} hooks run log")
+            self.assertEqual(hooks["UserPromptSubmit"][2]["hooks"][0]["command"], f"{self.command} hooks run audit")
             self.assertEqual(hooks["PreToolUse"][0]["matcher"], "*")
             self.assertEqual(hooks["PreToolUse"][1]["matcher"], "Read|Bash")
             self.assertEqual(hooks["PreToolUse"][1]["hooks"][0]["command"], f"{self.command} hooks run guard")
@@ -185,6 +186,14 @@ class HooksTest(unittest.TestCase):
         self.assertEqual(hooks["PreToolUse"][0]["matcher"], "Read|Bash")
         self.assertEqual(hooks["PreToolUse"][0]["hooks"][0]["command"], f"{self.command} hooks run guard")
         self.assertEqual(run("status", "--only", "guard", "--home", self.home)[0], 0)
+
+    def test_only_audit_registers_the_prompt_hook(self) -> None:
+        run("install", "--write", "--only", "audit", "--home", self.home)
+        hooks = self.config(".claude", "settings.json")["hooks"]
+        self.assertEqual(set(hooks), {"UserPromptSubmit"})
+        self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], f"{self.command} hooks run audit")
+        self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["timeout"], 60)
+        self.assertEqual(run("status", "--only", "audit", "--home", self.home)[0], 0)
 
     def test_only_check_installs_the_recorder_snapshot_and_stop_check(self) -> None:
         run("install", "--write", "--only", "check", "--home", self.home)

@@ -438,6 +438,57 @@ class HookEventsTest(unittest.TestCase):
         )
         self.assertEqual(self.stop(cwd=outside)["decision"], "block")
 
+    def audit(self, prompt: str) -> dict | None:
+        return hook_events.audit({"prompt": prompt, "cwd": str(self.root)}, self.base / "reports")
+
+    def test_prompt_without_the_prefix_is_ignored(self) -> None:
+        self.init_git()
+        self.assertIsNone(self.audit("what is bkf: a format"))
+        self.assertFalse((self.base / "reports").exists())
+
+    def test_prefix_adds_a_summary_and_writes_the_full_report(self) -> None:
+        self.init_git()
+        (self.root / "stray.md").write_text("loose\n")
+        output = self.audit("BKF: check the structure")["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "UserPromptSubmit")
+        context = output["additionalContext"]
+        self.assertIn("1 untracked", context)
+        self.assertIn("bundle/stray.md", context)
+        report = next((self.base / "reports").glob("bkf-audit-*.md"))
+        self.assertIn(str(report), context)
+        self.assertIn("`bundle/stray.md`", report.read_text())
+
+    def test_bundle_errors_and_stale_inventory_are_reported(self) -> None:
+        self.init_git()
+        (self.root / "guide.md").write_text("---\nbkf: document\ntags: [test]\n---\n\n# Guide\n")
+        context = self.audit("bkf:")["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("errors", context)
+        self.assertIn("modified", context)
+
+    def test_outside_git_the_audit_is_skipped(self) -> None:
+        context = self.audit("bkf:")["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("not inside a git repository", context)
+
+    def test_only_the_latest_reports_are_kept(self) -> None:
+        import audit as audit_report
+
+        reports = self.base / "reports"
+        reports.mkdir()
+        for index in range(audit_report.REPORT_KEEP + 3):
+            (reports / f"bkf-audit-2000{index:04d}-000000.md").write_text("old")
+        self.init_git()
+        self.audit("bkf:")
+        self.assertEqual(len(list(reports.glob("bkf-audit-*.md"))), audit_report.REPORT_KEEP)
+
+    def test_classify_maps_porcelain_codes_to_states(self) -> None:
+        import audit as audit_report
+
+        self.assertEqual(audit_report.classify("??"), ["untracked"])
+        self.assertEqual(audit_report.classify("A "), ["staged"])
+        self.assertEqual(audit_report.classify("MM"), ["staged", "modified"])
+        self.assertEqual(audit_report.classify(" D"), ["deleted"])
+        self.assertEqual(audit_report.classify("D "), ["deleted"])
+
 
 if __name__ == "__main__":
     unittest.main()

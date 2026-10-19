@@ -75,13 +75,6 @@ def parse_markdown(path: Path) -> ParsedMarkdown:
     )
 
 
-WORKFLOW_OPTIONAL_DESCRIPTION_PROFILES = {
-    "workflow.work_unit",
-    "workflow.stage",
-    "workflow.file",
-}
-
-
 def tracking_state(frontmatter: dict[str, object], *, path: str) -> bool:
     """Return whether a member is tracked, enforcing description presence by profile."""
     if "bkf" not in frontmatter:
@@ -96,8 +89,6 @@ def tracking_state(frontmatter: dict[str, object], *, path: str) -> bool:
         return True
     if "description" in frontmatter:
         raise BKFInputError(f"{path}: `description` must be a non-empty string")
-    if profile in WORKFLOW_OPTIONAL_DESCRIPTION_PROFILES:
-        return False
     raise BKFInputError(f"{path}: tracked BKF document needs a non-empty string `description`")
 
 

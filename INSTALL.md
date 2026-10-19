@@ -55,14 +55,16 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
    bkf hooks install --write
    ```
 
-   Expected result: hooks are registered in `~/.claude/settings.json` and `~/.codex/hooks.json` where those tools are present, and hook files are placed under `~/.agent-hooks/`. Installation creates `~/.agent-hooks/rules.md` from BKF's default rules only when the file is missing, and never overwrites it; after that the file is yours to edit. The `--only modes|orient|check|log|rules` option limits installation to selected groups, and `--home PATH` targets another home directory.
+   Expected result: hooks are registered in `~/.claude/settings.json` and `~/.codex/hooks.json` where those tools are present, and hook files are placed under `~/.agent-hooks/`. Installation creates `~/.agent-hooks/rules.md` from BKF's default rules only when the file is missing, and never overwrites it; after that the file is yours to edit. The `--only modes|orient|check|log|rules|guard|audit` option limits installation to selected groups, and `--home PATH` targets another home directory.
 
-   The five groups are:
+   The seven groups are:
 
    - `modes` sets per-session talk or work mode from prompt prefixes. In talk mode (`t:`), the hook denies file edits and any shell command it cannot show to be read-only.
    - `orient` adds bundle orientation at session start.
    - `check` validates changed bundles and checks their inventories when a session stops. A failing check blocks the stop and gives the agent the output; it blocks at most twice per session.
    - `log` records idea and feedback entries from prompt prefixes, and saves the agent's last message so an entry can quote it.
+   - `guard` denies the first whole-file read of a large Markdown document that has a `## Navigation map`, and returns the map's section links instead. A second whole-file read in the same session is allowed.
+   - `audit` answers a prompt that starts with `bkf:` with a structure audit of the whole repository: git changes (staged, modified, deleted, untracked) grouped by bundle, plus validation and inventory status for every bundle. The agent sees a short summary and the path of the full report in `~/.agent-hooks/reports/`; the prompt itself still reaches the agent.
    - `rules` prints your `~/.agent-hooks/rules.md` at every session start, so the agent sees your standing instructions before the first prompt. BKF ships default rules (`bkf/tooling/default_rules.txt`) that installation copies the first time; replace or trim them as you like. Long files are cut at a line boundary, so keep it short; the [limit](bkf/tooling/commands.md#bkf-hooks) is set by the hook.
 
 6. Report hook status:

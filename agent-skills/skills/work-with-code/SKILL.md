@@ -1,6 +1,6 @@
 ---
 name: work-with-code
-description: Use when building a feature, fixing a bug, prototyping, or reviewing code changes (source code and tests).
+description: Use when building a feature, fixing a bug, or reviewing code changes (source code and tests).
 ---
 
 # Work with code
@@ -15,8 +15,7 @@ Open the files below before starting; they hold the rules for this kind of work.
 | Sets implementation practices for building features and fixing bugs, including test-first slices and dependency choices. Module interface design and boundaries are covered by design-modules. | [build-software.md](../../library/modules/build-software.md) |
 | Provides vocabulary and decision rules for module depth, interface seams, dependencies, and tests across interfaces. Implementation sequencing and test-first practices are covered by build-software. | [design-modules.md](../../library/modules/design-modules.md) |
 | Gives the rules for looking after a repository's documents under BKF: keep them consistent with the code and each other as part of every change, write each fact in one place, decide where information lives and how it ages, state a document's scope in its description, log only the files the map cannot list, and stop and ask the user when the organization has drifted. Covers placing, splitting, merging, and restructuring documents; does not cover writing the text itself, glossaries and decision records, or organizing a repo for the first time, which belongs to the BKF manual. | [organize-documents.md](../../library/modules/organize-documents.md) |
-| Defines a two-axis review workflow that checks a pinned change against repository standards and its originating specification, then reports each axis separately. Correcting review findings is a separate task. | [code-review.md](../../library/workflow-types/code-review.md) |
-| Defines a throwaway prototype workflow for answering a logic or UI design question, then carrying the decision into real code or discarding it. The prototype itself is not a production deliverable. | [prototype.md](../../library/workflow-types/prototype.md) |
+| Guides a code review of a branch, pull request, range or working tree, for the coordinator who works with the user. Covers when to review, how to set up the target, how the two axes and their checkers run apart, and what the user receives. | [code-review.md](../../library/workflow-types/code-review/code-review.md) |
 <!-- BKF:GENERATED-TAGGED-LIST-END -->
 
 The library is for substantial work. For a small change, apply the rules above with your own judgment and review it directly; the `code-review` shape is for large or high-stakes reviews.

@@ -69,6 +69,15 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Maintain knowledge
   - `short_description`: Rules for documentation, repo organization, glossaries, decisions
 
+## prototype
+
+- Description: Build throwaway code that answers a design question - does a logic or state model feel right, or what should a page look like - then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship.
+- Package: [`agent-skills/skills/prototype`](skills/prototype/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Prototype
+  - `short_description`: Throwaway prototype to answer a logic or UI design question
+
 ## repo-library
 
 - Description: Use at the start of any task in a repository, and whenever a repo-specific procedure or rule may apply, to find the repository's own procedures and modules in its repo-library.
@@ -105,7 +114,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## work-in-stages
 
-- Description: Use when work has several stages, hands work to other agents, needs a plan or a review stage, or resumes from a plan.
+- Description: Use when work has several stages or roles, hands work to other agents, needs a plan, a council or a code review, or resumes a stopped run.
 - Package: [`agent-skills/skills/work-in-stages`](skills/work-in-stages/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
@@ -114,12 +123,12 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## work-with-code
 
-- Description: Use when building a feature, fixing a bug, prototyping, or reviewing code changes (source code and tests).
+- Description: Use when building a feature, fixing a bug, or reviewing code changes (source code and tests).
 - Package: [`agent-skills/skills/work-with-code`](skills/work-with-code/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Work with code
-  - `short_description`: Rules for building, fixing, prototyping, and reviewing code
+  - `short_description`: Rules for building, fixing, and reviewing code
 
 ## write-text
 

@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Owns one definition for every BKF term; the rules that use those terms belong to their specification, profile, and workflow documents."
+description: "Owns one definition for every BKF term; the rules that use those terms belong to their specification and profile documents."
 tags: [bkf, glossary]
 ---
 
@@ -149,18 +149,17 @@ See the [frontmatter profiles](/format/frontmatter-profiles.md#shared-fields).
 
 ## Untracked
 
-A member without frontmatter or a `bkf` field, or a workflow internal that omits its optional description.
+A member without frontmatter or a `bkf` field.
 
 See the [frontmatter profiles](/format/frontmatter-profiles.md#shared-fields).
 
 ## Workflow
 
-A composed piece of work whose parent file declares ordered steps. A **work unit** is a named, possibly nested part of a workflow; a **stage** is one workflow step assigned to one agent. The
-[workflow foundation](/format/agent-workflow-foundation.md) defines them.
+A multi-stage piece of work in which a coordinator works with the user at the start and the end, and agents in separate roles do the middle, each reviewed by another. A script may run the agents between the user's checkpoints. A workflow type defines it.
 
 ## Workflow type
 
-A definition of a multi-stage process, kept in `agent-skills/library/workflow-types/`; a parent file in a bundle is shaped by one.
+A bundle of guides in `agent-skills/library/workflow-types/` that defines a workflow: one guide for the coordinator and one for each role.
 
 Term to avoid: "workflow shape".
 

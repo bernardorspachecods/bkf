@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: Defines YAML frontmatter rules, tracking, and fields for generic documents, feedback and ideas files, and workflow files. Bundle structure and conformance are specified by format-specification.md.
+description: Defines YAML frontmatter rules, tracking, and fields for generic documents, feedback and ideas files. Bundle structure and conformance are specified by format-specification.md.
 tags: [bkf, metadata, frontmatter]
 ---
 
@@ -46,24 +46,21 @@ Every profile uses this prefix, except where a profile below says otherwise:
 bkf: <profile>
 ```
 
-- `bkf` names the profile. `feedback`, `ideas`, `workflow`, `workflow.work_unit`,
-  `workflow.stage`, and `workflow.file` are defined in this file; every other
-  document uses `document` and follows the generic rules below. BKF defines no
+- `bkf` names the profile. `feedback` and `ideas` are defined in this file; every
+  other document uses `document` and follows the generic rules below. BKF defines no
   other values and does not label documents by type: the description, the
   folder, and the tags say what a document is. A dot only groups profile names
   by owner; it does not imply inheritance, and each profile is a complete
   definition.
 - `description` is what the map lists, so it decides tracking. A member with a
   `bkf` field and a `description` is tracked: BKF validates it and lists it in
-  its map. Only the workflow internals (`workflow.work_unit`,
-  `workflow.stage`, and `workflow.file`) may omit the description, and they are
-  then untracked; for every other profile a missing description is a
+  its map. A missing description on a member with a `bkf` field is a
   validation error, so a forgotten description cannot hide a file from the
   map.
 
 A tracked member MUST NOT carry a field its profile does not define; an unknown
 field is a validation error, so a misspelled or retired field cannot linger
-unnoticed. The optional fields are the ones named in the workflow profiles below.
+unnoticed.
 
 Except for structural maps, a member with no frontmatter or no `bkf` field is
 untracked, and BKF ignores it. Maps have no `bkf` field and are not tracked;
@@ -87,9 +84,8 @@ whitespace-only content is empty. Tags are how a document is selected for a
 task, so a document without them cannot be found by tag. A generic document
 MAY also carry the optional [`ext` field](#repo-specific-fields-ext).
 
-The generic filename rule is lowercase kebab-case. It does not apply to files
-using workflow profiles, including names such as `W-01.md` and `WORK-UNIT.md`,
-or to any file named `AGENTS.md`.
+The generic filename rule is lowercase kebab-case. It does not apply to any
+file named `AGENTS.md`.
 
 The description follows the [description rule](#descriptions) and supplies the
 map inventory text. BKF does not define a universal document-level `title`
@@ -181,85 +177,6 @@ description: Collects ideas from the user and agents for later review as future 
 | `bkf` | The string `ideas`. |
 | `description` | A non-empty string saying what the file holds. |
 
-
-## Workflow document
-
-The parent workflow is tracked in BKF. Stage files, shared stage files, and
-standalone work-unit files are untracked so a large workflow does not fill the
-map. Workflow tooling reads and validates these files independently of their
-own tracking, for every workflow in the bundle; see
-[Closing a workflow](/format/agent-workflow-foundation.md#closing-a-workflow).
-
-### Parent workflow
-
-```yaml
----
-bkf: workflow
-description: Defines the composed workflow, its declaration, and its execution order.
-workflow_id: W-01
-execution_status: in_progress
-unit_status:
-  WU-01.02: in_progress
----
-```
-
-`execution_status` records the overall workflow state and `unit_status` records
-work-unit progress; it is omitted until work starts. The [workflow foundation](/format/agent-workflow-foundation.md#correction-and-resume-status)
-defines their values, which entries `unit_status` keeps, and who writes them.
-
-### Work-unit file
-
-```yaml
----
-bkf: workflow.work_unit
-work_unit_id: WU-01.01
----
-```
-
-The work-unit file carries no status; progress is recorded in the parent.
-
-### Stage file
-
-```yaml
----
-bkf: workflow.stage
-stage_id: ST-01.01.03
-reviews: [ST-01.01.02]
----
-```
-
-The stage order and title come from the parent workflow; the containing
-folder identifies its work unit. The stage file uses the shared fields and
-`stage_id`, which tooling checks against the parent declaration. `reviews`
-appears only on review stages. The file also carries `human_checkpoint: true`
-when the parent requires approval after that stage. The script generates these
-fields; omit the optional ones when they do not apply.
-
-A stage file may opt into tracking by adding a `description`, which the
-profile allows as an optional field; the map then lists it. Tooling that edits the file preserves that field. Deliverables
-that should be discoverable are normally separate ordinary documents using the
-generic document profile.
-
-### Shared stage file
-
-Stages that name the same `file` in the declaration share one document.
-
-```yaml
----
-bkf: workflow.file
-stage_ids: [ST-01.01.01, ST-01.01.02, ST-01.01.03]
----
-```
-
-It has no per-stage frontmatter, so review targets and checkpoints stay in
-the declaration. Tooling does not read the body. It may opt into tracking like
-a stage file.
-
-The `workflow`, `workflow.work_unit`, `workflow.stage`, and `workflow.file`
-profile values follow the `bkf` field. The
-[foundation](/format/agent-workflow-foundation.md#composition-ordering-and-identity)
-defines the IDs, and its [validation checks](/format/agent-workflow-foundation.md#validation)
-list what tooling verifies about these files.
 
 ## Map files
 

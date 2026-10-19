@@ -19,6 +19,7 @@ bkf = "bkf_cli:main"
 [tool.setuptools]
 py-modules = [
     "agent_modes",
+    "audit",
     "bkf_cli",
     "bkf_hooks",
     "bkf_common",
@@ -34,12 +35,4 @@ py-modules = [
     "validate_skill_catalog",
     "skills",
     "validate_bundle",
-    "workflow_declaration",
-    "workflow_declaration_checks",
-    "workflow_files",
-    "workflow_gate",
-    "workflow_ids",
-    "workflow_scaffold",
-    "workflow_sync",
-    "workflow_validation",
 ]

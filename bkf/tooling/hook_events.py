@@ -18,9 +18,11 @@ MAX_BLOCKS = 2
 STATE_MAX_AGE = 14 * 24 * 3600
 REASON_LIMIT = 2500
 LOG_PREFIX = re.compile(r"^\s*([if])(-?)\s*:", re.IGNORECASE)
+AUDIT_PREFIX = re.compile(r"^\s*bkf\s*:", re.IGNORECASE)
+REPORT_DIR = Path.home() / ".agent-hooks" / "reports"
 PASTE_TAG = re.compile(r"^[ \t]*</?pasted_content\b[^>\n]*>[ \t]*\n?|</?pasted_content\b[^>\n]*>", re.MULTILINE)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
-EVENTS = {"record", "snapshot", "last", "log", "stop", "guard"}
+EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit"}
 
 
 def report_failure(event: str, exc: Exception, fields: dict | None = None) -> None:
@@ -48,6 +50,8 @@ def _probe(event: str) -> None:
         importlib.import_module("read_guard")
     elif event == "log":
         importlib.import_module("log_entry")
+    elif event == "audit":
+        importlib.import_module("audit")
     elif event == "stop":
         for module in ("generate_inventory", "validate_bundle", "bkf_common"):
             importlib.import_module(module)
@@ -241,6 +245,31 @@ def log(data: dict, state_dir: Path | None = None) -> dict | None:
     return {"continue": False, "stopReason": f"Logged {'idea' if kind == 'i' else 'feedback'} in {rendered}"}
 
 
+def audit(data: dict, report_dir: Path | None = None) -> dict | None:
+    """Answer a `bkf:` prompt with a structure audit of the whole repository.
+
+    The prompt still reaches the model; the audit summary and the path of the full report are added as context.
+    """
+    prompt = data.get("prompt")
+    match = AUDIT_PREFIX.match(prompt) if isinstance(prompt, str) else None
+    if match is None:
+        return None
+    import audit as audit_report
+
+    result = audit_report.run(Path(data.get("cwd") or ".").expanduser())
+    if result is None:
+        context = "BKF audit skipped: the working directory is not inside a git repository."
+    else:
+        path = audit_report.write_report(result, report_dir or REPORT_DIR)
+        context = (
+            "The user prefixed the prompt with 'bkf:' (ignore the prefix itself) to request a structure audit. "
+            "Present the findings below first; read the full report only for detail the summary omits. "
+            "Do not fix anything unless the rest of the prompt asks.\n\n"
+            + audit_report.summary(result, path)
+        )
+    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
+
+
 def bundle_root_of(path: Path) -> Path | None:
     """Return the nearest enclosing directory whose MAP.md declares `bkf_version`."""
     from bkf_common import MAP_NAME, is_bundle_root_map
@@ -360,6 +389,8 @@ def main(argv: list[str]) -> int:
             last(data)
         elif event == "log":
             output = log(data)
+        elif event == "audit":
+            output = audit(data)
         elif event == "stop":
             output = stop(data)
         elif event == "guard":

@@ -84,18 +84,6 @@ class TrackedMemberTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertNotEqual(inventory.returncode, 0)
 
-    def test_workflow_internals_may_omit_description_and_are_untracked(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            make_bundle(root)
-            (root / "stage.md").write_text(
-                "---\nbkf: workflow.stage\nstage_id: ST-01.01\n---\n\n# Stage\n",
-                encoding="utf-8",
-            )
-            result = run(VALIDATOR, root)
-            inventory = run(INVENTORY, root, "--check")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(inventory.returncode, 0, inventory.stdout + inventory.stderr)
 
     def test_root_agents_is_an_ordinary_generic_document(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -150,7 +138,6 @@ class TrackedMemberTests(unittest.TestCase):
             "typo": "bkf: document\ndescription: Guide.\ntags: [test]\ntgas: [x]\n",
             "feedback": "bkf: feedback\ndescription: Feedback.\nstatus: draft\n",
             "ideas": "bkf: ideas\ndescription: Ideas.\ntracked: true\n",
-            "stage": "bkf: workflow.stage\nstage_id: ST-01.01\ndescription: Stage.\nconsumer: x\n",
         }
         for label, frontmatter in cases.items():
             with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
@@ -163,18 +150,6 @@ class TrackedMemberTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn(f"METADATA_UNKNOWN_FIELD {name}", result.stdout)
 
-    def test_workflow_profiles_allow_their_optional_fields(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            make_bundle(root)
-            (root / "stage.md").write_text(
-                "---\nbkf: workflow.stage\nstage_id: ST-01.01\ndescription: Stage.\n"
-                "reviews: [ST-01.00]\nhuman_checkpoint: true\n---\n\n# Stage\n",
-                encoding="utf-8",
-            )
-            refresh(root)
-            result = run(VALIDATOR, root)
-        self.assertNotIn("METADATA_UNKNOWN_FIELD", result.stdout)
 
     def test_a_non_empty_description_tracks_a_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -215,22 +190,19 @@ class TrackedMemberTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("WARNING DESCRIPTION_REVIEW advice.md", result.stdout)
 
-    def test_every_workflow_block_in_a_tracked_document_gets_declaration_checks(self) -> None:
+
+    def test_the_retired_workflow_profiles_are_errors(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             make_bundle(root)
-            (root / "workflow-type.md").write_text(
-                "---\nbkf: workflow-type\ndescription: Describes a workflow type.\ntags: [workflows]\n---\n\n"
-                "# Workflow type\n\n"
-                "```bkf-workflow\nsteps:\n  - stage:\n      title: \" \"\n```\n\n"
-                "```bkf-workflow\nsteps:\n  - stage:\n      key: stage\n      title: \"Valid title\"\n      after: [missing]\n```\n",
+            (root / "stage.md").write_text(
+                "---\nbkf: workflow.stage\nstage_id: ST-01.01\ndescription: Stage.\n---\n\n# Stage\n",
                 encoding="utf-8",
             )
             refresh(root)
             result = run(VALIDATOR, root)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("WORKFLOW_TITLE workflow-type.md", result.stdout)
-        self.assertIn("WORKFLOW_AFTER workflow-type.md", result.stdout)
+        self.assertIn("METADATA_PROFILE stage.md", result.stdout)
 
 
 if __name__ == "__main__":

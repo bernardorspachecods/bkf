@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Defines how to prepare prompts and handoffs for agents, including source authority, write boundaries, and completion checks. Workflow coordination and execution are covered by coordinate-a-workflow."
+description: "Defines how to prepare prompts and handoffs for agents, including source authority, write boundaries, and completion checks. Coordination across a run is covered by coordinate-a-run."
 tags: [writing, delegation]
 ---
 
@@ -10,7 +10,6 @@ tags: [writing, delegation]
 - Prompts and handoffs, sources: give each source's path and what it is authoritative for, and what wins when they disagree (by default the plan on intent and scope, the code on current behavior). Say what not to read, whether examples are binding or only shape references, and whether history is current truth or background.
 - Prompts and handoffs, light mode: when an authoritative plan already holds the objective, context, process, and output, keep only the plan as a source, a few high-stakes stop conditions, the immediate request, and verify-by only if the plan's definition of done is vague. The guardrails sit on top of the plan and never compete with it. Autonomous runs tend to fail by silent scope growth and by guessing past ambiguity, so default to stopping when scope must change or a decision needs clarifying, and let the user's standing guardrails take precedence.
 - Prompts and handoffs, output: deliver the finished prompt in one fenced block ready to paste, use section headers only when it is long enough to need them, and add after it at most a few lines on assumptions made and what was left out because a source covers it. Do not walk through the structure.
-- Briefs for independent participants: write one neutral brief that every participant receives unchanged, specific enough for each to answer independently. Capture the core question or decision and the context supplied; inspect workspace material only when it directly informs the question, its constraints, or prior decisions, and record the source paths; include the stakes and constraints, distinguishing facts from assumptions; and do not add a participant's perspective or another agent's output.
 - Briefs, sections: keep established facts, constraints, and sourced context in the context section, and use a separate section for assumptions and unresolved context only for material uncertainties not already stated, without repeating scope, context, or stakes; write "None identified" when there are none.
 - In an isolated handoff or summary, name what the receiver can access (repo, tools, files) and what it lacks, and include the essential context explicitly, stating or pointing to anything settled in the conversation, instead of pointing to guidance the receiver cannot access.
 - Delimit pasted or retrieved material (logs, documents, code) from the instructions and say what it is.

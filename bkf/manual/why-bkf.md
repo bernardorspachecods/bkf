@@ -32,7 +32,7 @@ BKF is plain Markdown with YAML frontmatter, so any agent that can read files ca
 
 A collection gives you ready procedures, and BKF's entry skills are the same kind of thing. The difference is where shared rules live. In a plain collection, guidance common to many skills is usually copied into each, so each change is made many times. BKF writes each rule once in a library module, and a thin entry skill lists the modules that apply. Repo-specific rules go in the repo's own `repo-library/`, which adds to the shared library and never restates it.
 
-BKF also covers what a collection does not: how a repo's own documents are organized, and workflows with declared stages, independent review, and user checkpoints for work that passes between agents.
+BKF also covers what a collection does not: how a repo's own documents are organized, and workflows with separate roles, independent review, and user checkpoints for work that passes between agents.
 
 ## What BKF costs
 

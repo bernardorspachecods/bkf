@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Defines BKF bundle membership, tracking, maps, links, reserved files, and conformance. Terms are defined in glossary.md; field requirements are in frontmatter-profiles.md and workflow mechanics in agent-workflow-foundation.md."
+description: "Defines BKF bundle membership, tracking, maps, links, reserved files, and conformance. Terms are defined in glossary.md; field requirements are in frontmatter-profiles.md."
 tags: [bkf, specification]
 ---
 
@@ -98,8 +98,7 @@ conventions below:
 | `ext-schema.yaml` | Bundle root only | Optional non-member JSON Schema that validates the `ext` frontmatter field of generic documents. Required when any document uses `ext`. See the [frontmatter profiles](/format/frontmatter-profiles.md#repo-specific-fields-ext). |
 
 The `document` profile's filename rule is defined in the
-[frontmatter profiles](/format/frontmatter-profiles.md). Workflow
-files such as `W-01.md` and `WORK-UNIT.md` use other profiles and are exempt.
+[frontmatter profiles](/format/frontmatter-profiles.md).
 
 ### 3.1 Map files and inventories
 

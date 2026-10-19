@@ -29,7 +29,6 @@ from bkf_common import (
     render_inventory_entry,
     tracking_state,
 )
-from workflow_validation import WorkflowChecks
 
 
 SUPPORTED_VERSION = (0, 1)
@@ -42,21 +41,12 @@ END_MARKER = "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->"
 PROFILE_FIELDS = {
     "feedback": {"bkf", "description"},
     "ideas": {"bkf", "description"},
-    "workflow": {"bkf", "description", "workflow_id"},
-    "workflow.work_unit": {"bkf", "work_unit_id"},
-    "workflow.stage": {"bkf", "stage_id"},
-    "workflow.file": {"bkf", "stage_ids"},
 }
 GENERIC_FIELDS = {"bkf", "description", "tags"}
 EXT_SCHEMA_NAME = "ext-schema.yaml"
 OPTIONAL_FIELDS = {
     "generic": {"ext"},
-    "workflow": {"execution_status", "unit_status"},
-    "workflow.work_unit": {"description"},
-    "workflow.stage": {"description", "reviews", "human_checkpoint"},
-    "workflow.file": {"description"},
 }
-WORKFLOW_PROFILES = {"workflow", "workflow.work_unit", "workflow.stage", "workflow.file"}
 DESCRIPTION_REVIEW_RE = re.compile(r"\b(?:open\s+when|use\s+when)\b", re.IGNORECASE)
 NAVIGATION_MAP_REVIEW_LINES = 350
 NAVIGATION_MAP_REVIEW_WORDS = 2_000
@@ -104,7 +94,6 @@ class Validator:
         self._check_version(version, root_map)
 
         self._validate_documents()
-        self._validate_workflows()
         for map_path in maps:
             self._validate_map(map_path, root_map)
 
@@ -481,10 +470,9 @@ class Validator:
             if profile == "ideas" and path != self.root / "ideas.md":
                 self.error("IDEAS_PROFILE", path, "the `ideas` profile is reserved for the bundle-root ideas.md")
 
-            if profile not in WORKFLOW_PROFILES:
-                if path.name != "AGENTS.md":
-                    if not DOCUMENT_NAME_RE.fullmatch(path.name):
-                        self.error("DOCUMENT_FILENAME", path, "generic document filenames must use lowercase kebab-case")
+            if path.name != "AGENTS.md":
+                if not DOCUMENT_NAME_RE.fullmatch(path.name):
+                    self.error("DOCUMENT_FILENAME", path, "generic document filenames must use lowercase kebab-case")
             self.member_documents[path.resolve()] = parsed
             self._validate_metadata(path, metadata, profile if profile in PROFILE_FIELDS else "generic")
             description = metadata.get("description")
@@ -558,24 +546,6 @@ class Validator:
         except ValueError:
             return False
 
-    def _validate_workflows(self) -> None:
-        checks = WorkflowChecks(self.root, self.error, self.warning)
-        parents = [
-            (path, parsed) for path, parsed in self.member_documents.items()
-            if parsed.frontmatter.get("bkf") == "workflow"
-        ]
-        workflow_ids: dict[str, Path] = {}
-        for path, parsed in parents:
-            workflow_id = parsed.frontmatter.get("workflow_id")
-            if isinstance(workflow_id, str):
-                if workflow_id in workflow_ids:
-                    self.error("WORKFLOW_ID_DUPLICATE", path, f"workflow_id {workflow_id} is also used by {workflow_ids[workflow_id].relative_to(self.root).as_posix()}")
-                workflow_ids[workflow_id] = path
-            checks.validate_parent(path)
-        parent_paths = {path for path, _ in parents}
-        for path in self.member_documents:
-            if path not in parent_paths:
-                checks.validate_embedded_declarations(path)
 
     def _validate_metadata(self, path: Path, metadata: dict[str, object], profile: str) -> None:
         fields = PROFILE_FIELDS[profile] if profile in PROFILE_FIELDS else GENERIC_FIELDS

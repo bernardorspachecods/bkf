@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Explains how to install the central bkf command and documents each subcommand's invocation, options, and exit status. The command list is `bkf help`; the rules they apply are owned by the specification and profiles; bkf sync is in workflow-synchronizer.md."
+description: "Explains how to install the central bkf command and documents each subcommand's invocation, options, and exit status. The command list is `bkf help`; the rules they apply are owned by the specification and profiles."
 tags: [bkf, tooling, installation, validation, map-inventory]
 ---
 
@@ -11,7 +11,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 - [Install](#install) and [bkf help](#bkf-help)
 - Editing documents: [bkf validate](#bkf-validate), [bkf inventory](#bkf-inventory), [bkf skills](#bkf-skills)
 - Session start and lookup: [bkf orient](#bkf-orient), [bkf search](#bkf-search), [bkf log](#bkf-log), [bkf updates](#bkf-updates)
-- Install and workflows: [bkf hooks](#bkf-hooks), [bkf sync](#bkf-sync), [bkf gate](#bkf-gate)
+- Install: [bkf hooks](#bkf-hooks)
 
 ## Install
 
@@ -42,7 +42,7 @@ machine.
 ## bkf help
 
 `bkf help` lists commands, summaries, and usage guidance grouped by situation:
-after editing documents, session start and lookup, and install and workflows.
+after editing documents, session start and lookup, and install.
 The `help` command appears at the end. `bkf help <command>` shows
 that command's options. Both exit with `0`; an unknown command or `help` target
 exits with `2`. `COMMANDS` in [bkf_cli.py](/tooling/bkf_cli.py) owns the list,
@@ -55,9 +55,7 @@ list instead of repeating it here.
 `bkf validate <bundle-root>` checks the bundle against its declared BKF version
 and prints findings with severity, code, path, and explanation. The rules are
 in the [specification](/format/format-specification.md#6-conformance) and the
-[frontmatter profiles](/format/frontmatter-profiles.md); workflow checks are
-listed in the [workflow foundation](/format/agent-workflow-foundation.md#validation).
-It does not check body quality or style, fragment targets, linked artifact
+[frontmatter profiles](/format/frontmatter-profiles.md). It does not check body quality or style, fragment targets, linked artifact
 contents, or remote URLs (URL syntax only).
 
 - Exit `0`: conformant with the supported version. `1`: non-conformant. `2`: the
@@ -140,29 +138,6 @@ It prints both check results and exits non-zero if either check fails.
 generated skill catalog. Use it after changing a skill or a library module
 listed by a skill.
 
-## bkf sync
-
-See the [synchronizer brief](/tooling/workflow-synchronizer.md).
-
-## bkf gate
-
-`bkf gate --base REF --allow PATTERN [--allow PATTERN ...] [--check COMMAND ...] [--allow-empty] [--timeout SECONDS] [CHECKOUT]`
-checks one branch of a parallel group before it is merged. `CHECKOUT` is the
-branch's checkout and defaults to the current directory; `--base` is the git ref
-the branch started from. The gate reads no file content. It runs three checks:
-
-- **scope:** every file that differs from `--base`, committed, uncommitted or
-  untracked, must match an `--allow` pattern. `*` also matches `/`, so
-  `out/*` allows everything under `out/`.
-- **nonempty:** the branch must have changed something, so a run that wrote
-  nothing fails. `--allow-empty` turns this off.
-- **check:** each `--check` command runs in the checkout through the shell and
-  must exit 0. `--timeout` bounds each one (default 300 seconds).
-
-It prints one line per check and a final `gate: pass` or `gate: fail`. It exits
-0 on pass, 1 on fail, and 2 on a usage error such as an unknown base. The `run-parallel-work` module in the agent-skills library says how a brief
-declares the gate.
-
 ## bkf log
 
 `bkf log idea|feedback TEXT [--cwd PATH] [--context TEXT]` inserts one entry
@@ -234,8 +209,8 @@ the [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks).
 
 ## bkf hooks
 
-`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard] [--home PATH]` and
-`bkf hooks status [--only modes|orient|check|log|rules|guard] [--home PATH]` manage six hook groups that
+`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard|audit] [--home PATH]` and
+`bkf hooks status [--only modes|orient|check|log|rules|guard|audit] [--home PATH]` manage seven hook groups that
 must run every time, which a skill cannot guarantee. They are registered for
 both Claude Code (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`);
 a tool whose folder is missing is skipped.
@@ -305,6 +280,18 @@ a tool whose folder is missing is skipped.
   path is allowed in the same session. Partial `Read` calls and other shell
   commands are allowed. Refusals are stored per session in
   `~/.agent-hooks/state/` and pruned after 14 days.
+- **audit** registers a `UserPromptSubmit` hook, `bkf hooks run audit`, with a
+  60-second timeout. A prompt starting with `bkf:` (any case) triggers an audit
+  of the git repository that contains the working directory; any other prompt
+  is left alone. Unlike `log`, the prompt still reaches the agent. The audit
+  lists the git changes as staged, modified, deleted, and untracked, grouped by
+  the deepest bundle that holds each path, and for every bundle runs the
+  validator and `inventory --check`. The agent receives a summary of at most
+  3,000 characters: counts, the first 15 untracked paths, and the first five
+  errors of each bundle. The full report is written to
+  `~/.agent-hooks/reports/bkf-audit-<timestamp>.md`, and the 20 newest reports
+  are kept. The audit changes nothing in the repository. Outside a git
+  repository it says so and stops.
 
 `install` previews by default and prints one line per script and registration
 as `ok`, `missing`, or `differs`; `--write` applies it. Other settings and

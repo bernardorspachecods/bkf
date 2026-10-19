@@ -9,7 +9,7 @@ name=${1:?task name}
 brief=${2:?brief file}
 base=${3:-HEAD}
 model=${4:-gpt-6-luna}
-effort=${5:-high}
+effort=${5:-xhigh}
 
 repo=$(git rev-parse --show-toplevel)
 base=$(git -C "$repo" rev-parse "$base")

@@ -77,7 +77,7 @@ class ReadonlyBash(unittest.TestCase):
             "gh pr create", "gh pr merge 1", "gh api -X POST /x",
             "gh api --method=DELETE /x", "gh api -XPATCH /x", "gh api /x -f a=b", "gh api /x -F a=b",
             "gh api /x --input body.json", "gh api graphql -f query=q",
-            "bkf inventory . --write", "bkf sync .",
+            "bkf inventory . --write", "bkf hooks install --write",
             "sed -i s/a/b/ f", "find . -delete", "find . -exec rm {} +",
             "sort -o out in", "awk 'BEGIN{system(\"rm x\")}'", "awk '{print > \"f\"}' in",
             "cat $(rm -rf x)", "cd x && rm y", "python3 script.py", "npm install",
