@@ -17,7 +17,7 @@ cat >"$work/bin/codex" <<'EOF'
 #!/usr/bin/env bash
 dir="" out=""
 while [ "$#" -gt 0 ]; do
-  case "$1" in -C) dir=$2; shift 2 ;; -o) out=$2; shift 2 ;; *) shift ;; esac
+  case "$1" in -C) dir=$2; shift 2 ;; -o) out=$2; shift 2 ;; -c) echo "$2" >>"$FAKE_STATE/codex-config"; shift 2 ;; *) shift ;; esac
 done
 prompt=$(cat)
 if [ "${prompt#\# Final review}" != "$prompt" ]; then
@@ -150,5 +150,16 @@ run metrics
 check "metrics: one line per round with steps, files and tokens" 'awk -F"\t" "\$1==\"01-unit\" && \$2==1 && \$4==3 && \$5==1 && \$6==1234 {ok=1} END{exit !ok}" "$case_dir/runs/r/metrics.tsv"'
 (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$here/plan-run.sh" finish r) >"$case_dir/finish.txt" 2>&1
 check "metrics: finish writes the table into status.md" 'grep -q "Implementation rounds" "$case_dir/repo/records/plans/r/status.md" && grep -q "| 01-unit | 1 |" "$case_dir/repo/records/plans/r/status.md"'
+
+# 12. The service tier: fast unless PLAN_CODEX_TIER says otherwise (empty keeps the account default).
+new_case tierdef '' 'echo change >>a.txt'
+run tierdef
+check "tier: fast by default" 'grep -qx "service_tier=\"fast\"" $case_dir/state/codex-config'
+new_case tieroff '' 'echo change >>a.txt'
+run tieroff PLAN_CODEX_TIER=
+check "tier: empty PLAN_CODEX_TIER keeps the account default" '! grep -q service_tier $case_dir/state/codex-config'
+new_case tierset '' 'echo change >>a.txt'
+run tierset PLAN_CODEX_TIER=flex
+check "tier: PLAN_CODEX_TIER picks another tier" 'grep -qx "service_tier=\"flex\"" $case_dir/state/codex-config'
 
 exit "$fail"

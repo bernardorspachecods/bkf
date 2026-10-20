@@ -8,8 +8,10 @@ valid_name() { [[ $1 =~ ^[A-Za-z0-9._-]+$ && $1 != . && $1 != .. ]]; }
 
 # Run codex in <dir> with the prompt on stdin. Events and errors go to <out-prefix>.*
 # The sandbox is workspace-write unless the fourth argument names another.
+# PLAN_CODEX_TIER (for example fast) sets Codex's service tier; unset keeps the account default.
 codex_run() { # <dir> <prompt-file> <out-prefix> [sandbox]
   codex exec \
+    ${PLAN_CODEX_TIER:+-c "service_tier=\"$PLAN_CODEX_TIER\""} \
     --skip-git-repo-check \
     -C "$1" \
     -m "$model" \

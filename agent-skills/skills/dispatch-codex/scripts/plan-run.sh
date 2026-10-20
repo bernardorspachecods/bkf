@@ -42,6 +42,7 @@
 # 900) limits each gate command;
 # PLAN_MIN_CHECKED (default 3) is the least number of lines a reviewer must give under
 # "What I checked". PLAN_GUIDES points at the folder with the role guides.
+# PLAN_CODEX_TIER is Codex's service tier: fast unless set; PLAN_CODEX_TIER= (empty) keeps the account default.
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -51,6 +52,7 @@ max_rounds=${PLAN_MAX_ROUNDS:-3}
 min_checked=${PLAN_MIN_CHECKED:-3}
 max_gate_rounds=${PLAN_MAX_GATE_ROUNDS:-5}
 gate_timeout=${PLAN_GATE_TIMEOUT:-900}
+export PLAN_CODEX_TIER=${PLAN_CODEX_TIER-fast}
 porteiro_timeout=${PLAN_PORTEIRO_TIMEOUT:-900}
 model=gpt-6-luna effort=xhigh review_effort=
 
