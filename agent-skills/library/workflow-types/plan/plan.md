@@ -114,6 +114,12 @@ Unit brief
   build, a test against a database), and say in the brief that the reviewer does
   not send back or escalate because it could not run the second kind. Without this
   the review escalates for a reason that has nothing to do with the work.
+- **Every unit has an executable check.** At least one criterion is a command
+  that fails if the unit is wrong: a test, a script, a query against the database,
+  a comparison of the behaviour before and after. A review by reading is a second
+  opinion, not the evidence. When the checking tool does not exist yet, make
+  building it a unit that comes first. Name what cannot be checked by a command
+  (looks, the accuracy of prose) and who judges it, so it is not left to chance.
 - **Out of scope is as important as the result.** It keeps a diff small enough to review.
 
 ## 3. Delegating
