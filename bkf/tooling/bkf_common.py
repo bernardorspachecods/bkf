@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -13,6 +14,21 @@ from ruamel.yaml.error import YAMLError
 
 MAP_NAME = "MAP.md"
 README_NAME = "readme.md"
+
+
+NAVIGATION_MAP_REVIEW_LINES = 350
+NAVIGATION_MAP_REVIEW_WORDS = 2_000
+
+
+def body_size(body: str) -> tuple[int, int]:
+    """Return the line and word counts that decide whether a document needs a navigation map."""
+    return len(body.splitlines()), len(re.findall(r"\b\w+\b", body))
+
+
+def needs_navigation_map(body: str) -> bool:
+    """Return whether a document body is large enough to need a navigation map."""
+    lines, words = body_size(body)
+    return lines > NAVIGATION_MAP_REVIEW_LINES or words > NAVIGATION_MAP_REVIEW_WORDS
 
 
 class BKFInputError(ValueError):

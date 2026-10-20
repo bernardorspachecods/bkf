@@ -14,7 +14,7 @@ tags: [bkf, specification]
 | Apply map and log conventions | [Reserved files and maps](#3-reserved-files-and-maps) |
 | Prepare BKF documents and frontmatter | [BKF documents and profiles](#4-bkf-documents-and-profiles) and the [frontmatter profiles](/format/frontmatter-profiles.md) |
 | Link documents | [Cross-linking and paths](#5-cross-linking-and-paths) |
-| Look up a term | [Glossary](/format/glossary.md) |
+| Look up a term | [Terminology](#2-terminology) and the [glossary](/format/glossary.md) |
 | Check bundle conformance | [Conformance](#6-conformance) |
 
 ## 1. Purpose and scope
@@ -314,10 +314,15 @@ rules, are owned by the
 define the rules that apply across profiles. Each profile chooses its own body content and
 organization; BKF does not prescribe body headings, sections, or templates.
 
-The validator may warn when a document exceeds roughly 350 body lines or
-2,000 words and lacks an early section, under a heading in any language, with at least two
-links that point to headings. The warning does not block
-conformance, and it does not apply to the `feedback` and `ideas` profiles, which
+The validator may warn about navigation maps. A document whose body exceeds
+roughly 350 lines or 2,000 words should have a `## Navigation map` section: a
+table whose first column says what the reader needs and whose second column
+links to the headings that answer it. The validator warns `NAVIGATION_MAP_REVIEW`
+when a document that large has no such section. Whenever a document has the
+section, regardless of size, it warns `NAVIGATION_MAP_STALE` for a link to a
+heading that does not exist and for a level 2 heading that no row reaches,
+directly or through one of its subheadings. The warnings do not block
+conformance, and they do not apply to the `feedback` and `ideas` profiles, which
 are logs read in dedicated sessions rather than navigated.
 
 ---

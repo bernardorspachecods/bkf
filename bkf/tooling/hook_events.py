@@ -53,7 +53,7 @@ def _probe(event: str) -> None:
     elif event == "audit":
         importlib.import_module("audit")
     elif event == "stop":
-        for module in ("generate_inventory", "validate_bundle", "bkf_common"):
+        for module in ("generate_inventory", "validate_bundle", "bkf_common", "navigation_map"):
             importlib.import_module(module)
     elif event not in {"record", "snapshot", "last"}:
         raise ValueError(f"unknown event {event!r}")
@@ -312,6 +312,23 @@ def problems(roots: list[Path]) -> list[str]:
     return found
 
 
+def warnings(roots: list[Path], paths: set[Path]) -> list[str]:
+    """Return validation warnings for the files this session changed."""
+    from validate_bundle import Validator
+
+    changed = {path.resolve() for path in paths}
+    found: list[str] = []
+    for root in roots:
+        validator = Validator(root)
+        validator.validate()
+        found.extend(
+            f"{finding.code} {finding.path}: {finding.message}"
+            for finding in validator.findings
+            if finding.severity == "WARNING" and (root / finding.path).resolve() in changed
+        )
+    return found
+
+
 def stop(data: dict, state_dir: Path | None = None) -> dict | None:
     session_id = data.get("session_id", "")
     touched = _state(session_id, "touched", state_dir)
@@ -347,6 +364,9 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
                 temporary.replace(baseline_path)
         touched.unlink(missing_ok=True)
         blocks.unlink(missing_ok=True)
+        notes = warnings(roots, paths) if roots else []
+        if notes:
+            return {"systemMessage": "BKF warnings for files changed in this session:\n" + "\n".join(notes)}
         return None
 
     blocks.write_text(str(count + 1))

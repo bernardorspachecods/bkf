@@ -3,28 +3,16 @@
 from __future__ import annotations
 
 import json
-import re
 import shlex
 from pathlib import Path
 
+from bkf_common import BKFInputError, needs_navigation_map, parse_markdown
+from navigation_map import LINK, MAP_HEADING, fenced_lines, navigation_rows, section_range
+from navigation_map import headings as document_headings
 from hook_events import REASON_LIMIT, _prune, _state
 
 
-GUARD_MIN_BYTES = 8000
-LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
-HEADING = re.compile(r"^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
-FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
-SEPARATOR = re.compile(r"^:?-{3,}:?$")
 SHELL_META = ";|&<>()$`\n\r"
-
-
-def _split_cells(line: str) -> list[str]:
-    value = line.strip()
-    if value.startswith("|"):
-        value = value[1:]
-    if value.endswith("|"):
-        value = value[:-1]
-    return [cell.strip() for cell in value.split("|")]
 
 
 def _plain_cat(command: object, cwd: Path) -> Path | None:
@@ -90,85 +78,12 @@ def target_path(data: dict) -> Path | None:
     return None
 
 
-def _fenced_lines(lines: list[str]):
-    """Yield (line number, line) pairs outside fenced code blocks."""
-    fence_char = ""
-    fence_size = 0
-    for number, line in enumerate(lines, 1):
-        match = FENCE.match(line)
-        if fence_char:
-            if match and match.group(1)[0] == fence_char and len(match.group(1)) >= fence_size:
-                fence_char = ""
-            continue
-        if match:
-            fence_char = match.group(1)[0]
-            fence_size = len(match.group(1))
-            continue
-        yield number, line
-
-
-def _headings(lines: list[str]) -> list[dict]:
-    headings = []
-    used: dict[str, int] = {}
-    for number, line in _fenced_lines(lines):
-        match = HEADING.match(line)
-        if not match:
-            continue
-        title = match.group(2).strip()
-        base = "".join(char for char in title.lower() if char.isalnum() or char in " -_")
-        base = re.sub(r" +", "-", base.strip())
-        ordinal = used.get(base, 0)
-        used[base] = ordinal + 1
-        slug = base if ordinal == 0 else f"{base}-{ordinal}"
-        headings.append({"line": number, "level": len(match.group(1)), "title": title, "slug": slug})
-    return headings
-
-
-def _navigation_rows(lines: list[str]) -> list[tuple[int, str, str]]:
-    visible = list(_fenced_lines(lines))
-    map_at = next((index for index, (_, line) in enumerate(visible) if line == "## Navigation map"), None)
-    if map_at is None:
-        return []
-    rows: list[tuple[int, str, str]] = []
-    table_lines = []
-    for number, line in visible[map_at + 1:]:
-        stripped = line.strip()
-        if not stripped:
-            if table_lines:
-                break
-            continue
-        if not stripped.startswith("|"):
-            if table_lines:
-                break
-            continue
-        table_lines.append((number, _split_cells(stripped)))
-    if len(table_lines) < 3:
-        return []
-    separator = table_lines[1][1]
-    if len(separator) < 2 or not all(SEPARATOR.fullmatch(cell.replace(" ", "")) for cell in separator[:2]):
-        return []
-    for number, cells in table_lines[2:]:
-        if len(cells) >= 2:
-            rows.append((number, cells[0], cells[1]))
-    return rows
-
-
-def _section_range(index: int, headings: list[dict], total_lines: int) -> tuple[int, int]:
-    heading = headings[index]
-    end = total_lines
-    for following in headings[index + 1:]:
-        if following["level"] <= heading["level"]:
-            end = following["line"] - 1
-            break
-    return heading["line"], max(heading["line"], end)
-
-
 def navigation_entries(lines: list[str], file_path: Path) -> list[str]:
     """Render table links with their resolved section ranges or original targets."""
-    headings = _headings(lines)
+    headings = document_headings(lines)
     by_slug = {heading["slug"]: index for index, heading in enumerate(headings)}
     entries: list[str] = []
-    for _, first, second in _navigation_rows(lines):
+    for _, first, second in navigation_rows(lines):
         links = LINK.findall(second)
         for label, target in links:
             if target.startswith("#"):
@@ -177,7 +92,7 @@ def navigation_entries(lines: list[str], file_path: Path) -> list[str]:
                     entries.append(f"{first} -> unresolved #{anchor}")
                     continue
                 index = by_slug[anchor]
-                start, end = _section_range(index, headings, len(lines))
+                start, end = section_range(index, headings, len(lines))
                 entries.append(f"{first} -> {headings[index]['title']}, lines {start}-{end}")
             else:
                 entries.append(f"{first} -> [{label}]({target})")
@@ -206,13 +121,15 @@ def guard(data: dict, state_dir: Path | None = None) -> dict | None:
     if target is None:
         return None
     try:
-        if not target.is_file() or target.suffix != ".md" or target.stat().st_size < GUARD_MIN_BYTES:
+        if not target.is_file() or target.suffix != ".md":
             return None
         content = target.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
+        if not needs_navigation_map(parse_markdown(target).body):
+            return None
+    except (OSError, UnicodeError, BKFInputError):
         return None
     lines = content.splitlines()
-    if not any(line == "## Navigation map" for _, line in _fenced_lines(lines)):
+    if not any(line == MAP_HEADING for _, line in fenced_lines(lines)):
         return None
 
     session_id = data.get("session_id", "")

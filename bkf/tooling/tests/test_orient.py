@@ -59,6 +59,20 @@ class OrientTests(unittest.TestCase):
         self.assertEqual(without_validation.returncode, 0, without_validation.stderr)
         self.assertNotIn("bkf validate:", without_validation.stdout)
 
+    def test_warnings_are_listed_after_the_health_line(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "MAP.md").write_text(map_text(root=True), encoding="utf-8")
+            (root / "big.md").write_text(document("Big", "A big one.") + "line\n" * 400, encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(CLI), "inventory", "--write", str(root)],
+                check=True, capture_output=True, text=True, cwd=TOOLING,
+            )
+
+            result = run("--cwd", root)
+
+        self.assertIn("bkf validate: ok\nbkf validate: 1 warnings (run bkf validate)\n  NAVIGATION_MAP_REVIEW big.md", result.stdout)
+
     def test_nested_area_cwd_prints_map_chain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

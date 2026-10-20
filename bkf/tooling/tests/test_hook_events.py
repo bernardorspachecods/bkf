@@ -208,6 +208,17 @@ class HookEventsTest(unittest.TestCase):
         self.assertEqual(result["decision"], "block")
         self.assertIn("bkf validate", result["reason"])
 
+    def test_warning_for_a_changed_file_is_shown_without_blocking(self) -> None:
+        (self.root / "guide.md").write_text(DOC + "line\n" * 400)
+        (self.root / "other.md").write_text(DOC.replace("A guide.", "Another.") + "line\n" * 400)
+        self.write_inventory()
+        self.touch(self.root / "guide.md")
+        result = self.stop()
+        self.assertNotIn("decision", result)
+        self.assertIn("NAVIGATION_MAP_REVIEW guide.md", result["systemMessage"])
+        self.assertNotIn("other.md", result["systemMessage"])
+        self.assertFalse((self.state / "s.touched").exists())
+
     def test_blocks_at_most_twice_then_lets_the_session_stop(self) -> None:
         (self.root / "new.md").write_text(DOC.replace("A guide.", "A new guide."))
         self.touch(self.root / "new.md")

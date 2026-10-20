@@ -88,92 +88,49 @@ class NavigationMapTests(unittest.TestCase):
         self.assertIn("2002 words", result.stdout)
         self.assertIn("Result: CONFORMANT", result.stdout)
 
-    def test_early_map_with_heading_fragment_link_does_not_warn(self) -> None:
+    def check(self, body: str) -> str:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             make_bundle(root)
-            body = "\n".join(
-                [
-                    "# Document",
-                    "### nAvIgAtIoN mAp",
-                    "#### Nested heading",
-                    "[Details](#details)",
-                    "[This document](/document.md#details)",
-                    "### Details",
-                    "Details are below.",
-                    *(f"Body line {i}" for i in range(350)),
-                ]
-            )
             write_document(root, body)
-
             result = validate(root)
-
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("NAVIGATION_MAP_REVIEW", result.stdout)
+        return result.stdout
 
-    def test_early_map_under_a_translated_heading_does_not_warn(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            make_bundle(root)
-            body = "\n".join(
-                [
-                    "# Documento",
-                    "## Mapa de navegação",
-                    "[Detalhes](#detalhes)",
-                    "[Outros](#outros)",
-                    "## Detalhes",
-                    "## Outros",
-                    *(f"Body line {i}" for i in range(350)),
-                ]
-            )
-            write_document(root, body)
+    MAP = (
+        "# Document\n\n## Navigation map\n\n| If you need to... | See |\n| --- | --- |\n"
+        "| Find alpha | [Alpha](#alpha) |\n| Find beta | [Beta](#beta) |\n\n"
+    )
 
-            result = validate(root)
+    def test_large_document_with_a_complete_map_does_not_warn(self) -> None:
+        body = self.MAP + "## Alpha\n" + "line\n" * 200 + "## Beta\n" + "line\n" * 200
+        self.assertNotIn("NAVIGATION_MAP", self.check(body))
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("NAVIGATION_MAP_REVIEW", result.stdout)
+    def test_a_list_of_links_under_another_heading_is_not_a_map(self) -> None:
+        body = (
+            "# Document\n\n## In this file\n\n- [Alpha](#alpha)\n- [Beta](#beta)\n\n"
+            "## Alpha\n" + "line\n" * 200 + "## Beta\n" + "line\n" * 200
+        )
+        self.assertIn("WARNING NAVIGATION_MAP_REVIEW document.md", self.check(body))
 
-    def test_map_after_body_line_40_warns(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            make_bundle(root)
-            body = "\n".join(
-                [
-                    "# Document",
-                    *(f"Early body {i}" for i in range(40)),
-                    "## Navigation map",
-                    "[Details](#details)",
-                    "## Details",
-                    *(f"Body line {i}" for i in range(310)),
-                ]
-            )
-            write_document(root, body)
+    def test_a_link_to_a_missing_heading_is_stale(self) -> None:
+        body = self.MAP.replace("#beta", "#gone") + "## Alpha\nx\n## Beta\nx\n"
+        output = self.check(body)
+        self.assertIn("WARNING NAVIGATION_MAP_STALE document.md", output)
+        self.assertIn("#gone, which is not a heading", output)
 
-            result = validate(root)
+    def test_an_unmapped_level_two_section_is_stale_even_in_a_short_document(self) -> None:
+        output = self.check(self.MAP + "## Alpha\nx\n## Beta\nx\n## Gamma\nx\n")
+        self.assertIn('does not cover the section "Gamma"', output)
+        self.assertNotIn('"Alpha"', output)
 
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("WARNING NAVIGATION_MAP_REVIEW document.md", result.stdout)
+    def test_a_subsection_link_covers_its_level_two_section(self) -> None:
+        body = self.MAP.replace("#beta", "#detail") + "## Alpha\nx\n## Beta\nx\n### Detail\nx\n"
+        self.assertNotIn("NAVIGATION_MAP_STALE", self.check(body))
 
-    def test_map_without_a_fragment_link_in_its_section_warns(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            make_bundle(root)
-            body = "\n".join(
-                [
-                    "# Document",
-                    "## Navigation map",
-                    "[Guide](https://example.com/guide)",
-                    "## Details",
-                    "[Details](#details)",
-                    *(f"Body line {i}" for i in range(350)),
-                ]
-            )
-            write_document(root, body)
-
-            result = validate(root)
-
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("WARNING NAVIGATION_MAP_REVIEW document.md", result.stdout)
+    def test_a_map_without_rows_is_stale(self) -> None:
+        output = self.check("# Document\n\n## Navigation map\n\nNothing here.\n\n## Alpha\nx\n")
+        self.assertIn("has no table rows", output)
 
     def test_long_map_and_untracked_file_do_not_warn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

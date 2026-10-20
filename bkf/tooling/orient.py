@@ -11,6 +11,7 @@ from pathlib import Path
 
 OUTPUT_LIMIT = 6000
 VALIDATION_TIMEOUT = 5
+WARNING_LIMIT = 10
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,11 +40,23 @@ def _validate(root: Path, find_bundles, Validator) -> str:
     def validate() -> None:
         try:
             errors = 0
+            warnings: list[str] = []
             for bundle in find_bundles(root):
                 validator = Validator(bundle)
                 validator.validate()
                 errors += sum(finding.severity == "ERROR" for finding in validator.findings)
-            result.append("bkf validate: ok" if errors == 0 else f"bkf validate: {errors} errors (run bkf validate)")
+                warnings.extend(
+                    f"  {finding.code} {(bundle / finding.path).relative_to(root).as_posix()}"
+                    for finding in validator.findings
+                    if finding.severity == "WARNING"
+                )
+            line = "bkf validate: ok" if errors == 0 else f"bkf validate: {errors} errors (run bkf validate)"
+            if warnings:
+                line += f"\nbkf validate: {len(warnings)} warnings (run bkf validate)"
+                line += "".join("\n" + warning for warning in warnings[:WARNING_LIMIT])
+                if len(warnings) > WARNING_LIMIT:
+                    line += f"\n  ... {len(warnings) - WARNING_LIMIT} more"
+            result.append(line)
         except BaseException as exc:
             failures.append(exc)
 

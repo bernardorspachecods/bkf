@@ -31,6 +31,7 @@ the installed tool's environment, so plain `python3` does not run them.
 - [generate_skill_catalog.py](/tooling/generate_skill_catalog.py) — Writes or prints the generated skill catalog.
 - [validate_skill_catalog.py](/tooling/validate_skill_catalog.py) — Validates skill metadata and catalog consistency.
 - [bkf_common.py](/tooling/bkf_common.py) — Shares frontmatter parsing and map-scope logic across BKF tools.
+- [navigation_map.py](/tooling/navigation_map.py) — Parses a document's `## Navigation map` table and checks it against the document's headings; shared by `bkf validate` and the guard hook.
 - [validate_bundle.py](/tooling/validate_bundle.py) — Checks BKF bundle structure, metadata, maps, and links.
 - [updates.py](/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.
 - [hook_events.py](/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, and dispatches the `log`, `guard`, and `audit` hooks.

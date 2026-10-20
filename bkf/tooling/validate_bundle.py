@@ -21,14 +21,17 @@ from bkf_common import (
     MAP_NAME,
     ParsedMarkdown,
     README_NAME,
+    body_size,
     discover_maps,
     find_bundles,
     in_nested_bundle,
     inventory_entries,
+    needs_navigation_map,
     parse_markdown,
     render_inventory_entry,
     tracking_state,
 )
+from navigation_map import map_problems
 
 
 SUPPORTED_VERSION = (0, 1)
@@ -48,9 +51,6 @@ OPTIONAL_FIELDS = {
     "generic": {"ext"},
 }
 DESCRIPTION_REVIEW_RE = re.compile(r"\b(?:open\s+when|use\s+when)\b", re.IGNORECASE)
-NAVIGATION_MAP_REVIEW_LINES = 350
-NAVIGATION_MAP_REVIEW_WORDS = 2_000
-NAVIGATION_MAP_EARLY_LINES = 40
 LOG_PROFILES = frozenset({"feedback", "ideas"})
 
 
@@ -486,66 +486,18 @@ class Validator:
                 self._validate_navigation_map(path, parsed.body)
 
     def _validate_navigation_map(self, path: Path, body: str) -> None:
-        lines = body.splitlines(keepends=True)
-        line_count = len(body.splitlines())
-        word_count = len(re.findall(r"\b\w+\b", body))
-        if line_count <= NAVIGATION_MAP_REVIEW_LINES and word_count <= NAVIGATION_MAP_REVIEW_WORDS:
+        has_map, problems = map_problems(body)
+        if not has_map:
+            if needs_navigation_map(body):
+                line_count, word_count = body_size(body)
+                self.warning(
+                    "NAVIGATION_MAP_REVIEW",
+                    path,
+                    f"body has {line_count} lines and {word_count} words but lacks a `## Navigation map` table",
+                )
             return
-
-        tokens = MARKDOWN.parse(body)
-        headings: list[tuple[str, int, int, int]] = []
-        for index, token in enumerate(tokens):
-            if token.type != "heading_open" or not token.map:
-                continue
-            try:
-                level = int(token.tag.removeprefix("h"))
-            except ValueError:
-                continue
-            inline = tokens[index + 1] if index + 1 < len(tokens) else None
-            if inline is None or inline.type != "inline":
-                title = ""
-            elif inline.children is None:
-                title = inline.content
-            else:
-                title_parts: list[str] = []
-                for child in inline.children:
-                    if child.type in {"text", "code_inline"}:
-                        title_parts.append(child.content)
-                    elif child.type in {"softbreak", "hardbreak"}:
-                        title_parts.append(" ")
-                title = "".join(title_parts)
-            headings.append((" ".join(title.split()).casefold(), level, token.map[0], token.map[1]))
-
-        for heading_index, (title, level, start, end) in enumerate(headings):
-            if start >= NAVIGATION_MAP_EARLY_LINES:
-                continue
-            section_end = next(
-                (
-                    next_start
-                    for _, _, next_start, _ in headings[heading_index + 1 :]
-                ),
-                len(lines),
-            )
-            section = "".join(lines[end:section_end])
-            if sum(
-                self._has_heading_fragment(destination)
-                for destination in self._link_destinations(section)
-            ) >= 2:
-                return
-
-        self.warning(
-            "NAVIGATION_MAP_REVIEW",
-            path,
-            f"body has {line_count} lines and {word_count} words but lacks an early section with a heading-fragment link",
-        )
-
-    @staticmethod
-    def _has_heading_fragment(destination: str) -> bool:
-        try:
-            return bool(urlsplit(destination).fragment)
-        except ValueError:
-            return False
-
+        for problem in problems:
+            self.warning("NAVIGATION_MAP_STALE", path, problem)
 
     def _validate_metadata(self, path: Path, metadata: dict[str, object], profile: str) -> None:
         fields = PROFILE_FIELDS[profile] if profile in PROFILE_FIELDS else GENERIC_FIELDS

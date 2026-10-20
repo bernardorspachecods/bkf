@@ -26,6 +26,7 @@ py-modules = [
     "generate_inventory",
     "hook_events",
     "log_entry",
+    "navigation_map",
     "orient",
     "read_guard",
     "updates",

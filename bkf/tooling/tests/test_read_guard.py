@@ -85,6 +85,22 @@ class ReadGuardTest(unittest.TestCase):
         self.file.write_text("# Large\n" + "x\n" * 1000, encoding="utf-8")
         self.assertIsNone(self.read())
 
+    def test_threshold_is_body_lines_and_words_not_bytes(self) -> None:
+        table = "## Navigation map\n\n| If you need to... | See |\n| --- | --- |\n| Find it | [Last](#last) |\n\n## Last\n"
+        wide = "---\nbkf: document\ndescription: Wide.\ntags: [t]\n---\n" + table + "wide line " + "é" * 9000 + "\n"
+        self.file.write_text(wide, encoding="utf-8")
+        self.assertIsNone(self.read())
+        self.file.write_text(table + "x\n" * 350, encoding="utf-8")
+        self.assertIsNotNone(self.read(session="lines"))
+        self.file.write_text(table + "word " * 2001 + "\n", encoding="utf-8")
+        self.assertIsNotNone(self.read(session="words"))
+
+    def test_frontmatter_does_not_count_toward_threshold(self) -> None:
+        table = "## Navigation map\n\n| If you need to... | See |\n| --- | --- |\n| Find it | [Last](#last) |\n\n## Last\n"
+        frontmatter = "---\nbkf: document\ndescription: Long.\ntags: [t]\nnotes: |\n" + "  note\n" * 400 + "---\n"
+        self.file.write_text(frontmatter + table + "x\n" * 100, encoding="utf-8")
+        self.assertIsNone(self.read())
+
     def test_cat_and_cd_cat_deny_once(self) -> None:
         result = self.bash(f"cat {self.file.name}")
         self.assertIsNotNone(result)
