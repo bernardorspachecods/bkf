@@ -6,6 +6,18 @@ tags: [planning, delegation]
 
 # Plan
 
+## Navigation map
+
+| If you need to... | See |
+| --- | --- |
+| Decide whether the work is a plan or a single task | [When to use](#when-to-use) |
+| Understand the principles behind the stages | [How to read this](#how-to-read-this) |
+| Write and confirm the goal, and split it into units | [1. The goal and the units](#1-the-goal-and-the-units) |
+| Write the brief that one unit's implementer and reviewer share | [2. The unit brief](#2-the-unit-brief) |
+| Brief the agents that implement and review | [3. Delegating](#3-delegating) |
+| Report to the user at the end or on an escalation | [4. What the user receives](#4-what-the-user-receives) |
+| Find the plan's folder and what each unit keeps | [5. Where the work lives](#5-where-the-work-lives) |
+
 ## When to use
 
 Use this when the user has an agreed goal that needs several pieces of work
