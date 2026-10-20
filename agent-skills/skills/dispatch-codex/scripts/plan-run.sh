@@ -27,6 +27,13 @@
 # the implementer with its output and no review; the reviewer cannot override a command, and a pass needs the
 # gate green and the reviewer's pass. A brief without a gate is reviewed as before. `gates` prints the commands
 # of every unit (from a plan.txt or a run), so the coordinator reads what code will run before the run starts.
+# The bridge: an implementer's sandbox has no network, so it cannot reach the database. While an implementer
+# works, the script serves `.plan-porteiro/ponte <command...>` in its checkout: the agent writes a request, the
+# script (outside the sandbox) runs it if it is allowed and hands back the output and the exit code. Allowed:
+# `pnpm db:test:<anything>` (every one is tied to --ambiente test, and refused if the script differs from the one
+# in the unit's base) and the unit's gate commands exactly as written in the brief. Anything else is refused. The
+# command is run without a shell, so the agent supplies arguments, never shell syntax. Every request is logged in
+# <run>/porteiro.log. Reviewers run read-only and have no bridge: they receive the gate result.
 # Limits: PLAN_MAX_ROUNDS (default 3) escalates a review that keeps sending work back;
 # PLAN_MAX_GATE_ROUNDS (default 5) stops a unit whose gate keeps failing; PLAN_GATE_TIMEOUT (seconds, default
 # 900) limits each gate command;
@@ -41,6 +48,7 @@ max_rounds=${PLAN_MAX_ROUNDS:-3}
 min_checked=${PLAN_MIN_CHECKED:-3}
 max_gate_rounds=${PLAN_MAX_GATE_ROUNDS:-5}
 gate_timeout=${PLAN_GATE_TIMEOUT:-900}
+porteiro_timeout=${PLAN_PORTEIRO_TIMEOUT:-900}
 model=gpt-6-luna effort=xhigh review_effort=
 
 # shellcheck source=lib-codex.sh
@@ -166,12 +174,117 @@ write_gate_problems() { # <round-dir>
   } >"$1/problems.md"
 }
 
+# ---- The bridge: the implementer asks, the script runs what is allowed outside the sandbox ----
+
+# The agent-side command, written into the checkout. It only writes a request and waits for the answer.
+porteiro_ponte_script() {
+  cat <<'PONTE'
+#!/usr/bin/env bash
+# Asks the runner to run an allowed command outside the sandbox. Usage: .plan-porteiro/ponte <command> [args...]
+d=$(cd "$(dirname "$0")" && pwd)
+[ "$#" -gt 0 ] || { echo "usage: .plan-porteiro/ponte <command> [args...]" >&2; exit 2; }
+id=$(date +%s)-$$-$RANDOM
+mkdir -p "$d/req" "$d/res"
+printf '%s\0' "$@" >"$d/req/.$id.tmp"
+mv "$d/req/.$id.tmp" "$d/req/$id"
+limit=$(( ${PORTEIRO_WAIT:-1800} * 2 )); n=0
+while [ ! -e "$d/res/$id.done" ]; do
+  sleep 0.5; n=$((n + 1))
+  [ "$n" -lt "$limit" ] || { echo "ponte: no answer from the runner" >&2; exit 124; }
+done
+cat "$d/res/$id.out"
+code=$(cat "$d/res/$id.done")
+rm -f "$d/res/$id.out" "$d/res/$id.done"
+exit "$code"
+PONTE
+}
+
+porteiro_setup() { # <checkout>
+  local d=$1/.plan-porteiro ex
+  rm -rf "$d"; mkdir -p "$d/req" "$d/res"
+  porteiro_ponte_script >"$d/ponte"; chmod +x "$d/ponte"
+  # kept out of every diff and snapshot without touching the repository's own ignore rules
+  ex=$(git -C "$1" rev-parse --git-path info/exclude 2>/dev/null)
+  case "$ex" in /*) ;; *) ex=$1/$ex ;; esac
+  mkdir -p "$(dirname "$ex")"
+  grep -qxF '.plan-porteiro/' "$ex" 2>/dev/null || echo '.plan-porteiro/' >>"$ex"
+}
+
+porteiro_log() { printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$1" "$2" "$3" >>"$run/porteiro.log"; }
+
+# Decides whether a request may run. Sets $porteiro_mode (argv|shell) or $porteiro_why. Arguments: checkout,
+# base, brief, then the requested argv.
+porteiro_allowed() {
+  local co=$1 base=$2 brief=$3 line script now was; shift 3
+  porteiro_mode="" porteiro_why=""
+  [ "$#" -gt 0 ] || { porteiro_why="empty request"; return 1; }
+  while IFS= read -r line; do
+    [ "$line" = "$*" ] && { porteiro_mode=shell; return 0; }
+  done < <(gate_commands "$brief")
+  if [ "$1" = pnpm ] && [ "$#" -ge 2 ] && [[ $2 =~ ^db:test(:[a-z0-9-]+)*$ ]]; then
+    script=$2
+    now=$(node -e 'try{process.stdout.write(String(require(process.argv[1]).scripts[process.argv[2]]??""))}catch{}' "$co/package.json" "$script")
+    was=$(git -C "$co" show "$(cat "$base" 2>/dev/null):package.json" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).scripts[process.argv[1]]??""))}catch{}})' "$script")
+    [ -n "$was" ] || { porteiro_why="$script is not a script of the unit's base"; return 1; }
+    [ "$now" = "$was" ] || { porteiro_why="$script was changed in this unit"; return 1; }
+    porteiro_mode=argv; return 0
+  fi
+  porteiro_why="not allowed: only 'pnpm db:test:*' and the gate commands of the brief"
+  return 1
+}
+
+# Answers one request file. The output goes to res/<id>.out and the exit code to res/<id>.done, written last.
+porteiro_handle() { # <checkout> <unit> <base> <brief> <request-file>
+  local co=$1 u=$2 base=$3 brief=$4 f=$5 id arg start secs code=126
+  local -a argv=()
+  id=$(basename "$f")
+  while IFS= read -r -d '' arg; do argv+=("$arg"); done <"$f"
+  local res=$co/.plan-porteiro/res
+  if porteiro_allowed "$co" "$base" "$brief" ${argv[@]+"${argv[@]}"}; then
+    start=$(date +%s)
+    if [ "$porteiro_mode" = shell ]; then
+      (cd "$co" && perl -e 'alarm shift @ARGV; exec @ARGV' "$porteiro_timeout" bash -c "${argv[*]}") </dev/null >"$res/$id.run" 2>&1
+    else
+      (cd "$co" && perl -e 'alarm shift @ARGV; exec @ARGV' "$porteiro_timeout" "${argv[@]}") </dev/null >"$res/$id.run" 2>&1
+    fi
+    code=$?
+    secs=$(($(date +%s) - start))
+    [ "$code" -eq 142 ] && printf 'ponte: timed out after %ss\n' "$porteiro_timeout" >>"$res/$id.run"
+    tail -c 200000 "$res/$id.run" >"$res/$id.out"; rm -f "$res/$id.run"
+    porteiro_log "$u" "ALLOWED exit=$code ${secs}s" "${argv[*]}"
+  else
+    printf 'ponte: refused (%s).\nAllowed: pnpm db:test:* and the commands of the brief'"'"'s gate, exactly as written.\n' "$porteiro_why" >"$res/$id.out"
+    porteiro_log "$u" "REFUSED ($porteiro_why)" "${argv[*]-}"
+  fi
+  echo "$code" >"$res/$id.done.tmp"; mv "$res/$id.done.tmp" "$res/$id.done"
+}
+
+porteiro_serve() { # <checkout> <unit> <base> <brief> <parent-pid>   (runs in the background)
+  local co=$1 u=$2 base=$3 brief=$4 parent=$5 f
+  while [ ! -e "$co/.plan-porteiro/.stop" ] && kill -0 "$parent" 2>/dev/null; do
+    for f in "$co"/.plan-porteiro/req/*; do
+      [ -f "$f" ] || continue
+      case "$(basename "$f")" in .*) continue ;; esac
+      porteiro_handle "$co" "$u" "$base" "$brief" "$f"
+      rm -f "$f"
+    done
+    sleep 0.3
+  done
+}
+
+porteiro_stop() { # <checkout> <pid>
+  touch "$1/.plan-porteiro/.stop" 2>/dev/null
+  wait "$2" 2>/dev/null
+  rm -rf "$1/.plan-porteiro"
+}
+
 # ---- Prompts: fixed templates, so the coordinator never writes them by hand ----
 
 implement_prompt() { # <unit-brief> <round> <resumed> <prev-problems> <prev-handoff>
   cat "$1"
   printf '\n\n---\n## Role\nOpen and follow the role guide: %s/plan-implementation.md (read-only). It says how to work inside the brief, what to verify and what the handoff holds.\n' "$guides"
   printf '\n## Rules\n- The current directory is the repository: do the work here.\n- Do not run git commands that change state (no commit, stage, stash, reset, clean, checkout).\n- Do not write the handoff to a file. Your final message is the handoff, in the form the guide gives, and nothing else.\n'
+  printf -- '- You have no network, so you cannot reach the database from here. To run something that needs it, ask the runner: `.plan-porteiro/ponte <command> [args...]`. It runs the command outside your sandbox and prints the output and the exit code. Only `pnpm db:test:*` (always the Test database) and the commands of the brief'"'"'s gate, exactly as written, are accepted; anything else is refused, and every request is logged. Use it to read the data you need and to run the checks against the database.\n'
   if [ -n "$(gate_commands "$1")" ]; then
     printf -- '- The brief has a `gate`. After you finish, the script runs those commands itself and sends the work back, without a review, if any fails. Run them yourself first when you can.\n'
   fi
@@ -248,7 +361,7 @@ do_review() { # <label> <checkout> <brief> <round-dir> <prev-problems-or-empty>
 
 run_unit() { # <unit-dir-name> <checkout> [<step>]
   local u=$1 co=$2 d=$run/$1 k=${3:-}
-  local round=0 reviews=0 gate_fails=0 resumed=0 prev="" prevh="" rd code from=""
+  local round=0 reviews=0 gate_fails=0 resumed=0 prev="" prevh="" rd code from="" pbridge
   # The base is the checkout as the previous step left it, so that whatever changed in the checkout between that
   # and the (re)start of this unit never lands in its diff. Only a plain (non-group) step has one.
   if [ -n "$k" ]; then
@@ -277,8 +390,12 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
     echo "implementing round $round" >"$d/status"
     note "$u round $round: implement"
     implement_prompt "$d/brief.md" "$round" "$resumed" "$prev" "$prevh" >"$rd/implement-prompt.md"
+    porteiro_setup "$co"
+    porteiro_serve "$co" "$u" "$d/base" "$d/brief.md" "$$" &
+    pbridge=$!
     codex_run "$co" "$rd/implement-prompt.md" "$rd/implement" workspace-write
     code=$?
+    porteiro_stop "$co" "$pbridge"
     [ "$code" -eq 0 ] || { reason="$u: implementer exit=$code (see $rd/implement.stderr.log)"; return 1; }
     [ -s "$rd/implement.last-message.md" ] || { reason="$u: implementer left no handoff"; return 1; }
     cp "$rd/implement.last-message.md" "$rd/handoff.md"

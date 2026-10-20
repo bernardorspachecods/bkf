@@ -35,10 +35,13 @@ When the brief has a `gate`, the script runs those commands itself after you fin
 and sends the work back, with their output and no review, if one fails. Run them
 yourself before you hand over, when you can. A command you cannot run from where you
 work (a database that is out of reach, say) is named in the handoff, not skipped.
-A command that needs something your sandbox may not reach (a database, the network) is
-not a reason to stop: write the code and the tests that need no such access, and say in
-the handoff which command you could not run. The script runs the gate outside your
-sandbox and sends you its output if it fails.
+Your sandbox has no network, so it cannot reach a database. The run gives you a bridge:
+`.plan-porteiro/ponte <command> [args...]` asks the script to run the command outside
+your sandbox and returns its output and exit code. It accepts only `pnpm db:test:*`
+(always the Test database) and the gate commands exactly as written in the brief, and
+nothing else; every request is logged. Use it to read the data you need and to run the
+checks against the database before you hand over. If a command is refused, do not look
+for a way around it: say in the handoff what you needed.
 Do not weaken a test or a check that already exists to make the gate pass.
 
 **Show every new check failing once.** A test or script you write can pass without

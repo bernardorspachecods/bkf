@@ -34,11 +34,21 @@ else
 fi
 EOF
 chmod +x "$work/bin/codex"
+cat >"$work/bin/pnpm" <<'EOF2'
+#!/usr/bin/env bash
+echo "called $*" >>"$FAKE_STATE/pnpm-calls"
+echo "FAKEPNPM: $*"
+for a in "$@"; do [ "$a" = fail ] && exit 3; done
+exit 0
+EOF2
+chmod +x "$work/bin/pnpm"
 
 new_case() { # <name> <gate-block-or-empty> <impl-script>
   case_dir=$work/$1; mkdir -p "$case_dir/repo" "$case_dir/state" "$case_dir/plan"
   git -C "$case_dir/repo" init -q . && git -C "$case_dir/repo" config user.email t@t && git -C "$case_dir/repo" config user.name t
-  echo base >"$case_dir/repo/a.txt"; git -C "$case_dir/repo" add -A && git -C "$case_dir/repo" commit -qm init
+  echo base >"$case_dir/repo/a.txt"
+  echo '{"scripts":{"db:test:query":"echo q","db:prod:query":"echo p"}}' >"$case_dir/repo/package.json"
+  git -C "$case_dir/repo" add -A && git -C "$case_dir/repo" commit -qm init
   echo "goal" >"$case_dir/plan/goal.md"
   { printf '# Unit\n\n## Result\nx\n'; [ -n "$2" ] && printf '\n```gate\n%s\n```\n' "$2"; } >"$case_dir/plan/unit.md"
   echo "unit.md" >"$case_dir/plan/plan.txt"
@@ -101,5 +111,36 @@ printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; printf 'unit.md\nuni
 gout=$("$here/plan-run.sh" gates "$case_dir/plan/plan.txt" 2>&1); gcode=$?
 check "gates: lists the command" 'echo "$gout" | grep -q "\$ echo hello"'
 check "gates: flags the unit with no gate and exits 1" 'echo "$gout" | grep -q "NO GATE" && [ "$gcode" -eq 1 ]'
+
+# 9. The bridge: what the implementer may run outside the sandbox.
+new_case bridge 'echo gate-ok' 'echo change >>a.txt
+P=.plan-porteiro/ponte
+$P pnpm db:test:query --sql "a; touch pwned" >r1.txt; echo $? >c1.txt
+$P pnpm db:prod:query >r2.txt; echo $? >c2.txt
+$P pnpm "db:test:query;touch pwned2" >r3.txt; echo $? >c3.txt
+$P echo gate-ok >r4.txt; echo $? >c4.txt
+$P echo not-gate >r5.txt; echo $? >c5.txt
+$P pnpm db:test:query fail >r6.txt; echo $? >c6.txt
+$P rm -rf . >r7.txt; echo $? >c7.txt'
+run bridge
+r=$case_dir/repo
+check "bridge: the run finishes" '[ "$code" -eq 0 ]'
+check "bridge: pnpm db:test:* runs, its arguments reach it untouched" 'grep -qF "FAKEPNPM: db:test:query --sql a; touch pwned" $r/r1.txt && [ "$(cat $r/c1.txt)" = 0 ]'
+check "bridge: no shell: the ; inside an argument ran nothing" '[ ! -e $r/pwned ] && [ ! -e $r/pwned2 ]'
+check "bridge: pnpm db:prod:* is refused and never reaches pnpm" 'grep -q refused $r/r2.txt && [ "$(cat $r/c2.txt)" = 126 ]'
+check "bridge: a script name with shell syntax is refused" 'grep -q refused $r/r3.txt && [ "$(cat $r/c3.txt)" = 126 ]'
+check "bridge: a gate command runs exactly as written" 'grep -q gate-ok $r/r4.txt && [ "$(cat $r/c4.txt)" = 0 ]'
+check "bridge: any other command is refused" 'grep -q refused $r/r5.txt && [ "$(cat $r/c5.txt)" = 126 ] && grep -q refused $r/r7.txt && [ -e $r/a.txt ]'
+check "bridge: the exit code of the command comes back" '[ "$(cat $r/c6.txt)" = 3 ]'
+check "bridge: pnpm was called only for the two allowed requests" '[ "$(wc -l <$case_dir/state/pnpm-calls)" -eq 2 ]'
+check "bridge: every request is in porteiro.log, refusals marked" '[ "$(grep -c REFUSED $case_dir/runs/r/porteiro.log)" -eq 4 ] && [ "$(grep -c ALLOWED $case_dir/runs/r/porteiro.log)" -eq 3 ]'
+check "bridge: the folder is not in the diff and is removed afterwards" '! grep -q plan-porteiro $case_dir/runs/r/01-unit/rounds/1/diff.patch && [ ! -e $r/.plan-porteiro ]'
+
+# 10. A db:test script changed by the implementer is refused.
+new_case bridgechg '' 'echo change >>a.txt
+sed -i.bak "s/echo q/echo evil/" package.json; rm -f package.json.bak
+.plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt'
+run bridgechg
+check "bridge: a db:test script redefined in the unit is refused" 'grep -q "was changed" $case_dir/repo/r1.txt && [ "$(cat $case_dir/repo/c1.txt)" = 126 ]'
 
 exit "$fail"
