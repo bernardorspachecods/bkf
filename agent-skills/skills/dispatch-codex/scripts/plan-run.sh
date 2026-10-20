@@ -2,8 +2,8 @@
 # Run a plan with Codex: each unit is implemented by one agent and reviewed by another. The coordinator
 # only writes the goal and the unit briefs, and says which units run together.
 # Usage (run start, resume and finish inside the repository the plan changes):
-#   plan-run.sh start   [-m model] [-e effort] [-p checkpoints] <name> <goal.md> <plan.txt>
-#   plan-run.sh resume  [-m model] [-e effort] [-p checkpoints] <name>
+#   plan-run.sh start   [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> <goal.md> <plan.txt>
+#   plan-run.sh resume  [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name>
 #   plan-run.sh status  <name>
 #   plan-run.sh finish  [--discard] <name>
 # plan.txt: one step per line, in order. A line holds the paths of unit briefs (relative to plan.txt),
@@ -29,7 +29,7 @@ root=${PLAN_RUNS_DIR:-$HOME/.plan-runs}
 guides=${PLAN_GUIDES:-$(git -C "$here" rev-parse --show-toplevel 2>/dev/null)/agent-skills/library/workflow-types/plan}
 max_rounds=${PLAN_MAX_ROUNDS:-3}
 min_checked=${PLAN_MIN_CHECKED:-3}
-model=gpt-6-luna effort=xhigh
+model=gpt-6-luna effort=xhigh review_effort=
 
 # shellcheck source=lib-codex.sh
 . "$here/lib-codex.sh"
@@ -37,12 +37,21 @@ model=gpt-6-luna effort=xhigh
 note() { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$run/status.log"; }
 valid_pause() { [[ $1 =~ ^(none|each|[0-9]+(,[0-9]+)*)$ ]]; }
 
+# Reviewers (and the final review) may use their own reasoning effort: -r, default the implementers' effort.
+review_run() { # same arguments as codex_run
+  local saved=$effort code
+  effort=${review_effort:-$effort}
+  codex_run "$@"; code=$?
+  effort=$saved
+  return $code
+}
+
 load_run() { # <name>
   valid_name "$1" || die "bad run name: $1"
   run=$root/$1
   [ -d "$run" ] || die "no such run: $run"
   repo=$(cat "$run/repo")
-  if [ -f "$run/settings" ]; then read -r model effort <"$run/settings"; fi
+  if [ -f "$run/settings" ]; then read -r model effort review_effort <"$run/settings"; fi
   pause=$(cat "$run/pause" 2>/dev/null || true)
 }
 
@@ -136,7 +145,7 @@ do_review() { # <label> <checkout> <brief> <round-dir> <prev-problems-or-empty>
     attempt=$((attempt + 1))
     rm -f "$4/review.last-message.md"
     review_prompt "$3" "$4/diff.patch" "$5" "$attempt" >"$4/review-prompt.md"
-    codex_run "$2" "$4/review-prompt.md" "$4/review" read-only
+    review_run "$2" "$4/review-prompt.md" "$4/review" read-only
     code=$?
     [ "$code" -eq 0 ] || { reason="$1: review exit=$code (see $4/review.stderr.log)"; return 1; }
     if [ -s "$4/review.last-message.md" ] && checked_ok "$4/review.last-message.md" && read_verdict "$4/review.last-message.md" >/dev/null; then
@@ -331,7 +340,7 @@ run_report() {
     printf '\n## Role\nOpen and follow the role guide: %s/plan-review.md (read-only), section "The final review". You are not the author of the work.\n' "$guides"
     printf '\n---\nYour final message is the report, and nothing else.\n'
   } >"$run/report-prompt.md"
-  codex_run "$repo" "$run/report-prompt.md" "$run/report" read-only
+  review_run "$repo" "$run/report-prompt.md" "$run/report" read-only
   code=$?
   [ "$code" -eq 0 ] || { reason="final review exit=$code (see $run/report.stderr.log)"; return 1; }
   [ -s "$run/report.last-message.md" ] || { reason="final review wrote no report"; return 1; }
@@ -383,9 +392,9 @@ pipeline() {
 
 cmd_start() {
   pause=""
-  while getopts 'm:e:p:' o; do case $o in m) model=$OPTARG ;; e) effort=$OPTARG ;; p) pause=$OPTARG ;; *) exit 1 ;; esac; done
+  while getopts 'm:e:r:p:' o; do case $o in m) model=$OPTARG ;; e) effort=$OPTARG ;; r) review_effort=$OPTARG ;; p) pause=$OPTARG ;; *) exit 1 ;; esac; done
   shift $((OPTIND - 1))
-  [ "$#" -eq 3 ] || die 'usage: start [-m model] [-e effort] [-p checkpoints] <name> <goal.md> <plan.txt>'
+  [ "$#" -eq 3 ] || die 'usage: start [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> <goal.md> <plan.txt>'
   valid_name "$1" || die "bad run name: $1"
   [ -z "$pause" ] || valid_pause "$pause" || die "bad checkpoints: $pause (use each, none, or step numbers like 2,4)"
   local name=$1 goal=$2 plan=$3 pdir line f i=0 w u order=""
@@ -432,17 +441,17 @@ cmd_start() {
   echo "$pause" >"$run/pause"
   mkdir -p "$run/plan-base"
   snapshot_base "$run/plan-base" "$repo"
-  printf '%s %s\n' "$model" "$effort" >"$run/settings"
+  printf '%s %s %s\n' "$model" "$effort" "$review_effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
-  note "start $name ($model $effort, max $max_rounds rounds, ${#steps[@]} step(s), $i unit(s), repo $repo)"
+  note "start $name ($model $effort, review ${review_effort:-$effort}, max $max_rounds rounds, ${#steps[@]} step(s), $i unit(s), repo $repo)"
   pipeline
 }
 
 cmd_resume() {
-  local fm="" fe="" fp=""
-  while getopts 'm:e:p:' o; do case $o in m) fm=$OPTARG ;; e) fe=$OPTARG ;; p) fp=$OPTARG ;; *) exit 1 ;; esac; done
+  local fm="" fe="" fr="" fp=""
+  while getopts 'm:e:r:p:' o; do case $o in m) fm=$OPTARG ;; e) fe=$OPTARG ;; r) fr=$OPTARG ;; p) fp=$OPTARG ;; *) exit 1 ;; esac; done
   shift $((OPTIND - 1))
-  [ "$#" -eq 1 ] || die 'usage: resume [-m model] [-e effort] [-p checkpoints] <name>'
+  [ "$#" -eq 1 ] || die 'usage: resume [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name>'
   load_run "$1"
   if [ -n "$fp" ]; then
     valid_pause "$fp" || die "bad checkpoints: $fp (use each, none, or step numbers like 2,4)"
@@ -450,8 +459,9 @@ cmd_resume() {
   fi
   [ -z "$fm" ] || model=$fm
   [ -z "$fe" ] || effort=$fe
+  [ -z "$fr" ] || review_effort=$fr
   [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$repo" ] || die "run resume inside the plan's repository: $repo"
-  printf '%s %s\n' "$model" "$effort" >"$run/settings"
+  printf '%s %s %s\n' "$model" "$effort" "$review_effort" >"$run/settings"
   note "resume"
   pipeline
 }
