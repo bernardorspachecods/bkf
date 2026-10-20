@@ -32,7 +32,11 @@ looks fine.
    changed outside the unit needs a reason in the brief.
 3. **Criteria.** Is each criterion met? Run the check the criterion names when you
    can; otherwise read the code that satisfies it. A criterion you could not
-   check is reported as unchecked, not as passed.
+   check is reported as unchecked, not as passed. You run read-only: you cannot
+   write build output or temporary folders or reach a database. When the brief
+   assigns a criterion to the coordinator, report it as left to the coordinator,
+   read the code or test that covers it, and do not send the unit back or
+   escalate because you could not run it.
 4. **Leaves ready.** Is what the brief says other units may rely on actually
    there, in the form stated? Check it in the diff, not by trust. The next unit
    starts on the assumption that your pass means it is there, and nobody steps in

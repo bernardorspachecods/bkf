@@ -50,6 +50,14 @@ the work (data, interface, behaviour), not the order of effort. Test each unit:
 If a unit fails a test, split it again or merge it with the one it cannot be
 separated from.
 
+**When the split depends on something you do not yet know,** such as how many
+modules cross a boundary or what a move would break, do not write a unit for
+what you cannot yet describe. Run a small plan first that only reads and
+reports, and write the real plan, with every brief, after the user has read the
+report. Adding units by hand to a run in progress is possible but leaves the
+contracts between units unfixed and can misalign step numbers; two plans keep
+each one complete when it starts.
+
 **Order and parallelism.** Say which units come first and which run together.
 Units run one at a time in the user's checkout by default. Two units may run
 together only if they share nothing: each then runs in its own copy of the
@@ -99,6 +107,13 @@ Unit brief
   on a contract that was not met.
 - **Criteria are checkable.** A criterion the reviewer can only agree with is
   not a criterion.
+- **Say who checks each criterion.** The reviewer runs in a read-only sandbox: it
+  cannot write build output, temporary folders or type-check caches, and it
+  cannot reach a database. Mark each criterion as one the reviewer checks by
+  reading, or one the coordinator runs after the round (a full type check, a
+  build, a test against a database), and say in the brief that the reviewer does
+  not send back or escalate because it could not run the second kind. Without this
+  the review escalates for a reason that has nothing to do with the work.
 - **Out of scope is as important as the result.** It keeps a diff small enough to review.
 
 ## 3. Delegating
@@ -165,8 +180,11 @@ Do not restate the diff: it is the record of what changed.
 One plan is one folder in `~/.plan-runs/<name>/`, with one subfolder per unit in
 order. A unit's folder holds its brief, its rounds (the agent prompts, the
 outputs, the reviews and their verdicts) and its handoff, so the user can open one
-unit and see only it. The plan's goal, the order of the units and a `status.md`
-sit at the top.
+unit and see only it. The plan's goal, the order of the units (in `00-input/`) and a `status.log`
+sit at the top. `plan-run.sh start` creates the folder and fails if it already
+exists, so a plan that is ready but not yet launched is kept as its source files
+(`goal.md`, `plan.txt` and the briefs) outside `~/.plan-runs`, and `start` is run
+when it is time.
 
 When the plan is done, the user chooses: keep the record, which is copied into
 `records/plans/` in the repository, or delete the run. Until they choose, it stays where it is.
