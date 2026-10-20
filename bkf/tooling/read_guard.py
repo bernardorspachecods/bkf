@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from pathlib import Path
 
@@ -78,6 +79,17 @@ def target_path(data: dict) -> Path | None:
     return None
 
 
+NUMBERING = re.compile(r"^\d+(\.\d+)*\.?\s+")
+
+
+def _same_words(label: str, title: str) -> bool:
+    """Whether a row's label only repeats the heading, ignoring section numbers, case and end punctuation."""
+    def normalize(text: str) -> str:
+        return " ".join(NUMBERING.sub("", text.strip()).casefold().split()).rstrip(".:;,!?")
+
+    return normalize(label) == normalize(title)
+
+
 def navigation_entries(lines: list[str], file_path: Path) -> list[str]:
     """Render table links with their resolved section ranges or original targets."""
     headings = document_headings(lines)
@@ -93,7 +105,11 @@ def navigation_entries(lines: list[str], file_path: Path) -> list[str]:
                     continue
                 index = by_slug[anchor]
                 start, end = section_range(index, headings, len(lines))
-                entries.append(f"{first} -> {headings[index]['title']}, lines {start}-{end}")
+                title = headings[index]["title"]
+                if _same_words(first, title):
+                    entries.append(f"{title}, lines {start}-{end}")
+                else:
+                    entries.append(f"{first} -> {title}, lines {start}-{end}")
             else:
                 entries.append(f"{first} -> [{label}]({target})")
     return entries

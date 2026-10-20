@@ -300,7 +300,8 @@ a tool whose folder is missing is skipped.
   map` whose body (after the frontmatter) exceeds 350 lines or 2,000 words, the
   same size test and the same `## Navigation map` table that `bkf validate`
   checks, it denies the read and returns the map's
-  section links with line ranges. A second whole-file read of that resolved
+  section links with line ranges, showing a row's label and heading as one when
+  the label only repeats the heading. A second whole-file read of that resolved
   path is allowed in the same session. Partial `Read` calls and other shell
   commands are allowed. Refusals are stored per session in
   `~/.agent-hooks/state/` and pruned after 14 days.

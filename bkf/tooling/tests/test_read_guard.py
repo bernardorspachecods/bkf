@@ -101,6 +101,18 @@ class ReadGuardTest(unittest.TestCase):
         self.file.write_text(frontmatter + table + "x\n" * 100, encoding="utf-8")
         self.assertIsNone(self.read())
 
+    def test_a_label_that_repeats_the_heading_is_shown_once(self) -> None:
+        self.write_document(
+            "## Navigation map\n\n| If you need to... | See |\n| --- | --- |\n"
+            "| Duplicate customers: match them. | [Section 1.1](#11-duplicate-customers-match-them) |\n"
+            "| Where the sources disagree | [Section 1.2](#12-where-sources-diverge) |\n\n"
+            "## 1.1 Duplicate customers: match them\nx\n## 1.2 Where sources diverge\nx\n"
+        )
+        reason = self.reason(self.read())
+        self.assertIn("\n1.1 Duplicate customers: match them, lines", reason)
+        self.assertNotIn("Duplicate customers: match them. ->", reason)
+        self.assertIn("Where the sources disagree -> 1.2 Where sources diverge, lines", reason)
+
     def test_cat_and_cd_cat_deny_once(self) -> None:
         result = self.bash(f"cat {self.file.name}")
         self.assertIsNotNone(result)

@@ -317,8 +317,11 @@ organization; BKF does not prescribe body headings, sections, or templates.
 The validator may warn about navigation maps. A document whose body exceeds
 roughly 350 lines or 2,000 words should have a `## Navigation map` section: a
 table whose first column says what the reader needs and whose second column
-links to the headings that answer it. The validator warns `NAVIGATION_MAP_REVIEW`
-when a document that large has no such section. Whenever a document has the
+links to the headings that answer it. The first column should say what the
+reader is looking for when that differs from the section title; when it would
+only repeat the title, write the title, and the guard shows it once. The
+validator warns `NAVIGATION_MAP_REVIEW` when a document that large has no such
+section. Whenever a document has the
 section, regardless of size, it warns `NAVIGATION_MAP_STALE` for a link to a
 heading that does not exist and for a level 2 heading that no row reaches,
 directly or through one of its subheadings. The warnings do not block
