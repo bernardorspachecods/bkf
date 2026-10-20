@@ -9,7 +9,7 @@
 # plan.txt: one step per line, in order. A line holds the paths of unit briefs (relative to plan.txt),
 # separated by spaces. One brief is a unit run in your checkout. Several on one line are a parallel group:
 # each runs in its own git worktree, made from the state of your checkout when the group starts (untracked
-# files are not copied), and when all have passed an integration agent applies their diffs to your checkout
+# files included, ignored ones not), and when all have passed an integration agent applies their diffs to your checkout
 # and a reviewer checks the combined result. Blank lines and lines starting with # are ignored.
 # State lives in ${PLAN_RUNS_DIR:-$HOME/.plan-runs}/<name>, one numbered folder per unit. It must not be
 # under /tmp: the workspace-write sandbox leaves /tmp writable. The unit briefs are read from
@@ -17,8 +17,9 @@
 # -p sets checkpoints by step number: `each`, or numbers like `2,4`. After such a step passes the run
 # pauses (exit 3, `PAUSED` in status.log) so the user can read it; `resume` goes on. On resume, -p replaces
 # the list (`-p none` clears it). With no -p the run goes through every step.
-# The agents never change git state. Before a unit the script records a base (tracked files plus the
-# list of untracked ones); the reviewer reads the diff from it, new files included.
+# The agents never change git state. A unit's base is the checkout as the previous step left it (a git tree of
+# the working files, untracked ones included); the reviewer reads the diff from it. Changes made in the checkout
+# between steps, or while a unit is stopped, therefore never land in the next unit's diff.
 # Limits: PLAN_MAX_ROUNDS (default 3) escalates a review that keeps sending work back;
 # PLAN_MIN_CHECKED (default 3) is the least number of lines a reviewer must give under
 # "What I checked". PLAN_GUIDES points at the folder with the role guides.
@@ -66,18 +67,44 @@ pause_here() { # <step>
   return 1
 }
 
-# ---- The diff of a unit: tracked changes from its base, plus the files that did not exist before it ----
+# ---- The diff of a unit: the checkout as a tree before it, against the checkout as a tree after it ----
+# A snapshot is a git tree built in a throwaway index: tracked and untracked files alike (ignored ones left out),
+# whatever HEAD is. So edits to files git did not track yet show up, a commit made meanwhile changes nothing,
+# and nothing in the real index or the working files is touched. Runs begun with the older script keep a commit
+# as base and a list of untracked files (no `base-format` file in the folder); make_patch still reads those.
+
+snapshot_tree() { # <checkout>: prints the id of a tree holding the checkout as it is now
+  local tmp t
+  tmp=$(mktemp -u "${TMPDIR:-/tmp}/plan-run-index.XXXXXX") || return 1
+  GIT_INDEX_FILE=$tmp git -C "$1" read-tree HEAD >/dev/null 2>&1 || { rm -f "$tmp"; return 1; }
+  GIT_INDEX_FILE=$tmp git -C "$1" add -A >/dev/null 2>&1
+  t=$(GIT_INDEX_FILE=$tmp git -C "$1" write-tree 2>/dev/null)
+  rm -f "$tmp"
+  [ -n "$t" ] || return 1
+  echo "$t"
+}
+
+snapshot_commit() { # <checkout>: like snapshot_tree, as a commit, for `git worktree add`
+  local t
+  t=$(snapshot_tree "$1") || return 1
+  GIT_AUTHOR_NAME=plan-run GIT_AUTHOR_EMAIL=plan-run@localhost GIT_COMMITTER_NAME=plan-run GIT_COMMITTER_EMAIL=plan-run@localhost \
+    git -C "$1" commit-tree "$t" -p HEAD -m "plan-run snapshot"
+}
 
 snapshot_base() { # <dir> <checkout>
-  local b
-  b=$(git -C "$2" stash create 2>/dev/null || true)
-  b=${b:-$(git -C "$2" rev-parse HEAD)}
-  echo "$b" >"$1/base"
-  git -C "$2" ls-files --others --exclude-standard | sort >"$1/untracked-before.txt"
+  local t
+  t=$(snapshot_tree "$2") || die "cannot snapshot the checkout $2"
+  echo "$t" >"$1/base"
+  echo tree >"$1/base-format"
 }
 
 make_patch() { # <dir> <out-file> <checkout>
-  local f
+  local f cur
+  if [ "$(cat "$1/base-format" 2>/dev/null)" = tree ]; then
+    cur=$(snapshot_tree "$3") || return 1
+    git -C "$3" diff --no-ext-diff "$(cat "$1/base")" "$cur" >"$2"
+    return 0
+  fi
   git -C "$3" diff "$(cat "$1/base")" >"$2"
   git -C "$3" ls-files --others --exclude-standard | sort >"$1/untracked-after.txt"
   comm -13 "$1/untracked-before.txt" "$1/untracked-after.txt" | while IFS= read -r f; do
@@ -160,14 +187,24 @@ do_review() { # <label> <checkout> <brief> <round-dir> <prev-problems-or-empty>
   note "$1: round $(basename "$4"): verdict $verdict"
 }
 
-run_unit() { # <unit-dir-name> <checkout>
-  local u=$1 co=$2 d=$run/$1
-  local round=0 resumed=0 prev="" prevh="" rd code
+run_unit() { # <unit-dir-name> <checkout> [<step>]
+  local u=$1 co=$2 d=$run/$1 k=${3:-}
+  local round=0 resumed=0 prev="" prevh="" rd code from=""
+  # The base is the checkout as the previous step left it, so that whatever changed in the checkout between that
+  # and the (re)start of this unit never lands in its diff. Only a plain (non-group) step has one.
+  if [ -n "$k" ]; then
+    if [ "$k" -gt 1 ]; then from=$run/state-after-S$((k - 1)); else from=$run/plan-base/base; fi
+    if [ "$k" -eq 1 ] && [ "$(cat "$run/plan-base/base-format" 2>/dev/null)" != tree ]; then from=""; fi
+    [ -f "$from" ] || from=""
+  fi
   mkdir -p "$d"
   if [ -f "$d/base" ]; then
     resumed=1
     [ -d "$d/rounds" ] && mv "$d/rounds" "$d/rounds.attempt-$(date +%s)"
-  else
+  fi
+  if [ -n "$from" ]; then
+    cp "$from" "$d/base"; echo tree >"$d/base-format"
+  elif [ "$resumed" -eq 0 ]; then
     snapshot_base "$d" "$co"
   fi
   mkdir -p "$d/rounds"
@@ -288,13 +325,12 @@ run_step() { # <step> <unit-dir-name>...
   local k=$1; shift
   local u pids=() bad="" gb
   if [ "$#" -eq 1 ]; then
-    [ -e "$run/.done-$1" ] || run_unit "$1" "$repo" || return 1
+    [ -e "$run/.done-$1" ] || run_unit "$1" "$repo" "$k" || return 1
     touch "$run/.done-$1"
     return 0
   fi
   if [ ! -e "$run/.group-ready-S$k" ]; then
-    gb=$(git -C "$repo" stash create 2>/dev/null || true)
-    gb=${gb:-$(git -C "$repo" rev-parse HEAD)}
+    gb=$(snapshot_commit "$repo") || gb=$(git -C "$repo" rev-parse HEAD)
     mkdir -p "$run/worktrees"
     for u in "$@"; do
       [ -d "$run/worktrees/$u" ] && continue
@@ -360,6 +396,7 @@ pipeline() {
     # shellcheck disable=SC2086
     if run_step "$k" $line; then
       touch "$run/.done-S$k"; note "done step $k"
+      snapshot_tree "$repo" >"$run/state-after-S$k" 2>/dev/null || rm -f "$run/state-after-S$k"
       if pause_here "$k"; then
         touch "$run/.paused-S$k"
         note "PAUSED after step $k: read $run, then: plan-run.sh resume $(basename "$run")"
