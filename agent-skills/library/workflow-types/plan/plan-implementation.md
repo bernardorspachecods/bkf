@@ -35,6 +35,10 @@ When the brief has a `gate`, the script runs those commands itself after you fin
 and sends the work back, with their output and no review, if one fails. Run them
 yourself before you hand over, when you can. A command you cannot run from where you
 work (a database that is out of reach, say) is named in the handoff, not skipped.
+A command that needs something your sandbox may not reach (a database, the network) is
+not a reason to stop: write the code and the tests that need no such access, and say in
+the handoff which command you could not run. The script runs the gate outside your
+sandbox and sends you its output if it fails.
 Do not weaken a test or a check that already exists to make the gate pass.
 
 **Show every new check failing once.** A test or script you write can pass without
