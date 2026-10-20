@@ -106,10 +106,11 @@ class HooksTest(unittest.TestCase):
         for directory, name in ((".claude", "settings.json"), (".codex", "hooks.json")):
             hooks = self.config(directory, name)["hooks"]
             self.assertEqual(set(hooks), {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"})
-            self.assertEqual(len(hooks["UserPromptSubmit"]), 3)
+            self.assertEqual(len(hooks["UserPromptSubmit"]), 4)
             self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], "python3 " + str((self.home / ".agent-hooks" / "mode.py").resolve()))
             self.assertEqual(hooks["UserPromptSubmit"][1]["hooks"][0]["command"], f"{self.command} hooks run log")
             self.assertEqual(hooks["UserPromptSubmit"][2]["hooks"][0]["command"], f"{self.command} hooks run audit")
+            self.assertEqual(hooks["UserPromptSubmit"][3]["hooks"][0]["command"], f"{self.command} hooks run warnings")
             self.assertEqual(hooks["PreToolUse"][0]["matcher"], "*")
             self.assertEqual(hooks["PreToolUse"][1]["matcher"], "Read|Bash")
             self.assertEqual(hooks["PreToolUse"][1]["hooks"][0]["command"], f"{self.command} hooks run guard")
@@ -198,7 +199,8 @@ class HooksTest(unittest.TestCase):
     def test_only_check_installs_the_recorder_snapshot_and_stop_check(self) -> None:
         run("install", "--write", "--only", "check", "--home", self.home)
         hooks = self.config(".claude", "settings.json")["hooks"]
-        self.assertEqual(set(hooks), {"PostToolUse", "Stop", "SessionStart"})
+        self.assertEqual(set(hooks), {"PostToolUse", "Stop", "SessionStart", "UserPromptSubmit"})
+        self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], f"{self.command} hooks run warnings")
         self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} hooks run snapshot")
         self.assertEqual(hooks["PostToolUse"][0]["hooks"][0]["command"], f"{self.command} hooks run record")
         self.assertEqual(hooks["Stop"][0]["hooks"][0]["command"], f"{self.command} hooks run stop")

@@ -39,12 +39,16 @@ def _validate(root: Path, find_bundles, Validator) -> str:
 
     def validate() -> None:
         try:
+            from navigation_map import GUIDANCE, WARNING_CODES
+
             errors = 0
+            map_warning = False
             warnings: list[str] = []
             for bundle in find_bundles(root):
                 validator = Validator(bundle)
                 validator.validate()
                 errors += sum(finding.severity == "ERROR" for finding in validator.findings)
+                map_warning = map_warning or any(finding.code in WARNING_CODES for finding in validator.findings)
                 warnings.extend(
                     f"  {finding.code} {(bundle / finding.path).relative_to(root).as_posix()}"
                     for finding in validator.findings
@@ -56,6 +60,8 @@ def _validate(root: Path, find_bundles, Validator) -> str:
                 line += "".join("\n" + warning for warning in warnings[:WARNING_LIMIT])
                 if len(warnings) > WARNING_LIMIT:
                     line += f"\n  ... {len(warnings) - WARNING_LIMIT} more"
+                if map_warning:
+                    line += "\n" + GUIDANCE
             result.append(line)
         except BaseException as exc:
             failures.append(exc)

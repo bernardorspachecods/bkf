@@ -6,6 +6,12 @@ import re
 
 
 MAP_HEADING = "## Navigation map"
+WARNING_CODES = ("NAVIGATION_MAP_REVIEW", "NAVIGATION_MAP_STALE")
+GUIDANCE = (
+    "Navigation map: the first column of a row should say what the reader is looking for when that differs "
+    "from the section title; when it would only repeat the title, write the title. Every level 2 section "
+    "needs a row, and every link must point to an existing heading."
+)
 LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")

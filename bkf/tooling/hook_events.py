@@ -22,7 +22,7 @@ AUDIT_PREFIX = re.compile(r"^\s*bkf\s*:", re.IGNORECASE)
 REPORT_DIR = Path.home() / ".agent-hooks" / "reports"
 PASTE_TAG = re.compile(r"^[ \t]*</?pasted_content\b[^>\n]*>[ \t]*\n?|</?pasted_content\b[^>\n]*>", re.MULTILINE)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
-EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit"}
+EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit", "warnings"}
 
 
 def report_failure(event: str, exc: Exception, fields: dict | None = None) -> None:
@@ -55,7 +55,7 @@ def _probe(event: str) -> None:
     elif event == "stop":
         for module in ("generate_inventory", "validate_bundle", "bkf_common", "navigation_map"):
             importlib.import_module(module)
-    elif event not in {"record", "snapshot", "last"}:
+    elif event not in {"record", "snapshot", "last", "warnings"}:
         raise ValueError(f"unknown event {event!r}")
     print(json.dumps({"probe": "ok"}, separators=(",", ":")))
 
@@ -270,6 +270,23 @@ def audit(data: dict, report_dir: Path | None = None) -> dict | None:
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
 
 
+def pending_warnings(data: dict, state_dir: Path | None = None) -> dict | None:
+    """Give the model the warnings the last Stop found, once, with the next prompt."""
+    pending = _state(data.get("session_id", ""), "warnings", state_dir)
+    if not pending.exists():
+        return None
+    notes = json.loads(pending.read_text(encoding="utf-8"))
+    pending.unlink(missing_ok=True)
+    if not isinstance(notes, list) or not notes or any(not isinstance(note, str) for note in notes):
+        return None
+    from navigation_map import GUIDANCE, WARNING_CODES
+
+    context = "BKF warnings for files changed in this session. Fix them when the work allows:\n" + "\n".join(notes)
+    if any(note.startswith(WARNING_CODES) for note in notes):
+        context += "\n" + GUIDANCE
+    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
+
+
 def bundle_root_of(path: Path) -> Path | None:
     """Return the nearest enclosing directory whose MAP.md declares `bkf_version`."""
     from bkf_common import MAP_NAME, is_bundle_root_map
@@ -366,7 +383,10 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
         blocks.unlink(missing_ok=True)
         notes = warnings(roots, paths) if roots else []
         if notes:
-            return {"systemMessage": "BKF warnings for files changed in this session:\n" + "\n".join(notes)}
+            pending = _state(session_id, "warnings", state_dir)
+            pending.parent.mkdir(parents=True, exist_ok=True)
+            pending.write_text(json.dumps(notes, ensure_ascii=False) + "\n", encoding="utf-8")
+            _prune(pending.parent)
         return None
 
     blocks.write_text(str(count + 1))
@@ -411,6 +431,8 @@ def main(argv: list[str]) -> int:
             output = log(data)
         elif event == "audit":
             output = audit(data)
+        elif event == "warnings":
+            output = pending_warnings(data)
         elif event == "stop":
             output = stop(data)
         elif event == "guard":

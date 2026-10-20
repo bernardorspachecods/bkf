@@ -86,6 +86,7 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
         Registration("check", "Stop", None, f"{bkf_command(home)} hooks run stop", re.compile(r"(^|/)bkf hooks run stop$"), 60),
         Registration("log", "UserPromptSubmit", None, f"{bkf_command(home)} hooks run log", re.compile(r"(^|/)bkf hooks run log$")),
         Registration("audit", "UserPromptSubmit", None, f"{bkf_command(home)} hooks run audit", re.compile(r"(^|/)bkf hooks run audit$"), 60),
+        Registration("check", "UserPromptSubmit", None, f"{bkf_command(home)} hooks run warnings", re.compile(r"(^|/)bkf hooks run warnings$")),
         Registration("log", "Stop", None, f"{bkf_command(home)} hooks run last", re.compile(r"(^|/)bkf hooks run last$")),
     ]
     return [item for item in wanted if only in (None, item.hook)]

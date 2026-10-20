@@ -106,6 +106,12 @@ class NavigationMapTests(unittest.TestCase):
         body = self.MAP + "## Alpha\n" + "line\n" * 200 + "## Beta\n" + "line\n" * 200
         self.assertNotIn("NAVIGATION_MAP", self.check(body))
 
+    def test_map_guidance_is_printed_once_and_only_with_a_map_warning(self) -> None:
+        stale = self.MAP + "## Alpha\nx\n## Beta\nx\n## Gamma\nx\n## Delta\nx\n"
+        output = self.check(stale)
+        self.assertEqual(output.count("Navigation map: the first column"), 1)
+        self.assertNotIn("Navigation map: the first column", self.check(self.MAP + "## Alpha\nx\n## Beta\nx\n"))
+
     def test_a_list_of_links_under_another_heading_is_not_a_map(self) -> None:
         body = (
             "# Document\n\n## In this file\n\n- [Alpha](#alpha)\n- [Beta](#beta)\n\n"

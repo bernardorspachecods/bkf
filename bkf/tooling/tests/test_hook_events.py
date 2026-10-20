@@ -208,16 +208,43 @@ class HookEventsTest(unittest.TestCase):
         self.assertEqual(result["decision"], "block")
         self.assertIn("bkf validate", result["reason"])
 
-    def test_warning_for_a_changed_file_is_shown_without_blocking(self) -> None:
+    def warnings_prompt(self, session: str = "s") -> dict | None:
+        return hook_events.pending_warnings({"session_id": session}, self.state)
+
+    def test_warning_for_a_changed_file_reaches_the_model_with_the_next_prompt(self) -> None:
         (self.root / "guide.md").write_text(DOC + "line\n" * 400)
         (self.root / "other.md").write_text(DOC.replace("A guide.", "Another.") + "line\n" * 400)
         self.write_inventory()
         self.touch(self.root / "guide.md")
-        result = self.stop()
-        self.assertNotIn("decision", result)
-        self.assertIn("NAVIGATION_MAP_REVIEW guide.md", result["systemMessage"])
-        self.assertNotIn("other.md", result["systemMessage"])
+        self.assertIsNone(self.stop())
         self.assertFalse((self.state / "s.touched").exists())
+
+        output = self.warnings_prompt()["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "UserPromptSubmit")
+        context = output["additionalContext"]
+        self.assertIn("NAVIGATION_MAP_REVIEW guide.md", context)
+        self.assertNotIn("other.md", context)
+        self.assertIn("the first column of a row should say", context)
+        self.assertIsNone(self.warnings_prompt())
+
+    def test_only_navigation_map_warnings_bring_the_map_guidance(self) -> None:
+        pending = hook_events._state("s", "warnings", self.state)
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text(json.dumps(["DESCRIPTION_REVIEW guide.md: odd"]))
+        context = self.warnings_prompt()["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("DESCRIPTION_REVIEW guide.md", context)
+        self.assertNotIn("first column", context)
+
+    def test_no_pending_warnings_adds_nothing(self) -> None:
+        self.assertIsNone(self.warnings_prompt())
+
+    def test_warnings_event_prints_the_context_for_the_session(self) -> None:
+        pending = hook_events._state("w", "warnings", self.state)
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text(json.dumps(["NAVIGATION_MAP_STALE a.md: x"]))
+        code, stdout, stderr = self.invoke("warnings", {"session_id": "w"})
+        self.assertEqual((code, stderr), (0, ""))
+        self.assertIn("NAVIGATION_MAP_STALE a.md", json.loads(stdout)["hookSpecificOutput"]["additionalContext"])
 
     def test_blocks_at_most_twice_then_lets_the_session_stop(self) -> None:
         (self.root / "new.md").write_text(DOC.replace("A guide.", "A new guide."))

@@ -31,7 +31,7 @@ from bkf_common import (
     render_inventory_entry,
     tracking_state,
 )
-from navigation_map import map_problems
+from navigation_map import GUIDANCE, WARNING_CODES, map_problems
 
 
 SUPPORTED_VERSION = (0, 1)
@@ -645,6 +645,8 @@ def validate_one(root: Path) -> int:
     validator.validate()
     for finding in validator.findings:
         print(f"{finding.severity} {finding.code} {finding.path}: {finding.message}")
+    if any(finding.code in WARNING_CODES for finding in validator.findings):
+        print(GUIDANCE)
 
     errors = any(finding.severity == "ERROR" for finding in validator.findings)
     incomplete = any(

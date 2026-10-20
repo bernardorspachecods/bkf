@@ -34,7 +34,7 @@ the installed tool's environment, so plain `python3` does not run them.
 - [navigation_map.py](/tooling/navigation_map.py) — Parses a document's `## Navigation map` table and checks it against the document's headings; shared by `bkf validate` and the guard hook.
 - [validate_bundle.py](/tooling/validate_bundle.py) — Checks BKF bundle structure, metadata, maps, and links.
 - [updates.py](/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.
-- [hook_events.py](/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, and dispatches the `log`, `guard`, and `audit` hooks.
+- [hook_events.py](/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, gives the agent the resulting warnings with its next prompt, and dispatches the `log`, `guard`, and `audit` hooks.
 - [bkf_hooks.py](/tooling/bkf_hooks.py) — Previews, installs, and reports the seven hook groups (modes, orient, check, log, rules, guard, audit) for Claude Code and Codex.
 - [default_rules.txt](/tooling/default_rules.txt) — Holds the default standing rules that `bkf hooks install --write` copies to `~/.agent-hooks/rules.md` when that file is missing.
 - [agent_modes.py](/tooling/agent_modes.py) — Implements the `w:` and `t:` prompt-prefix hook and the `git stash` block, copied to the user's home on install.

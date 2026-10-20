@@ -62,8 +62,8 @@ list instead of repeating it here.
 `bkf validate <bundle-root>` checks the bundle against its declared BKF version
 and prints findings with severity, code, path, and explanation. The rules are
 in the [specification](/format/format-specification.md#6-conformance) and the
-[frontmatter profiles](/format/frontmatter-profiles.md). It does not check body quality or style, fragment targets, linked artifact
-contents, or remote URLs (URL syntax only).
+[frontmatter profiles](/format/frontmatter-profiles.md). It does not check body quality or style, fragment targets
+(except the links of a `## Navigation map`), linked artifact contents, or remote URLs (URL syntax only).
 
 - Exit `0`: conformant with the supported version. `1`: non-conformant. `2`: the
   bundle path was invalid, or the declared version is unsupported and
@@ -76,9 +76,14 @@ contents, or remote URLs (URL syntax only).
   are validated from their own roots with findings grouped by bundle; the exit
   status is the highest. `--this-bundle` skips them.
 - A tracked description containing `open when` or `use when` is a warning, as
-  is a long document without an early section of at least two links to headings
+  is a document over 350 body lines or 2,000 words without a `## Navigation
+  map` table (`NAVIGATION_MAP_REVIEW`). A document with that table gets
+  `NAVIGATION_MAP_STALE` for a link to a heading that does not exist, a level 2
+  section no row reaches, or a table without rows, whatever its size
   ([specification §4](/format/format-specification.md#4-bkf-documents-and-profiles)).
-  The `feedback` and `ideas` logs are exempt from the long-document warning.
+  The `feedback` and `ideas` logs are exempt from the navigation map warnings.
+  When any navigation map warning is printed, one paragraph on writing the map
+  ends the findings.
 
 ## bkf updates
 
@@ -189,8 +194,9 @@ reported with a `read <map-path>` marker. `--no-validate` omits the health line.
 Validation runs in-process with a five-second limit. The health line reports
 `ok`, the number of errors, or a timeout. When validation finds warnings, a
 second line gives their count and up to 10 of them follow, each as a code and
-path. If the directory is outside a bundle,
-the command prints nothing. An unexpected failure prints a JSON `systemMessage`
+path. When any is a navigation map warning, one paragraph of guidance on writing
+the map follows, the same one `bkf validate` ends its findings with. If the
+directory is outside a bundle, the command prints nothing. An unexpected failure prints a JSON `systemMessage`
 for the user and returns success; `--debug` prints the failure to stderr and
 returns 1.
 
@@ -261,8 +267,10 @@ a tool whose folder is missing is skipped.
   inventory --check`. A failing check blocks the stop and gives the agent the
   output, including the `bkf inventory --write` fix for a stale inventory; a
   warning or an incomplete validation does not block. When the check does not
-  block, the warnings that name a file changed in the session are shown to the
-  user as a `systemMessage`; the agent does not receive them. The hook blocks at most
+  block, the warnings that name a file changed in the session are saved for the
+  session; `bkf hooks run warnings`, a `UserPromptSubmit` hook of this group,
+  gives them to the agent once as context with the next prompt; the user is not
+  shown them. The hook blocks at most
   twice per session so an error the agent cannot fix cannot trap it, and a
   passing or abandoned check clears the record and refreshes the snapshot. The
   recorder remains a fallback when git comparison is unavailable. A snapshot

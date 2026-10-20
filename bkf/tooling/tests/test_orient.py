@@ -71,7 +71,7 @@ class OrientTests(unittest.TestCase):
 
             result = run("--cwd", root)
 
-        self.assertIn("bkf validate: ok\nbkf validate: 1 warnings (run bkf validate)\n  NAVIGATION_MAP_REVIEW big.md", result.stdout)
+        self.assertIn("bkf validate: ok\nbkf validate: 1 warnings (run bkf validate)\n  NAVIGATION_MAP_REVIEW big.md\nNavigation map: the first column", result.stdout)
 
     def test_nested_area_cwd_prints_map_chain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
