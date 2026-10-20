@@ -100,7 +100,9 @@ Each agent gets a short brief. The method lives in the guide for its role, so
 the brief points to it and never explains it. The briefs are the same shape every
 time, so they are built from fixed templates: you write only the goal, the unit
 briefs and their order, and a script builds the agent briefs, runs each unit and
-stops when a review escalates.
+stops when a review escalates. That script is `plan-run.sh`, owned by the
+`dispatch-codex` skill (`scripts/plan-run.sh`); load that skill for its usage. It runs
+Codex agents, not Claude ones.
 
 | Role | Does | Receives |
 | --- | --- | --- |
