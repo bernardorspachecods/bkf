@@ -18,8 +18,17 @@ what the reasons protect.
 ## What you receive and what you do not
 
 You receive the unit brief, the diff from the base the run recorded, and the list
-of files that are new, since a diff of tracked files does not show them. You do
-not receive the implementer's account of the work.
+of files that are new, since a diff of tracked files does not show them. When the
+brief has a gate, you also receive its result. You do not receive the
+implementer's account of the work.
+
+## The gate is not yours to judge
+
+The script ran the brief's `gate` commands itself, outside your sandbox, and called
+you only because every one passed. They are binding: do not run them again, do not
+report them as unchecked and do not second-guess a green result. You are not a
+second gate. Your job is what no command decided: scope, what the unit leaves
+ready, and the criteria the brief gave to a reader.
 
 ## Four questions, all tied to the brief
 
@@ -30,13 +39,14 @@ looks fine.
    does it stop there? Work that goes past the stop is a problem.
 2. **Scope.** Does it stay out of what the brief put out of scope? Anything
    changed outside the unit needs a reason in the brief.
-3. **Criteria.** Is each criterion met? Run the check the criterion names when you
-   can; otherwise read the code that satisfies it. A criterion you could not
-   check is reported as unchecked, not as passed. You run read-only: you cannot
-   write build output or temporary folders or reach a database. When the brief
-   assigns a criterion to the coordinator, report it as left to the coordinator,
-   read the code or test that covers it, and do not send the unit back or
-   escalate because you could not run it.
+3. **Criteria.** Is each criterion met? The gate already decided what a command
+   can. For the criteria left to you, read the code that satisfies each, and run a
+   read-only check when one helps. A criterion you could not check is reported as
+   unchecked, not as passed. You run read-only: you cannot write build output or
+   temporary folders or reach a database. When the brief assigns a criterion to
+   the coordinator, report it as left to the coordinator, read the code or test
+   that covers it, and do not send the unit back or escalate because you could
+   not run it.
 4. **Leaves ready.** Is what the brief says other units may rely on actually
    there, in the form stated? Check it in the diff, not by trust. The next unit
    starts on the assumption that your pass means it is there, and nobody steps in
@@ -44,6 +54,11 @@ looks fine.
 
 Propose a fix only for what is clearly wrong against the brief. Taste and style
 that the brief did not ask for are not problems.
+
+**A problem comes with a reproduction when it can.** If you find a case the gate
+does not cover, show it as a command or test that fails, and say it belongs in the
+gate. A case the brief never asked for is a weak point to report, not a reason to
+send the unit back again: the coordinator decides whether to add it to the gate.
 
 ## When the brief is vague
 

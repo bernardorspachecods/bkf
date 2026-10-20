@@ -5,6 +5,7 @@
 #   plan-run.sh start   [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> <goal.md> <plan.txt>
 #   plan-run.sh resume  [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name>
 #   plan-run.sh status  <name>
+#   plan-run.sh gates   <plan.txt|name>
 #   plan-run.sh finish  [--discard] <name>
 # plan.txt: one step per line, in order. A line holds the paths of unit briefs (relative to plan.txt),
 # separated by spaces. One brief is a unit run in your checkout. Several on one line are a parallel group:
@@ -20,7 +21,15 @@
 # The agents never change git state. A unit's base is the checkout as the previous step left it (a git tree of
 # the working files, untracked ones included); the reviewer reads the diff from it. Changes made in the checkout
 # between steps, or while a unit is stopped, therefore never land in the next unit's diff.
+# The gate: a brief lists commands in a fenced block tagged `gate` (one command per line; blank lines and lines
+# starting with # are ignored). After each implementation round the script runs them itself, in the checkout,
+# outside any agent, and only calls the reviewer when every one passes. A failing command sends the work back to
+# the implementer with its output and no review; the reviewer cannot override a command, and a pass needs the
+# gate green and the reviewer's pass. A brief without a gate is reviewed as before. `gates` prints the commands
+# of every unit (from a plan.txt or a run), so the user can read what code will run before agreeing to it.
 # Limits: PLAN_MAX_ROUNDS (default 3) escalates a review that keeps sending work back;
+# PLAN_MAX_GATE_ROUNDS (default 5) stops a unit whose gate keeps failing; PLAN_GATE_TIMEOUT (seconds, default
+# 900) limits each gate command;
 # PLAN_MIN_CHECKED (default 3) is the least number of lines a reviewer must give under
 # "What I checked". PLAN_GUIDES points at the folder with the role guides.
 set -uo pipefail
@@ -30,6 +39,8 @@ root=${PLAN_RUNS_DIR:-$HOME/.plan-runs}
 guides=${PLAN_GUIDES:-$(git -C "$here" rev-parse --show-toplevel 2>/dev/null)/agent-skills/library/workflow-types/plan}
 max_rounds=${PLAN_MAX_ROUNDS:-3}
 min_checked=${PLAN_MIN_CHECKED:-3}
+max_gate_rounds=${PLAN_MAX_GATE_ROUNDS:-5}
+gate_timeout=${PLAN_GATE_TIMEOUT:-900}
 model=gpt-6-luna effort=xhigh review_effort=
 
 # shellcheck source=lib-codex.sh
@@ -113,17 +124,62 @@ make_patch() { # <dir> <out-file> <checkout>
   return 0
 }
 
+# ---- The gate: commands in the brief that the script runs itself, outside any agent ----
+
+gate_commands() { # <brief>...: the commands of every ```gate block, one per line, without duplicates
+  awk '
+    /^```gate[[:space:]]*$/ { on = 1; next }
+    on && /^```[[:space:]]*$/ { on = 0; next }
+    on && !/^[[:space:]]*(#|$)/ { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); if (!seen[$0]++) print }
+  ' "$@"
+}
+
+# Runs the gate of a brief in a checkout. Writes <round>/gate.md (each command, its result, the tail of the
+# output of those that failed) and gate-<n>.log; returns nonzero when any command failed.
+run_gate() { # <brief> <checkout> <round-dir>
+  local cmd n=0 failed=0 code start secs log out=$3/gate.md
+  printf '# Gate\n\nThe script ran these commands in %s, outside any agent.\n\n' "$2" >"$out"
+  while IFS= read -r cmd; do
+    n=$((n + 1))
+    log=$3/gate-$n.log
+    start=$(date +%s)
+    (cd "$2" && perl -e 'alarm shift @ARGV; exec @ARGV' "$gate_timeout" bash -c "$cmd") >"$log" 2>&1 </dev/null
+    code=$?
+    secs=$(($(date +%s) - start))
+    if [ "$code" -eq 0 ]; then
+      printf -- '- PASS `%s` (%ss)\n' "$cmd" "$secs" >>"$out"
+    else
+      failed=1
+      [ "$code" -eq 142 ] && printf 'timed out after %ss\n' "$gate_timeout" >>"$log"
+      printf -- '- FAIL `%s` exit %s (%ss)\n\n```\n%s\n```\n\n' "$cmd" "$code" "$secs" "$(tail -n 60 "$log")" >>"$out"
+    fi
+  done < <(gate_commands "$1")
+  return "$failed"
+}
+
+# The review a failed gate produces in place of a reviewer: back, with the commands and their output.
+write_gate_problems() { # <round-dir>
+  {
+    printf '## What I checked\n\n- The script ran the brief'"'"'s gate in the checkout; a command failed, so no reviewer ran (a failing command is not a matter of opinion).\n- The results are in gate.md of this round.\n- Each failing command below must pass.\n\n## Problems\n\n'
+    cat "$1/gate.md"
+    printf '\nVERDICT: back\n'
+  } >"$1/problems.md"
+}
+
 # ---- Prompts: fixed templates, so the coordinator never writes them by hand ----
 
 implement_prompt() { # <unit-brief> <round> <resumed> <prev-problems> <prev-handoff>
   cat "$1"
   printf '\n\n---\n## Role\nOpen and follow the role guide: %s/plan-implementation.md (read-only). It says how to work inside the brief, what to verify and what the handoff holds.\n' "$guides"
   printf '\n## Rules\n- The current directory is the repository: do the work here.\n- Do not run git commands that change state (no commit, stage, stash, reset, clean, checkout).\n- Do not write the handoff to a file. Your final message is the handoff, in the form the guide gives, and nothing else.\n'
+  if [ -n "$(gate_commands "$1")" ]; then
+    printf -- '- The brief has a `gate`. After you finish, the script runs those commands itself and sends the work back, without a review, if any fails. Run them yourself first when you can.\n'
+  fi
   if [ "$2" -eq 1 ] && [ "$3" -eq 1 ]; then
     printf '\nAn earlier attempt at this unit was stopped. The checkout may already hold its work. Judge it against the brief, keep what is right and fix the rest.\n'
   fi
   if [ -n "$4" ]; then
-    printf '\nA reviewer sent your work back. The work from the earlier round is in the checkout. Fix the problems below and only those, keeping what was fine, and verify again.\n\nProblems from the review:\n\n'
+    printf '\nThe script'"'"'s gate or a reviewer sent your work back. The work from the earlier round is in the checkout. Fix the problems below and only those, keeping what was fine, and verify again.\n\nProblems from the gate or the review:\n\n'
     cat "$4"
     printf '\n\nYour handoff from the previous round, for you to resume from:\n\n'
     cat "$5"
@@ -147,10 +203,13 @@ integrate_prompt() { # <group-brief> <failed-patches-or-empty> <prev-problems> <
   fi
 }
 
-review_prompt() { # <brief> <patch> <previous-problems-or-empty> <attempt>
+review_prompt() { # <brief> <patch> <previous-problems-or-empty> <attempt> <gate-file-or-empty>
   printf '# Review\n\n## The brief\n\n'
   cat "$1"
   printf '\n\n---\n## Inputs (read-only)\n- The diff, new files included: %s\n- The repository is your current directory. Open it read-only to check the criteria. Do not change anything.\n- Do not open anything else under the run folder, in particular no handoff: you judge the brief against the diff.\n' "$2"
+  if [ -n "${5:-}" ]; then
+    printf -- '- The gate: the script ran the brief'"'"'s `gate` commands itself, outside your sandbox, and every one passed: %s. They are binding and not open to your verdict. Do not run them again and do not report them as unchecked. You judge what code did not check.\n' "$5"
+  fi
   printf '\n## Role\nOpen and follow the role guide: %s/plan-review.md (read-only). You are not the author of the work.\n' "$guides"
   if [ -n "$3" ]; then
     printf '\nThe problems you listed in the previous round are below. The work was corrected; check whether they are gone.\n\n'
@@ -171,7 +230,7 @@ do_review() { # <label> <checkout> <brief> <round-dir> <prev-problems-or-empty>
   while [ "$attempt" -lt 3 ]; do
     attempt=$((attempt + 1))
     rm -f "$4/review.last-message.md"
-    review_prompt "$3" "$4/diff.patch" "$5" "$attempt" >"$4/review-prompt.md"
+    review_prompt "$3" "$4/diff.patch" "$5" "$attempt" "$([ -s "$4/gate.md" ] && echo "$4/gate.md")" >"$4/review-prompt.md"
     review_run "$2" "$4/review-prompt.md" "$4/review" read-only
     code=$?
     [ "$code" -eq 0 ] || { reason="$1: review exit=$code (see $4/review.stderr.log)"; return 1; }
@@ -189,7 +248,7 @@ do_review() { # <label> <checkout> <brief> <round-dir> <prev-problems-or-empty>
 
 run_unit() { # <unit-dir-name> <checkout> [<step>]
   local u=$1 co=$2 d=$run/$1 k=${3:-}
-  local round=0 resumed=0 prev="" prevh="" rd code from=""
+  local round=0 reviews=0 gate_fails=0 resumed=0 prev="" prevh="" rd code from=""
   # The base is the checkout as the previous step left it, so that whatever changed in the checkout between that
   # and the (re)start of this unit never lands in its diff. Only a plain (non-group) step has one.
   if [ -n "$k" ]; then
@@ -227,6 +286,26 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
     make_patch "$d" "$rd/diff.patch" "$co"
     [ -s "$rd/diff.patch" ] || { reason="$u: the diff is empty after round $round, so nothing was changed"; return 1; }
 
+    if [ -n "$(gate_commands "$d/brief.md")" ]; then
+      echo "gate round $round" >"$d/status"
+      note "$u round $round: gate"
+      if run_gate "$d/brief.md" "$co" "$rd"; then
+        note "$u round $round: gate passed"
+      else
+        gate_fails=$((gate_fails + 1))
+        write_gate_problems "$rd"; echo back >"$rd/verdict"
+        note "$u: round $round: gate failed (see $rd/gate.md)"
+        if [ "$gate_fails" -ge "$max_gate_rounds" ]; then
+          echo escalated >"$d/status"
+          reason="$u: the gate still fails after $gate_fails rounds (see $rd/gate.md)"
+          return 1
+        fi
+        prev=$rd/problems.md prevh=$rd/handoff.md
+        continue
+      fi
+    fi
+
+    reviews=$((reviews + 1))
     echo "reviewing round $round" >"$d/status"
     note "$u round $round: review"
     do_review "$u" "$co" "$d/brief.md" "$rd" "$prev" || return 1
@@ -235,7 +314,7 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
       pass) echo passed >"$d/status"; cp "$rd/diff.patch" "$d/final.patch"; return 0 ;;
       escalate) echo escalated >"$d/status"; reason="$u: the reviewer escalated (see $rd/problems.md)"; return 1 ;;
       back)
-        if [ "$round" -ge "$max_rounds" ]; then
+        if [ "$reviews" -ge "$max_rounds" ]; then
           echo escalated >"$d/status"
           reason="$u: round cap $max_rounds reached (see $rd/problems.md)"
           return 1
@@ -248,7 +327,7 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
 # Bring the units of a parallel group together in the checkout and review the combined result.
 run_integration() { # <step> <unit-dir-name>...
   local k=$1; shift
-  local idir=$run/S$k-integration name=S$k-integration u round=0 prev="" prevh="" rd code failed
+  local idir=$run/S$k-integration name=S$k-integration u round=0 reviews=0 gate_fails=0 prev="" prevh="" rd code failed
   mkdir -p "$idir"
   if [ -f "$idir/base" ]; then
     [ -d "$idir/rounds" ] && mv "$idir/rounds" "$idir/rounds.attempt-$(date +%s)"
@@ -292,6 +371,26 @@ run_integration() { # <step> <unit-dir-name>...
     make_patch "$idir" "$rd/diff.patch" "$repo"
     [ -s "$rd/diff.patch" ] || { reason="$name: the combined diff is empty"; return 1; }
 
+    if [ -n "$(gate_commands "$idir/brief.md")" ]; then
+      echo "gate round $round" >"$idir/status"
+      note "$name round $round: gate"
+      if run_gate "$idir/brief.md" "$repo" "$rd"; then
+        note "$name round $round: gate passed"
+      else
+        gate_fails=$((gate_fails + 1))
+        write_gate_problems "$rd"; echo back >"$rd/verdict"
+        note "$name: round $round: gate failed (see $rd/gate.md)"
+        if [ "$gate_fails" -ge "$max_gate_rounds" ]; then
+          echo escalated >"$idir/status"
+          reason="$name: the gate still fails after $gate_fails rounds (see $rd/gate.md)"
+          return 1
+        fi
+        prev=$rd/problems.md prevh=$rd/handoff.md
+        continue
+      fi
+    fi
+
+    reviews=$((reviews + 1))
     echo "reviewing round $round" >"$idir/status"
     note "$name round $round: review"
     do_review "$name" "$repo" "$idir/brief.md" "$rd" "$prev" || return 1
@@ -300,7 +399,7 @@ run_integration() { # <step> <unit-dir-name>...
       pass) echo passed >"$idir/status"; return 0 ;;
       escalate) echo escalated >"$idir/status"; reason="$name: the reviewer escalated (see $rd/problems.md)"; return 1 ;;
       back)
-        if [ "$round" -ge "$max_rounds" ]; then
+        if [ "$reviews" -ge "$max_rounds" ]; then
           echo escalated >"$idir/status"
           reason="$name: round cap $max_rounds reached (see $rd/problems.md)"
           return 1
@@ -481,6 +580,9 @@ cmd_start() {
   printf '%s %s %s\n' "$model" "$effort" "$review_effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
   note "start $name ($model $effort, review ${review_effort:-$effort}, max $max_rounds rounds, ${#steps[@]} step(s), $i unit(s), repo $repo)"
+  for u in $(all_units); do
+    [ -n "$(gate_commands "$run/00-input/units/$u.md")" ] || note "unit $u has no gate: only a reviewer checks it"
+  done
   pipeline
 }
 
@@ -507,6 +609,38 @@ cmd_status() {
   [ "$#" -eq 1 ] || die 'usage: status <name>'
   load_run "$1"
   cat "$run/status.log"
+}
+
+# What code will run for each unit, for the user to read and agree to before the run. Exits 1 when a unit has no gate.
+cmd_gates() { # <plan.txt | run-name>
+  [ "$#" -eq 1 ] || die 'usage: gates <plan.txt|name>'
+  local files=() f u w line pdir cmds missing=0
+  if [ -f "$1" ]; then
+    pdir=$(cd "$(dirname "$1")" && pwd)
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=${line%%#*}
+      for w in $line; do
+        f=$w; case $f in /*) ;; *) f=$pdir/$f ;; esac
+        [ -s "$f" ] || die "missing or empty unit brief: $w"
+        files+=("$f")
+      done
+    done <"$1"
+  else
+    load_run "$1"
+    for u in $(all_units); do files+=("$run/00-input/units/$u.md"); done
+  fi
+  [ "${#files[@]}" -gt 0 ] || die 'no unit'
+  for f in "${files[@]}"; do
+    printf '%s\n' "$(basename "$f" .md)"
+    cmds=$(gate_commands "$f")
+    if [ -n "$cmds" ]; then
+      printf '%s\n' "$cmds" | sed 's/^/  $ /'
+    else
+      printf '  NO GATE: only a reviewer checks this unit\n'; missing=1
+    fi
+    printf '\n'
+  done
+  return "$missing"
 }
 
 # The run's history as a readable summary: per unit and per group integration, the rounds and how it ended.
@@ -571,6 +705,7 @@ case "$sub" in
   start) cmd_start "$@" ;;
   resume) cmd_resume "$@" ;;
   status) cmd_status "$@" ;;
+  gates) cmd_gates "$@" ;;
   finish) cmd_finish "$@" ;;
-  *) die 'usage: plan-run.sh start|resume|status|finish ...' ;;
+  *) die 'usage: plan-run.sh start|resume|status|gates|finish ...' ;;
 esac

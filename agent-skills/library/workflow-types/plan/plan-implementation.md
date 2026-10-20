@@ -31,6 +31,12 @@ Run the checks the criteria name, and any others that tell you the unit works.
 Report what you ran and what came out, including failures. A unit that is not
 verified is not done, and a reviewer cannot tell it from one that is.
 
+When the brief has a `gate`, the script runs those commands itself after you finish
+and sends the work back, with their output and no review, if one fails. Run them
+yourself before you hand over, when you can. A command you cannot run from where you
+work (a database that is out of reach, say) is named in the handoff, not skipped.
+Do not weaken a test or a check that already exists to make the gate pass.
+
 ## Do not touch git state
 
 Do not commit, stage, stash, reset, clean or switch branches. The run records a

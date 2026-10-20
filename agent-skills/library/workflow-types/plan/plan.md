@@ -27,6 +27,10 @@ keep what the reasons protect.
   big. Split it until a reviewer holding only its brief and its diff can judge it.
 - **Roles, not headcounts.** Implementation and review are roles. Nobody reviews
   what they wrote.
+- **Code decides what code can decide.** An agent checking another agent's work
+  is a second opinion, not evidence: two models agreeing is one more guess. A
+  unit passes when commands that cannot be talked out of a result pass, run by
+  the script and not by an agent. An agent judges only what no command can.
 - **The user steers at the start and judges at the end.** The goal and the
   split into units are where the user steers; each unit then runs without them.
 - **You brief, you do not do.** You keep the conversation with the user and
@@ -75,6 +79,13 @@ ui.md  ux.md      # run together
 tests.md
 ```
 
+**The user agrees what code will run.** The user cannot read every diff, and does
+not have to read the backend. What they can read is the list of commands that
+decide each unit. Before `start`, run `plan-run.sh gates plan.txt`, show the user
+that list, and have them agree to it; a unit with no command needs a reason
+the user accepts. The agreement is about a few lines per unit, and it is where the
+user's judgment is worth most.
+
 **Checkpoints.** A run can pause after chosen steps (`-p`). Ask the user, when
 you agree the split, who the pauses are for: only for you to check the step
 (rerun what the reviewer's sandbox could not, read the diff, then resume without
@@ -96,7 +107,8 @@ Unit brief
 ├─ Receives      what it can rely on from other units (a fact, not "look at what they did")
 ├─ Leaves ready  what other units may rely on from it
 ├─ Out of scope  what it must not touch
-└─ Criteria      what the reviewer verifies, and how (a test, a command, a read)
+├─ Gate          the commands the script runs; the unit cannot pass if one fails
+└─ Criteria      what the reviewer judges that no command checks
 ```
 
 - **Receives and leaves ready are how units touch.** Write them as concrete
@@ -105,21 +117,37 @@ Unit brief
   fixed then: what one unit leaves ready is exactly what the next receives. The
   producing unit's review checks that it left that ready, so a unit never starts
   on a contract that was not met.
-- **Criteria are checkable.** A criterion the reviewer can only agree with is
-  not a criterion.
-- **Say who checks each criterion.** The reviewer runs in a read-only sandbox: it
-  cannot write build output, temporary folders or type-check caches, and it
-  cannot reach a database. Mark each criterion as one the reviewer checks by
-  reading, or one the coordinator runs after the round (a full type check, a
-  build, a test against a database), and say in the brief that the reviewer does
-  not send back or escalate because it could not run the second kind. Without this
-  the review escalates for a reason that has nothing to do with the work.
-- **Every unit has an executable check.** At least one criterion is a command
-  that fails if the unit is wrong: a test, a script, a query against the database,
-  a comparison of the behaviour before and after. A review by reading is a second
-  opinion, not the evidence. When the checking tool does not exist yet, make
-  building it a unit that comes first. Name what cannot be checked by a command
-  (looks, the accuracy of prose) and who judges it, so it is not left to chance.
+- **The gate is a fenced block tagged `gate`,** one command per line:
+
+  ````
+  ```gate
+  pnpm check:quick
+  node --test scripts/audit-write-inventory.test.mjs
+  ```
+  ````
+
+  After each implementation round the script runs these in the checkout, outside
+  any agent and outside the reviewer's sandbox, so they can reach a database or
+  write build output. A failing command sends the work back to the implementer
+  with its output and no review; the reviewer cannot override it, and cannot be
+  asked until it is green. Write every criterion that a command can decide as a
+  gate line. A command that fails if the unit is wrong: a test, a script, a query,
+  a comparison of the behaviour before and after.
+- **When the checking tool does not exist yet,** make building it a unit that
+  comes first, and put the commands of the unit that uses it in that later unit.
+- **A command must fail when the work is wrong.** Say in the unit how the command
+  is shown to fail: a test that was run against a broken copy, or a case that is
+  expected to be rejected. A gate that cannot fail is not a gate.
+- **Criteria are what the gate cannot decide:** whether the diff stays in scope,
+  whether what the unit leaves ready is there as stated, whether prose is accurate,
+  how a page looks. Say who judges each: the reviewer by reading, or the user.
+  The reviewer does not run the gate again and does not send back or escalate
+  because it could not run a command; it reports what it could not check.
+- **Closed cases for open problems.** For a tool whose correctness has no end
+  (a static analysis, a parser), list in the gate the cases it must get right, and
+  record the limits it is known to have. A reviewer who finds a new case reports
+  it with a command that fails, to be added to the gate, instead of sending the
+  unit back for a case the brief never asked for.
 - **Out of scope is as important as the result.** It keeps a diff small enough to review.
 
 ## 3. Delegating
@@ -139,9 +167,10 @@ Codex agents, not Claude ones.
 | [Integration](/plan-integration.md) | Only for a parallel group: applies the diffs, resolves conflicts, fixes what the combined review found | The briefs of the group |
 
 ```
-Unit brief ─► Implement ─► Review ─► pass ─► next unit
-                  ▲           │
-                  └── back ───┘   escalate ─► you
+Unit brief ─► Implement ─► Gate ─► Review ─► pass ─► next unit
+                  ▲          │ red     │
+                  ├──────────┘         │
+                  └──────── back ──────┘   escalate ─► you
 
 Parallel group:  unit A ─► review ─┐
                  unit B ─► review ─┴─► Integration ─► Review of the combined result ─► next step
@@ -149,15 +178,19 @@ Parallel group:  unit A ─► review ─┐
 
 Rules that hold whatever the number of agents:
 
+- **The gate is run by the script, not by an agent,** and a review does not
+  replace it. A unit passes when the gate is green and the reviewer passes.
 - **Review is by someone other than the implementer,** and does not see the
-  implementer's reasoning or handoff. The brief and the diff are all it needs.
+  implementer's reasoning or handoff. The brief, the diff and the gate result are
+  all it needs.
 - **The handoff is a log, not evidence.** It helps the implementer resume when a
   unit is sent back, and helps you read the run. What a unit left ready is attested
   by its review, not by its handoff.
 - **Each agent writes only its own files.** Two agents never touch the same file.
-- **Sending back has a cap on rounds** (three by default). If the same problem
-  returns, or the cap is reached, the unit goes to you, because the brief is
-  probably what is wrong. You decide whether to revise it with the user.
+- **Sending back has a cap on rounds** (three reviews by default; a gate that
+  keeps failing has its own, larger cap). If the same problem returns, or the cap
+  is reached, the unit goes to you, because the brief is probably what is wrong.
+  You decide whether to revise it with the user.
 - **A review shows what it checked.** A review without a list of what it went
   through does not count.
 - **Git state is not touched by agents.** They do not commit, stage, stash or

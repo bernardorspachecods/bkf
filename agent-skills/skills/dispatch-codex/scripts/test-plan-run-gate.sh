@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Tests the gate of plan-run.sh with a fake `codex`, in a throwaway repository: no model is called.
+# Usage: test-plan-run-gate.sh        (exit 0 when every case passes)
+set -uo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+work=$(mktemp -d "${TMPDIR:-/tmp}/plan-run-gate-test.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+fail=0
+check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
+
+# A fake codex. The final review of the plan ("# Final review") just writes a report. Reviews (prompt starting "# Review") answer with $FAKE_VERDICT and count themselves in
+# $FAKE_STATE/reviews; implementations run $FAKE_IMPL in the checkout, with the call number in $FAKE_N.
+mkdir -p "$work/bin" "$work/guides"
+touch "$work/guides/plan-implementation.md" "$work/guides/plan-review.md" "$work/guides/plan-integration.md"
+cat >"$work/bin/codex" <<'EOF'
+#!/usr/bin/env bash
+dir="" out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in -C) dir=$2; shift 2 ;; -o) out=$2; shift 2 ;; *) shift ;; esac
+done
+prompt=$(cat)
+if [ "${prompt#\# Final review}" != "$prompt" ]; then
+  echo "report" >"$out"
+elif [ "${prompt#\# Review}" != "$prompt" ]; then
+  n=$(($(cat "$FAKE_STATE/reviews" 2>/dev/null || echo 0) + 1)); echo "$n" >"$FAKE_STATE/reviews"
+  printf '%s\n' "$prompt" >"$FAKE_STATE/review-prompt-$n.md"
+  printf '## What I checked\n\n- one\n- two\n- three\n\n## Problems\n\nnone\n\nVERDICT: %s\n' "${FAKE_VERDICT:-pass}" >"$out"
+else
+  n=$(($(cat "$FAKE_STATE/impls" 2>/dev/null || echo 0) + 1)); echo "$n" >"$FAKE_STATE/impls"
+  printf '%s\n' "$prompt" >"$FAKE_STATE/impl-prompt-$n.md"
+  (cd "$dir" && FAKE_N=$n bash -c "$FAKE_IMPL")
+  echo "handoff $n" >"$out"
+fi
+EOF
+chmod +x "$work/bin/codex"
+
+new_case() { # <name> <gate-block-or-empty> <impl-script>
+  case_dir=$work/$1; mkdir -p "$case_dir/repo" "$case_dir/state" "$case_dir/plan"
+  git -C "$case_dir/repo" init -q . && git -C "$case_dir/repo" config user.email t@t && git -C "$case_dir/repo" config user.name t
+  echo base >"$case_dir/repo/a.txt"; git -C "$case_dir/repo" add -A && git -C "$case_dir/repo" commit -qm init
+  echo "goal" >"$case_dir/plan/goal.md"
+  { printf '# Unit\n\n## Result\nx\n'; [ -n "$2" ] && printf '\n```gate\n%s\n```\n' "$2"; } >"$case_dir/plan/unit.md"
+  echo "unit.md" >"$case_dir/plan/plan.txt"
+  export FAKE_STATE=$case_dir/state FAKE_IMPL=$3
+}
+run() { # <name> [env...]  -> runs start, prints nothing; the exit code is in $code
+  (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "${@:2}" \
+    "$here/plan-run.sh" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/out.txt" 2>&1
+  code=$?
+}
+reviews() { cat "$case_dir/state/reviews" 2>/dev/null || echo 0; }
+impls() { cat "$case_dir/state/impls" 2>/dev/null || echo 0; }
+
+# 1. No gate: reviewed as before.
+new_case nogate "" 'echo change >>a.txt'
+run nogate
+check "no gate: the run is READY" '[ "$code" -eq 0 ] && grep -q READY "$case_dir/out.txt"'
+check "no gate: one review" '[ "$(reviews)" -eq 1 ]'
+check "no gate: start says the unit has no gate" 'grep -q "has no gate" "$case_dir/runs/r/status.log"'
+
+# 2. Gate green: the reviewer is told, and it passes.
+new_case green 'test -f ok' 'echo change >>a.txt; touch ok'
+run green
+check "gate green: ready" '[ "$code" -eq 0 ]'
+check "gate green: the review prompt names the gate" 'grep -q "ran the brief" "$case_dir/state/review-prompt-1.md" && grep -q "gate.md" "$case_dir/state/review-prompt-1.md"'
+check "gate green: the implementer was told about the gate" 'grep -q "The brief has a \`gate\`" "$case_dir/state/impl-prompt-1.md"'
+
+# 3. Gate red, then fixed: the first round never reaches a reviewer, and the failure goes back to the implementer.
+new_case redfix 'test -f ok' 'echo change >>a.txt; [ "$FAKE_N" -ge 2 ] && touch ok; true'
+run redfix
+check "gate red then fixed: ready" '[ "$code" -eq 0 ]'
+check "gate red then fixed: two implementations, one review" '[ "$(impls)" -eq 2 ] && [ "$(reviews)" -eq 1 ]'
+check "gate red then fixed: round 1 verdict is back, written by the script" '[ "$(cat "$case_dir/runs/r/01-unit/rounds/1/verdict")" = back ] && grep -q "FAIL \`test -f ok\`" "$case_dir/runs/r/01-unit/rounds/1/problems.md"'
+check "gate red then fixed: round 2 implementer saw the failing command" 'grep -q "FAIL \`test -f ok\`" "$case_dir/state/impl-prompt-2.md"'
+
+# 4. Gate always red: the reviewer can never pass it. The unit stops after PLAN_MAX_GATE_ROUNDS.
+new_case alwaysred 'false' 'echo change >>a.txt'
+FAKE_VERDICT=pass run alwaysred PLAN_MAX_GATE_ROUNDS=2
+check "gate always red: stopped" '[ "$code" -ne 0 ] && grep -q "gate still fails after 2 rounds" "$case_dir/runs/r/status.log"'
+check "gate always red: no reviewer was called, even one that would say pass" '[ "$(reviews)" -eq 0 ]'
+
+# 5. A reviewer 'back' is still counted apart from gate failures.
+new_case backs 'true' 'echo change >>a.txt'
+FAKE_VERDICT=back run backs PLAN_MAX_ROUNDS=2
+check "reviewer back: stops at the review cap" '[ "$code" -ne 0 ] && [ "$(reviews)" -eq 2 ] && grep -q "round cap 2 reached" "$case_dir/runs/r/status.log"'
+
+# 6. A command that runs too long fails the gate.
+new_case slow 'sleep 5' 'echo change >>a.txt'
+run slow PLAN_GATE_TIMEOUT=1 PLAN_MAX_GATE_ROUNDS=1
+check "timeout: the gate fails" '[ "$code" -ne 0 ] && grep -q "FAIL \`sleep 5\`" "$case_dir/runs/r/01-unit/rounds/1/gate.md"'
+
+# 7. Parsing: comments, blank lines and duplicates; two blocks; a block without the tag is ignored.
+printf '# U\n```gate\n# comment\n\ntrue\ntrue\n```\ntext\n```gate\nfalse\n```\n```bash\nexit 9\n```\n' >"$work/parse.md"
+cmds=$(bash -c ". '$here/lib-codex.sh'; eval \"\$(sed -n '/^gate_commands() {/,/^}/p' '$here/plan-run.sh')\"; gate_commands '$work/parse.md'")
+check "parsing: only gate lines, deduplicated, in order" '[ "$cmds" = "$(printf "true\nfalse")" ]'
+
+# 8. `gates` prints the commands and flags a unit without one.
+new_case gates 'echo hello' 'true'
+printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; printf 'unit.md\nunit2.md\n' >"$case_dir/plan/plan.txt"
+gout=$("$here/plan-run.sh" gates "$case_dir/plan/plan.txt" 2>&1); gcode=$?
+check "gates: lists the command" 'echo "$gout" | grep -q "\$ echo hello"'
+check "gates: flags the unit with no gate and exits 1" 'echo "$gout" | grep -q "NO GATE" && [ "$gcode" -eq 1 ]'
+
+exit "$fail"
