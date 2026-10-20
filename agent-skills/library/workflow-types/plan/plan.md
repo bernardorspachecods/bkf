@@ -66,6 +66,26 @@ the work (data, interface, behaviour), not the order of effort. Test each unit:
 If a unit fails a test, split it again or merge it with the one it cannot be
 separated from.
 
+**How big is too big.** Measured on 17 units of one plan (one repository, one model, so
+a starting point and not a law): implementation rounds of 14 to 60 agent steps took
+1 to 5 minutes, and rounds of 100 or more steps took 12 to 16 minutes. The slow ones
+were not the ones with the most files, which predict the number of steps poorly: the
+slow units designed several new things at once (a migration, fixtures and tests that
+depend on each other, or five groups of scenarios), while a unit that repeated a known
+pattern across nine files took 32 steps. So:
+
+- **A unit designs one new thing:** one migration, one script, one tool, one set of tests. Repeating
+  a pattern already settled across many files is mechanical and can be larger.
+- **About ten files is the ceiling for work that is not mechanical.** Past it, split.
+- **Split on the seams the agent would otherwise cross:** a unit that makes the agent
+  read a different group of modules for each part is several units.
+
+Long rounds also carry a much larger context (about 156 thousand input tokens per step
+in the slowest, against 30 to 60 thousand usual), which slows every step further. The run
+records, for each implementation round, the minutes, steps, files and input tokens
+(`metrics.tsv`, and a table in `status.md` when it finishes). Read them after a plan and
+correct these numbers.
+
 **When the split depends on something you do not yet know,** such as how many
 modules cross a boundary or what a move would break, do not write a unit for
 what you cannot yet describe. Run a small plan first that only reads and

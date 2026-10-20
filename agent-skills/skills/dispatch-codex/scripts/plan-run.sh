@@ -34,6 +34,9 @@
 # in the unit's base) and the unit's gate commands exactly as written in the brief. Anything else is refused. The
 # command is run without a shell, so the agent supplies arguments, never shell syntax. Every request is logged in
 # <run>/porteiro.log. Reviewers run read-only and have no bridge: they receive the gate result.
+# Metrics: after each implementation round the script appends a line to <run>/metrics.tsv (unit, round, minutes,
+# steps the agent took, files in the diff, input tokens), and `finish` puts them in status.md, so the rule of thumb
+# for the size of a unit can be checked against real runs.
 # Limits: PLAN_MAX_ROUNDS (default 3) escalates a review that keeps sending work back;
 # PLAN_MAX_GATE_ROUNDS (default 5) stops a unit whose gate keeps failing; PLAN_GATE_TIMEOUT (seconds, default
 # 900) limits each gate command;
@@ -278,6 +281,15 @@ porteiro_stop() { # <checkout> <pid>
   rm -rf "$1/.plan-porteiro"
 }
 
+# One line per implementation round in <run>/metrics.tsv: how big the round was, to calibrate the size of a unit.
+record_metrics() { # <unit> <round> <round-dir> <start-epoch>
+  local steps files tokens
+  steps=$(grep -c '"type":"item.completed"' "$3/implement.events.jsonl" 2>/dev/null); steps=${steps:-0}
+  files=$(grep -c '^diff --git' "$3/diff.patch" 2>/dev/null); files=${files:-0}
+  tokens=$(grep -o '"input_tokens":[0-9]*' "$3/implement.events.jsonl" 2>/dev/null | tail -1 | cut -d: -f2); tokens=${tokens:-0}
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$((($(date +%s) - $4) / 60))" "$steps" "$files" "$tokens" >>"$run/metrics.tsv"
+}
+
 # ---- Prompts: fixed templates, so the coordinator never writes them by hand ----
 
 implement_prompt() { # <unit-brief> <round> <resumed> <prev-problems> <prev-handoff>
@@ -361,7 +373,7 @@ do_review() { # <label> <checkout> <brief> <round-dir> <prev-problems-or-empty>
 
 run_unit() { # <unit-dir-name> <checkout> [<step>]
   local u=$1 co=$2 d=$run/$1 k=${3:-}
-  local round=0 reviews=0 gate_fails=0 resumed=0 prev="" prevh="" rd code from="" pbridge
+  local round=0 reviews=0 gate_fails=0 resumed=0 prev="" prevh="" rd code from="" pbridge t0
   # The base is the checkout as the previous step left it, so that whatever changed in the checkout between that
   # and the (re)start of this unit never lands in its diff. Only a plain (non-group) step has one.
   if [ -n "$k" ]; then
@@ -390,6 +402,7 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
     echo "implementing round $round" >"$d/status"
     note "$u round $round: implement"
     implement_prompt "$d/brief.md" "$round" "$resumed" "$prev" "$prevh" >"$rd/implement-prompt.md"
+    t0=$(date +%s)
     porteiro_setup "$co"
     porteiro_serve "$co" "$u" "$d/base" "$d/brief.md" "$$" &
     pbridge=$!
@@ -401,6 +414,7 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
     cp "$rd/implement.last-message.md" "$rd/handoff.md"
     cp "$rd/handoff.md" "$d/handoff.md"
     make_patch "$d" "$rd/diff.patch" "$co"
+    record_metrics "$u" "$round" "$rd" "$t0"
     [ -s "$rd/diff.patch" ] || { reason="$u: the diff is empty after round $round, so nothing was changed"; return 1; }
 
     if [ -n "$(gate_commands "$d/brief.md")" ]; then
@@ -780,6 +794,10 @@ write_summary() {
         printf '| %s | integration | %s | %s |\n' "$k" "$n" "$r"
       fi
     done <"$run/00-input/order"
+    if [ -s "$run/metrics.tsv" ]; then
+      printf '\n## Implementation rounds\n\n| Unit | Round | Minutes | Steps | Files | Input tokens (k) |\n|---|---|---|---|---|---|\n'
+      awk -F'\t' '{ printf "| %s | %s | %s | %s | %s | %d |\n", $1, $2, $3, $4, $5, $6 / 1000 }' "$run/metrics.tsv"
+    fi
     printf '\nThe final review is in report.md.\n'
   } >"$run/status.md"
 }

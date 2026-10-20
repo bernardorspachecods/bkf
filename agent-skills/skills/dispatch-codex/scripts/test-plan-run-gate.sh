@@ -31,6 +31,7 @@ else
   printf '%s\n' "$prompt" >"$FAKE_STATE/impl-prompt-$n.md"
   (cd "$dir" && FAKE_N=$n bash -c "$FAKE_IMPL")
   echo "handoff $n" >"$out"
+  printf '%s\n' '{"type":"item.completed"}' '{"type":"item.completed"}' '{"type":"item.completed"}' '{"type":"turn.completed","usage":{"input_tokens":1234,"cached_input_tokens":1000}}'
 fi
 EOF
 chmod +x "$work/bin/codex"
@@ -142,5 +143,12 @@ sed -i.bak "s/echo q/echo evil/" package.json; rm -f package.json.bak
 .plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt'
 run bridgechg
 check "bridge: a db:test script redefined in the unit is refused" 'grep -q "was changed" $case_dir/repo/r1.txt && [ "$(cat $case_dir/repo/c1.txt)" = 126 ]'
+
+# 11. Metrics: one line per implementation round, and a table in status.md after finish.
+new_case metrics 'true' 'echo change >>a.txt'
+run metrics
+check "metrics: one line per round with steps, files and tokens" 'awk -F"\t" "\$1==\"01-unit\" && \$2==1 && \$4==3 && \$5==1 && \$6==1234 {ok=1} END{exit !ok}" "$case_dir/runs/r/metrics.tsv"'
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$here/plan-run.sh" finish r) >"$case_dir/finish.txt" 2>&1
+check "metrics: finish writes the table into status.md" 'grep -q "Implementation rounds" "$case_dir/repo/records/plans/r/status.md" && grep -q "| 01-unit | 1 |" "$case_dir/repo/records/plans/r/status.md"'
 
 exit "$fail"
