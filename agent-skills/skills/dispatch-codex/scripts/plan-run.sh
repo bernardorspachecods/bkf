@@ -26,7 +26,7 @@
 # outside any agent, and only calls the reviewer when every one passes. A failing command sends the work back to
 # the implementer with its output and no review; the reviewer cannot override a command, and a pass needs the
 # gate green and the reviewer's pass. A brief without a gate is reviewed as before. `gates` prints the commands
-# of every unit (from a plan.txt or a run), so the user can read what code will run before agreeing to it.
+# of every unit (from a plan.txt or a run), so the coordinator reads what code will run before the run starts.
 # Limits: PLAN_MAX_ROUNDS (default 3) escalates a review that keeps sending work back;
 # PLAN_MAX_GATE_ROUNDS (default 5) stops a unit whose gate keeps failing; PLAN_GATE_TIMEOUT (seconds, default
 # 900) limits each gate command;
@@ -611,7 +611,7 @@ cmd_status() {
   cat "$run/status.log"
 }
 
-# What code will run for each unit, for the user to read and agree to before the run. Exits 1 when a unit has no gate.
+# What code will run for each unit, for the coordinator to read before the run and when a unit changes. Exits 1 when a unit has no gate.
 cmd_gates() { # <plan.txt | run-name>
   [ "$#" -eq 1 ] || die 'usage: gates <plan.txt|name>'
   local files=() f u w line pdir cmds missing=0

@@ -79,12 +79,12 @@ ui.md  ux.md      # run together
 tests.md
 ```
 
-**The user agrees what code will run.** The user cannot read every diff, and does
-not have to read the backend. What they can read is the list of commands that
-decide each unit. Before `start`, run `plan-run.sh gates plan.txt`, show the user
-that list, and have them agree to it; a unit with no command needs a reason
-the user accepts. The agreement is about a few lines per unit, and it is where the
-user's judgment is worth most.
+**You always read the gates; the user does not have to.** The user steers the goal
+and judges at the end that what the plan reached is what they wanted. They do not
+read the commands that decide each unit; you do. Before `start`, and again whenever
+you add or change a unit, run `plan-run.sh gates plan.txt` and read the list. Every
+unit has a command that fails if it is wrong, or a reason, written in the plan, for
+why none can exist. A unit with neither is not ready to run.
 
 **Checkpoints.** A run can pause after chosen steps (`-p`). Ask the user, when
 you agree the split, who the pauses are for: only for you to check the step
