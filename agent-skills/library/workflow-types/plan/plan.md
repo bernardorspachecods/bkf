@@ -67,6 +67,13 @@ ui.md  ux.md      # run together
 tests.md
 ```
 
+**Checkpoints.** A run can pause after chosen steps (`-p`). Ask the user, when
+you agree the split, who the pauses are for: only for you to check the step
+(rerun what the reviewer's sandbox could not, read the diff, then resume without
+reporting unless a fundamental decision changes), or also for the user to read
+it. Write the answer in the plan and follow it. Step numbers count the lines of
+`plan.txt`; when you add or move a unit, recompute them before you resume.
+
 **The plan can change, with a reason on record.** A unit that shows the split
 was wrong is a reason to revise the units with the user, not to stretch the unit.
 
