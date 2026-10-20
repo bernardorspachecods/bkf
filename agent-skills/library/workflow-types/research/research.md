@@ -6,15 +6,17 @@ tags: [research]
 
 # Research
 
-## Contents
+## Navigation map
 
-- [When to use](#when-to-use): lookup or research, and one objective at a time.
-- [How to read this](#how-to-read-this): the principles behind the stages.
-- [1. The objective](#1-the-objective)
-- [2. The map of sources](#2-the-map-of-sources)
-- [3. Delegating](#3-delegating): collection, review and digest.
-- [4. What the user receives](#4-what-the-user-receives)
-- [5. Where the work lives](#5-where-the-work-lives)
+| If you need to... | See |
+| --- | --- |
+| Decide between a lookup and research, and keep to one objective | [When to use](#when-to-use) |
+| Understand the principles behind the stages | [How to read this](#how-to-read-this) |
+| Frame what the research must answer | [1. The objective](#1-the-objective) |
+| Choose where to look | [2. The map of sources](#2-the-map-of-sources) |
+| Delegate collection, review and digest | [3. Delegating](#3-delegating) |
+| Decide what the user receives | [4. What the user receives](#4-what-the-user-receives) |
+| Know where the work and its files live | [5. Where the work lives](#5-where-the-work-lives) |
 
 ## When to use
 

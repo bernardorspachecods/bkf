@@ -6,12 +6,19 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 
 # The bkf command
 
-## Contents
+## Navigation map
 
-- [Install](#install) and [bkf help](#bkf-help)
-- Editing documents: [bkf validate](#bkf-validate), [bkf inventory](#bkf-inventory), [bkf skills](#bkf-skills)
-- Session start and lookup: [bkf orient](#bkf-orient), [bkf search](#bkf-search), [bkf log](#bkf-log), [bkf updates](#bkf-updates)
-- Install: [bkf hooks](#bkf-hooks)
+| If you need to... | See |
+| --- | --- |
+| Install the command or list its subcommands | [Install](#install) and [bkf help](#bkf-help) |
+| Check a bundle against the format | [bkf validate](#bkf-validate) |
+| Refresh a map's member inventory | [bkf inventory](#bkf-inventory) |
+| Check or write the skill catalog | [bkf skills](#bkf-skills) |
+| Record an idea or feedback entry | [bkf log](#bkf-log) |
+| Print the format update documents a bundle needs | [bkf updates](#bkf-updates) |
+| Orient an agent at session start | [bkf orient](#bkf-orient) |
+| Install, check, or understand the hooks | [bkf hooks](#bkf-hooks) |
+| Search the documents | [bkf search](#bkf-search) |
 
 ## Install
 
@@ -180,7 +187,9 @@ member inventory rows. Output is capped at 6,000 characters; omitted rows are
 reported with a `read <map-path>` marker. `--no-validate` omits the health line.
 
 Validation runs in-process with a five-second limit. The health line reports
-`ok`, the number of errors, or a timeout. If the directory is outside a bundle,
+`ok`, the number of errors, or a timeout. When validation finds warnings, a
+second line gives their count and up to 10 of them follow, each as a code and
+path. If the directory is outside a bundle,
 the command prints nothing. An unexpected failure prints a JSON `systemMessage`
 for the user and returns success; `--debug` prints the failure to stderr and
 returns 1.
@@ -251,7 +260,9 @@ a tool whose folder is missing is skipped.
   that bundle alone is checked with `bkf validate --this-bundle` and `bkf
   inventory --check`. A failing check blocks the stop and gives the agent the
   output, including the `bkf inventory --write` fix for a stale inventory; a
-  warning or an incomplete validation does not block. The hook blocks at most
+  warning or an incomplete validation does not block. When the check does not
+  block, the warnings that name a file changed in the session are shown to the
+  user as a `systemMessage`; the agent does not receive them. The hook blocks at most
   twice per session so an error the agent cannot fix cannot trap it, and a
   passing or abandoned check clears the record and refreshes the snapshot. The
   recorder remains a fallback when git comparison is unavailable. A snapshot
@@ -277,8 +288,10 @@ a tool whose folder is missing is skipped.
   the session; a failed `i:` or `f:` entry still stops the prompt so the entry
   is not lost.
 - **guard** registers a `PreToolUse` hook for `Read` and `Bash`. On the first
-  whole-file read or single-file `cat` of a Markdown file at least 8,000 bytes
-  long with a `## Navigation map`, it denies the read and returns the map's
+  whole-file read or single-file `cat` of a Markdown file with a `## Navigation
+  map` whose body (after the frontmatter) exceeds 350 lines or 2,000 words, the
+  same size test and the same `## Navigation map` table that `bkf validate`
+  checks, it denies the read and returns the map's
   section links with line ranges. A second whole-file read of that resolved
   path is allowed in the same session. Partial `Read` calls and other shell
   commands are allowed. Refusals are stored per session in
