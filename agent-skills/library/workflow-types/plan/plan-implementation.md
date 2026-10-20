@@ -37,6 +37,11 @@ yourself before you hand over, when you can. A command you cannot run from where
 work (a database that is out of reach, say) is named in the handoff, not skipped.
 Do not weaken a test or a check that already exists to make the gate pass.
 
+**Show every new check failing once.** A test or script you write can pass without
+checking anything. Run it against a wrong input, or a throwaway copy of the code with
+the defect put back, and see it fail; then say in the handoff which check you broke,
+how, and what failed. A check that has never failed is not yet evidence.
+
 ## Do not touch git state
 
 Do not commit, stage, stash, reset, clean or switch branches. The run records a
