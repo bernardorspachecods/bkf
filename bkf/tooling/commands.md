@@ -220,7 +220,10 @@ a tool whose folder is missing is skipped.
   `w:` tells the agent to implement right away. A prompt starting with `t:` puts
   the agent in talk mode: it is told to discuss only, and the hook denies
   `Edit`, `Write`, `NotebookEdit`, `apply_patch`, and any `Bash` command it
-  cannot show to be read-only. The Bash guard recognizes separators and
+  cannot show to be read-only. `psql` counts as read-only only when every `-c`
+  is a single `SELECT`, `SHOW`, `TABLE`, `VALUES`, `EXPLAIN` (without `ANALYZE`) or a
+  `\d`-style meta-command, with no `INTO`, `;`-chained statement, file option or
+  stdin. The Bash guard recognizes separators and
   redirects outside quotes and checks command substitutions recursively. A
   prompt without a prefix is free and clears the mode. The mode is kept per
   session in `~/.agent-hooks/state/`. In every mode, including no mode, the hook

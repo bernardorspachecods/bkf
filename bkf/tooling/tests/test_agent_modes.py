@@ -64,6 +64,10 @@ class ReadonlyBash(unittest.TestCase):
             "sed -n 1,20p f", "awk '{print $1}' f", "test -f x && echo yes",
             "find . -name '*.py'", "sort f | uniq -c",
             "cat <<'EOF'\nhello\nEOF",
+            "psql \"$DATABASE_URL\" -c 'SELECT 1'", "psql -Atc 'select * from audit_log limit 5;'",
+            "psql --command='SHOW search_path' db", "psql db -c '\\d audit_log'", "psql db -c '\\df+'",
+            "psql db -c 'EXPLAIN SELECT 1' | head",
+            "psql db -c \"select pg_get_functiondef('f'::regproc)\"",
         ], True)
 
     def test_writes_are_blocked(self):
@@ -82,6 +86,11 @@ class ReadonlyBash(unittest.TestCase):
             "sort -o out in", "awk 'BEGIN{system(\"rm x\")}'", "awk '{print > \"f\"}' in",
             "cat $(rm -rf x)", "cd x && rm y", "python3 script.py", "npm install",
             "ls; rm x", "ls && touch x", "ls | xargs rm",
+            "psql db", "psql db -f script.sql", "psql db -c 'DELETE FROM t'", "psql db -c 'select 1; drop table t'",
+            "psql db -c 'WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x'",
+            "psql db -c 'select * into t2 from t'", "psql db -c 'EXPLAIN ANALYZE DELETE FROM t'",
+            "psql db -c 'select nextval(\"s\")'", "psql db -c '\\! rm x'", "psql db -c '\\copy t to f'",
+            "psql db -c 'select 1' -o out.txt", "psql db -c 'select 1' -L log", "psql db < script.sql",
         ], False)
 
     def test_quoted_shell_syntax_is_not_split_or_treated_as_a_redirect(self):

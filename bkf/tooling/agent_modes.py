@@ -26,7 +26,7 @@ INSTRUCTIONS = {
     "t": (
         "MODE: TALK / BRAINSTORM (the user prefixed the prompt with 't:', ignore the prefix itself). "
         "Discuss only. Do not implement anything: no file edits, no commands that change state. "
-        "A hook blocks mutating tools in this mode. Reading and searching files is fine. "
+        "A hook blocks mutating tools in this mode. Reading and searching files is fine, and so is Bash when every command in it is read-only (ls, cat, rg, git log, psql with a single SELECT). "
         "Explore the idea, give opinions, compare approaches, ask questions."
     ),
 }
@@ -88,6 +88,60 @@ def gh_api_is_readonly(args):
     return True
 
 
+PSQL_ARG_LETTERS = set("dhpUPRTFvcfoL")
+PSQL_WRITE_ARGS = {"-f", "-o", "-L", "--file", "--output", "--log-file"}
+PSQL_META = re.compile(r"\\(d\S*|l\+?|sf\+?|sv\+?|conninfo)(\s[^\\;]*)?$")
+SQL_READ_START = re.compile(r"(select|show|table|values|explain)\b")
+SQL_FORBIDDEN = re.compile(
+    r"\b(into|analyze|analyse|nextval|setval|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|"
+    r"dblink\w*|lo_import|lo_export|copy)\b|[;\\]"
+)
+
+
+def psql_sql_is_readonly(sql):
+    sql = sql.strip()
+    if sql.endswith(";"):
+        sql = sql[:-1].rstrip()
+    if sql.startswith("\\"):
+        return bool(PSQL_META.match(sql))
+    lowered = sql.lower()
+    return bool(SQL_READ_START.match(lowered)) and not SQL_FORBIDDEN.search(lowered)
+
+
+def psql_is_readonly(args):
+    """psql reads when every -c is a single SELECT/SHOW/EXPLAIN or a \\d-style meta-command.
+
+    Anything that reads stdin or a file, writes an output file, or has no -c is not read-only.
+    """
+    commands = []
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if word in PSQL_WRITE_ARGS or word.startswith(("--file=", "--output=", "--log-file=")):
+            return False
+        if word == "--command" or word.startswith("--command="):
+            if "=" in word:
+                commands.append(word.split("=", 1)[1])
+            elif i < len(args):
+                commands.append(args[i])
+                i += 1
+            continue
+        if word.startswith("-") and not word.startswith("--") and len(word) > 1:
+            for pos, letter in enumerate(word[1:], start=1):
+                if letter in PSQL_ARG_LETTERS:
+                    value = word[pos + 1:]
+                    if not value and i < len(args):
+                        value = args[i]
+                        i += 1
+                    if letter in "foL":
+                        return False
+                    if letter == "c":
+                        commands.append(value)
+                    break
+    return bool(commands) and all(psql_sql_is_readonly(command) for command in commands)
+
+
 def segment_is_readonly(words):
     name = words[0].rsplit("/", 1)[-1]
     rest = words[1:]
@@ -112,6 +166,8 @@ def segment_is_readonly(words):
         if sub == "inventory":
             return "--write" not in rest
         return sub in BKF_READ
+    if name == "psql":
+        return psql_is_readonly(rest)
     if name == "sed":
         return not any(w.startswith("-i") or w == "--in-place" for w in rest)
     if name == "find":
@@ -375,8 +431,11 @@ def on_tool(data):
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": (
-                "Talk mode (t:) is active: implementation is blocked. "
-                "Discuss instead, or ask the user to resend with 'w:' to implement."
+                "Talk mode (t:) is active: this call was not shown to be read-only, so it is blocked. "
+                "Read-only Bash still runs (ls, cat, rg, git log, psql with a single SELECT); "
+                "split a mixed command or rewrite it as reads. The allowed commands are listed in "
+                "bkf/tooling/agent_modes.py (READONLY_CMDS). Otherwise discuss, or ask the user to "
+                "resend with 'w:' to implement."
             ),
         }}))
 
