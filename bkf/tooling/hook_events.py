@@ -284,7 +284,10 @@ def pending_warnings(data: dict, state_dir: Path | None = None) -> dict | None:
     context = "BKF warnings for files changed in this session. Fix them when the work allows:\n" + "\n".join(notes)
     if any(note.startswith(WARNING_CODES) for note in notes):
         context += "\n" + GUIDANCE
-    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
+    return {
+        "systemMessage": "BKF warnings given to the agent:\n" + "\n".join(notes),
+        "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context},
+    }
 
 
 def bundle_root_of(path: Path) -> Path | None:

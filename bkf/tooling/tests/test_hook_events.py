@@ -219,12 +219,15 @@ class HookEventsTest(unittest.TestCase):
         self.assertIsNone(self.stop())
         self.assertFalse((self.state / "s.touched").exists())
 
-        output = self.warnings_prompt()["hookSpecificOutput"]
+        prompt = self.warnings_prompt()
+        output = prompt["hookSpecificOutput"]
         self.assertEqual(output["hookEventName"], "UserPromptSubmit")
         context = output["additionalContext"]
         self.assertIn("NAVIGATION_MAP_REVIEW guide.md", context)
         self.assertNotIn("other.md", context)
         self.assertIn("the first column of a row should say", context)
+        self.assertIn("NAVIGATION_MAP_REVIEW guide.md", prompt["systemMessage"])
+        self.assertNotIn("first column", prompt["systemMessage"])
         self.assertIsNone(self.warnings_prompt())
 
     def test_only_navigation_map_warnings_bring_the_map_guidance(self) -> None:

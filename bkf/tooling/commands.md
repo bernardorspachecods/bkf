@@ -269,8 +269,8 @@ a tool whose folder is missing is skipped.
   warning or an incomplete validation does not block. When the check does not
   block, the warnings that name a file changed in the session are saved for the
   session; `bkf hooks run warnings`, a `UserPromptSubmit` hook of this group,
-  gives them to the agent once as context with the next prompt; the user is not
-  shown them. The hook blocks at most
+  gives them to the agent once as context with the next prompt, and shows the
+  same warnings to the user as a `systemMessage` (without the map guidance). The hook blocks at most
   twice per session so an error the agent cannot fix cannot trap it, and a
   passing or abandoned check clears the record and refreshes the snapshot. The
   recorder remains a fallback when git comparison is unavailable. A snapshot
