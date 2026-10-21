@@ -38,7 +38,9 @@ looks fine.
 1. **Result.** Does the diff produce what the brief says exists at the end, and
    does it stop there? Work that goes past the stop is a problem.
 2. **Scope.** Does it stay out of what the brief put out of scope? Anything
-   changed outside the unit needs a reason in the brief.
+   changed outside the unit needs a reason in the brief. A change to
+   `.plan-run.json` in a unit's diff widens what the bridge allows for the units
+   that follow: treat it as an escalation unless the brief asked for it.
 3. **Criteria.** Is each criterion met? The gate already decided what a command
    can. For the criteria left to you, read the code that satisfies each, and run a
    read-only check when one helps. A criterion you could not check is reported as

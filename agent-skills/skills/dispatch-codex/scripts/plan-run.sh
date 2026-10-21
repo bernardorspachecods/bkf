@@ -27,13 +27,15 @@
 # the implementer with its output and no review; the reviewer cannot override a command, and a pass needs the
 # gate green and the reviewer's pass. A brief without a gate is reviewed as before. `gates` prints the commands
 # of every unit (from a plan.txt or a run), so the coordinator reads what code will run before the run starts.
-# The bridge: an implementer's sandbox has no network, so it cannot reach the database. While an implementer
+# The bridge: an implementer's sandbox cannot reach the database (the host does not resolve). While an implementer
 # works, the script serves `.plan-porteiro/ponte <command...>` in its checkout: the agent writes a request, the
 # script (outside the sandbox) runs it if it is allowed and hands back the output and the exit code. Allowed:
-# `pnpm db:test:<anything>` (every one is tied to --ambiente test, and refused if the script differs from the one
-# in the unit's base) and the unit's gate commands exactly as written in the brief. Anything else is refused. The
-# command is run without a shell, so the agent supplies arguments, never shell syntax. Every request is logged in
-# <run>/porteiro.log. Reviewers run read-only and have no bridge: they receive the gate result.
+# `pnpm <script>` when the script's name matches a pattern in the repository's `.plan-run.json` (read from the
+# unit's base, never the working tree, so a unit cannot widen its own list; without a usable file at the base no
+# pnpm script runs; the script must also be unchanged from the base), and the unit's gate commands exactly as
+# written in the brief. Anything else is refused. The command is run without a shell, so the agent supplies
+# arguments, never shell syntax. Every request is logged in <run>/porteiro.log. Reviewers run read-only and have
+# no bridge: they receive the gate result.
 # Metrics: after each implementation round the script appends a line to <run>/metrics.tsv (unit, round, minutes,
 # steps the agent took, files in the diff, input tokens), and `finish` puts them in status.md, so the rule of thumb
 # for the size of a unit can be checked against real runs.
@@ -217,6 +219,35 @@ porteiro_setup() { # <checkout>
 
 porteiro_log() { printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$1" "$2" "$3" >>"$run/porteiro.log"; }
 
+# Whether a pnpm script may run through the bridge: its name is plain, and a pattern of .plan-run.json at the unit's
+# base matches the whole name. The file is read from the base, never the working tree. Sets $porteiro_why when refused.
+porteiro_script_allowed() { # <checkout> <base> <script>
+  local co=$1 base=$2 script=$3 b text verdict
+  [[ $script =~ ^[A-Za-z0-9:_-]+$ ]] || { porteiro_why="$script has characters that are not allowed"; return 1; }
+  b=$(cat "$base" 2>/dev/null)
+  if [ -z "$b" ] || ! text=$(git -C "$co" show "$b:.plan-run.json" 2>/dev/null); then
+    porteiro_why="no .plan-run.json at the unit's base: only gate commands run"; return 1
+  fi
+  verdict=$(printf '%s' "$text" | node -e '
+    let s = "";
+    process.stdin.on("data", d => s += d).on("end", () => {
+      let res;
+      try {
+        const pats = JSON.parse(s).bridge.pnpmScripts;
+        if (!Array.isArray(pats) || !pats.every(p => typeof p === "string")) throw new Error("shape");
+        pats.forEach(p => new RegExp(p)); // each pattern must compile alone, so none can close the ^(?:...)$ group early
+        res = pats.map(p => new RegExp("^(?:" + p + ")$"));
+      } catch { process.stdout.write("invalid"); return; }
+      process.stdout.write(res.some(re => re.test(process.argv[1])) ? "match" : "nomatch");
+    });
+  ' "$script" 2>/dev/null)
+  case "$verdict" in
+    match) return 0 ;;
+    nomatch) porteiro_why="$script is not in the pnpm scripts that .plan-run.json allows"; return 1 ;;
+    *) porteiro_why="the .plan-run.json at the unit's base is not usable: only gate commands run"; return 1 ;;
+  esac
+}
+
 # Decides whether a request may run. Sets $porteiro_mode (argv|shell) or $porteiro_why. Arguments: checkout,
 # base, brief, then the requested argv.
 porteiro_allowed() {
@@ -226,7 +257,8 @@ porteiro_allowed() {
   while IFS= read -r line; do
     [ "$line" = "$*" ] && { porteiro_mode=shell; return 0; }
   done < <(gate_commands "$brief")
-  if [ "$1" = pnpm ] && [ "$#" -ge 2 ] && [[ $2 =~ ^db:test(:[a-z0-9-]+)*$ ]]; then
+  if [ "$1" = pnpm ] && [ "$#" -ge 2 ]; then
+    porteiro_script_allowed "$co" "$base" "$2" || return 1
     script=$2
     now=$(node -e 'try{process.stdout.write(String(require(process.argv[1]).scripts[process.argv[2]]??""))}catch{}' "$co/package.json" "$script")
     was=$(git -C "$co" show "$(cat "$base" 2>/dev/null):package.json" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).scripts[process.argv[1]]??""))}catch{}})' "$script")
@@ -234,7 +266,7 @@ porteiro_allowed() {
     [ "$now" = "$was" ] || { porteiro_why="$script was changed in this unit"; return 1; }
     porteiro_mode=argv; return 0
   fi
-  porteiro_why="not allowed: only 'pnpm db:test:*' and the gate commands of the brief"
+  porteiro_why="not allowed: only the pnpm scripts listed in .plan-run.json at the unit's base and the gate commands of the brief"
   return 1
 }
 
@@ -258,7 +290,7 @@ porteiro_handle() { # <checkout> <unit> <base> <brief> <request-file>
     tail -c 200000 "$res/$id.run" >"$res/$id.out"; rm -f "$res/$id.run"
     porteiro_log "$u" "ALLOWED exit=$code ${secs}s" "${argv[*]}"
   else
-    printf 'ponte: refused (%s).\nAllowed: pnpm db:test:* and the commands of the brief'"'"'s gate, exactly as written.\n' "$porteiro_why" >"$res/$id.out"
+    printf 'ponte: refused (%s).\nAllowed: the pnpm scripts listed in .plan-run.json and the commands of the brief'"'"'s gate, exactly as written.\n' "$porteiro_why" >"$res/$id.out"
     porteiro_log "$u" "REFUSED ($porteiro_why)" "${argv[*]-}"
   fi
   echo "$code" >"$res/$id.done.tmp"; mv "$res/$id.done.tmp" "$res/$id.done"
@@ -298,7 +330,7 @@ implement_prompt() { # <unit-brief> <round> <resumed> <prev-problems> <prev-hand
   cat "$1"
   printf '\n\n---\n## Role\nOpen and follow the role guide: %s/plan-implementation.md (read-only). It says how to work inside the brief, what to verify and what the handoff holds.\n' "$guides"
   printf '\n## Rules\n- The current directory is the repository: do the work here.\n- Do not run git commands that change state (no commit, stage, stash, reset, clean, checkout).\n- Do not write the handoff to a file. Your final message is the handoff, in the form the guide gives, and nothing else.\n'
-  printf -- '- You have no network, so you cannot reach the database from here. To run something that needs it, ask the runner: `.plan-porteiro/ponte <command> [args...]`. It runs the command outside your sandbox and prints the output and the exit code. Only `pnpm db:test:*` (always the Test database) and the commands of the brief'"'"'s gate, exactly as written, are accepted; anything else is refused, and every request is logged. Use it to read the data you need and to run the checks against the database.\n'
+  printf -- '- You cannot reach the database from here (the database host does not resolve). To run something that needs it, ask the runner: `.plan-porteiro/ponte <command> [args...]`. It runs the command outside your sandbox and prints the output and the exit code. Only the `pnpm` scripts the repository allows for the bridge (see `.plan-run.json`) and the commands of the brief'"'"'s gate, exactly as written, are accepted; anything else is refused, and every request is logged. Use it to read the data you need and to run the checks against the database.\n'
   if [ -n "$(gate_commands "$1")" ]; then
     printf -- '- The brief has a `gate`. After you finish, the script runs those commands itself and sends the work back, without a review, if any fails. Run them yourself first when you can.\n'
   fi
@@ -716,6 +748,13 @@ cmd_start() {
   for u in $(all_units); do
     [ -n "$(gate_commands "$run/00-input/units/$u.md")" ] || note "unit $u has no gate: only a reviewer checks it"
   done
+  if ! git -C "$repo" cat-file -e HEAD:.plan-run.json 2>/dev/null; then
+    if [ -f "$repo/.plan-run.json" ]; then
+      note ".plan-run.json is not committed: commit it so changes to it are reviewed like code"
+    else
+      note "no .plan-run.json at HEAD: the bridge will run only gate commands unless an untracked copy is in the checkout; commit it so changes to it are reviewed like code"
+    fi
+  fi
   pipeline
 }
 

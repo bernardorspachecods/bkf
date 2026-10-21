@@ -44,11 +44,13 @@ exit 0
 EOF2
 chmod +x "$work/bin/pnpm"
 
-new_case() { # <name> <gate-block-or-empty> <impl-script>
+new_case() { # <name> <gate-block-or-empty> <impl-script>   (BRIDGE_CONFIG: the .plan-run.json of the base, or none)
   case_dir=$work/$1; mkdir -p "$case_dir/repo" "$case_dir/state" "$case_dir/plan"
   git -C "$case_dir/repo" init -q . && git -C "$case_dir/repo" config user.email t@t && git -C "$case_dir/repo" config user.name t
   echo base >"$case_dir/repo/a.txt"
-  echo '{"scripts":{"db:test:query":"echo q","db:prod:query":"echo p"}}' >"$case_dir/repo/package.json"
+  echo '{"scripts":{"db:test":"echo t","db:test:query":"echo q","db:prod:query":"echo p","db:test:x;touch pwned4":"echo weird"}}' >"$case_dir/repo/package.json"
+  config=${BRIDGE_CONFIG:-'{"bridge":{"pnpmScripts":["^db:test(:[a-z0-9-]+)*$"]}}'}
+  [ "$config" = none ] || printf '%s\n' "$config" >"$case_dir/repo/.plan-run.json"
   git -C "$case_dir/repo" add -A && git -C "$case_dir/repo" commit -qm init
   echo "goal" >"$case_dir/plan/goal.md"
   { printf '# Unit\n\n## Result\nx\n'; [ -n "$2" ] && printf '\n```gate\n%s\n```\n' "$2"; } >"$case_dir/plan/unit.md"
@@ -161,5 +163,69 @@ check "tier: empty PLAN_CODEX_TIER keeps the account default" '! grep -q service
 new_case tierset '' 'echo change >>a.txt'
 run tierset PLAN_CODEX_TIER=flex
 check "tier: PLAN_CODEX_TIER picks another tier" 'grep -qx "service_tier=\"flex\"" $case_dir/state/codex-config'
+
+# 13. The bridge's pnpm list comes from .plan-run.json at the base. Without that file only gate commands run.
+BRIDGE_CONFIG=none new_case noconf 'echo gate-ok' 'echo change >>a.txt
+.plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt
+.plan-porteiro/ponte echo gate-ok >r2.txt; echo $? >c2.txt'
+run noconf
+r=$case_dir/repo
+check "no config: the run finishes" '[ "$code" -eq 0 ]'
+check "no config: pnpm db:test:* is refused, and the refusal names .plan-run.json" 'grep -q refused $r/r1.txt && grep -q "[.]plan-run[.]json" $r/r1.txt && [ "$(cat $r/c1.txt)" = 126 ]'
+check "no config: pnpm was never called" '[ ! -e $case_dir/state/pnpm-calls ]'
+check "no config: a gate command still runs through the bridge" 'grep -q gate-ok $r/r2.txt && [ "$(cat $r/c2.txt)" = 0 ]'
+check "no config: start notes that there is no .plan-run.json at HEAD" 'grep -q "no .plan-run.json at HEAD" $case_dir/runs/r/status.log'
+
+# 14. An edit to .plan-run.json in the checkout widens nothing: the base's copy is the one that counts.
+new_case wtedit '' 'echo change >>a.txt
+echo "{\"bridge\":{\"pnpmScripts\":[\"^db:test(:[a-z0-9-]+)*\$\",\"^db:prod(:[a-z0-9-]+)*\$\"]}}" >.plan-run.json
+.plan-porteiro/ponte pnpm db:prod:query >r1.txt; echo $? >c1.txt'
+run wtedit
+r=$case_dir/repo
+check "base config only: db:prod:query added in the checkout is refused" 'grep -q "not in the pnpm scripts" $r/r1.txt && [ "$(cat $r/c1.txt)" = 126 ]'
+check "base config only: pnpm was never called for it" '[ ! -e $case_dir/state/pnpm-calls ]'
+
+# 15. A config that does not parse allows no pnpm script, and the run still finishes.
+BRIDGE_CONFIG='{not json' new_case badjson '' 'echo change >>a.txt
+.plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt'
+run badjson
+r=$case_dir/repo
+check "invalid config: the run finishes" '[ "$code" -eq 0 ] && grep -q READY $case_dir/out.txt'
+check "invalid config: pnpm db:test:* is refused and never runs" 'grep -q refused $r/r1.txt && [ "$(cat $r/c1.txt)" = 126 ] && [ ! -e $case_dir/state/pnpm-calls ]'
+
+# 16. The pattern must match the whole name: db:test does not allow db:test:query, and does allow db:test.
+BRIDGE_CONFIG='{"bridge":{"pnpmScripts":["db:test"]}}' new_case unanch '' 'echo change >>a.txt
+.plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt
+.plan-porteiro/ponte pnpm db:test >r2.txt; echo $? >c2.txt'
+run unanch
+r=$case_dir/repo
+check "anchoring: pattern db:test refuses pnpm db:test:query" 'grep -q "not in the pnpm scripts" $r/r1.txt && [ "$(cat $r/c1.txt)" = 126 ]'
+check "anchoring: pattern db:test allows pnpm db:test, which the base defines" 'grep -qx "FAKEPNPM: db:test" $r/r2.txt && [ "$(cat $r/c2.txt)" = 0 ]'
+
+# 17. A permissive pattern does not let shell syntax through the charset guard, defined script or not.
+BRIDGE_CONFIG='{"bridge":{"pnpmScripts":[".*"]}}' new_case permissive '' 'echo change >>a.txt
+.plan-porteiro/ponte pnpm "db:test:query;touch pwned3" >r1.txt; echo $? >c1.txt
+.plan-porteiro/ponte pnpm "db:test:x;touch pwned4" >r2.txt; echo $? >c2.txt'
+run permissive
+r=$case_dir/repo
+check "charset: pattern .* refuses shell syntax, and nothing named pwned3 is created" 'grep -q "characters that are not allowed" $r/r1.txt && [ "$(cat $r/c1.txt)" = 126 ] && [ ! -e $r/pwned3 ]'
+check "charset: a base script whose name has shell syntax is refused before it reaches pnpm" 'grep -q "characters that are not allowed" $r/r2.txt && [ "$(cat $r/c2.txt)" = 126 ] && [ ! -e $r/pwned4 ] && [ ! -e $case_dir/state/pnpm-calls ]'
+
+# 18. A pattern must compile on its own: x)|(.* would close the ^(?:...)$ group early and match everything. The whole config is then not usable.
+BRIDGE_CONFIG='{"bridge":{"pnpmScripts":["^db:test(:[a-z0-9-]+)*$","x)|(.*"]}}' new_case breakout '' 'echo change >>a.txt
+.plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt'
+run breakout
+r=$case_dir/repo
+check "compile alone: a pattern that breaks the group makes the config not usable, so pnpm db:test:query is refused" 'grep -q "is not usable" $r/r1.txt && [ "$(cat $r/c1.txt)" = 126 ]'
+check "compile alone: pnpm was never called" '[ ! -e $case_dir/state/pnpm-calls ]'
+
+# 19. An untracked .plan-run.json is still in the unit's base (the base holds untracked files too): the bridge uses it, and start says it is not committed.
+new_case untracked '' 'echo change >>a.txt
+.plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt'
+git -C "$case_dir/repo" rm -q --cached .plan-run.json && git -C "$case_dir/repo" commit -qm "config not committed"
+run untracked
+r=$case_dir/repo
+check "untracked config: start says it is not committed" 'grep -q "is not committed" $case_dir/runs/r/status.log'
+check "untracked config: the base copy is used, so pnpm db:test:query runs" 'grep -qx "FAKEPNPM: db:test:query" $r/r1.txt && [ "$(cat $r/c1.txt)" = 0 ]'
 
 exit "$fail"
