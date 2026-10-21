@@ -32,7 +32,7 @@ tags, two or three per file at most; the entry skills select modules by them.
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
 | What it is | Document |
 | --- | --- |
-| Sets rules for acting within an approved task, deciding when to ask, and which rule wins when rules conflict. It governs authorization and scope; activity-specific methods belong in other modules. | [act-within-scope.md](/modules/act-within-scope.md) |
+| Sets rules for acting within an approved task, deciding when to ask, which rule wins when rules conflict, how to make a risky structural change, and when to keep an interface or document for compatibility. Activity-specific methods belong in other modules. | [act-within-scope.md](/modules/act-within-scope.md) |
 | Names common code smells introduced during implementation and the corresponding fixes. Repository-specific standards take precedence, while module design and implementation practices are covered by design-modules and build-software. | [avoid-code-smells.md](/modules/avoid-code-smells.md) |
 | Defines how to prepare prompts and handoffs for agents, including source authority, write boundaries, and completion checks. Coordination across a run is covered by coordinate-a-run. | [brief-another-agent.md](/modules/brief-another-agent.md) |
 | Sets implementation practices for building features and fixing bugs, including test-first slices and dependency choices. Module interface design and boundaries are covered by design-modules. | [build-software.md](/modules/build-software.md) |

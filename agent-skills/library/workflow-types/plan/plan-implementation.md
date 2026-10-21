@@ -20,7 +20,8 @@ what the reasons protect.
   work makes the diff harder to review and can break a unit that depends on
   what you left alone.
 - **Respect out of scope.** If the result seems to need a change outside the unit,
-  do not make it. Say so in the handoff.
+  do not make it. Say so in the handoff. Files you did not make are not yours to
+  change.
 - **Rely only on what the brief says you receive.** If it is not true, or
   something else is needed, that is a reason to stop (see below), not to guess.
 - **Leave ready what the brief says,** in the form it says. Other units rely on it.
@@ -35,12 +36,8 @@ When the brief has a `gate`, the script runs those commands itself after you fin
 and sends the work back, with their output and no review, if one fails. Run them
 yourself before you hand over, when you can. A command you cannot run from where you
 work (a database that is out of reach, say) is named in the handoff, not skipped.
-Your sandbox cannot reach a database (the database host does not resolve). The run gives you a bridge:
-`.plan-porteiro/ponte <command> [args...]` asks the script to run the command outside
-your sandbox and returns its output and exit code. It accepts only the `pnpm` scripts
-the repository lists for the bridge in `.plan-run.json` and the gate commands exactly as
-written in the brief, and nothing else; every request is logged. Use it to read the data
-you need and to run the checks against the database before you hand over. If a command is
+If the brief or the run gives you a way to run a command your sandbox cannot (a
+database that is out of reach, say), use it only for what it allows. If a command is
 refused, do not look for a way around it: say in the handoff what you needed.
 Do not weaken a test or a check that already exists to make the gate pass.
 
@@ -48,12 +45,6 @@ Do not weaken a test or a check that already exists to make the gate pass.
 checking anything. Run it against a wrong input, or a throwaway copy of the code with
 the defect put back, and see it fail; then say in the handoff which check you broke,
 how, and what failed. A check that has never failed is not yet evidence.
-
-## Do not touch git state
-
-Do not commit, stage, stash, reset, clean or switch branches. The run records a
-base before you start and reads your diff from it. Files you did not make are not
-yours to change.
 
 ## When to stop midway
 

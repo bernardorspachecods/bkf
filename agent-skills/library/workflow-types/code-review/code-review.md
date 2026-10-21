@@ -25,8 +25,6 @@ what the reasons protect.
   see the other axis' criteria.
 - **A review is a claim to be checked.** A checker confirms each finding against
   the diff, because a reviewer on a small model invents findings.
-- **The user steers at the start and reads at the end.** They say what to review
-  and where the spec is; the middle runs without them.
 
 ## 1. The target
 
@@ -71,7 +69,6 @@ Rules that hold whatever the models:
   checker's job is precision: it removes false findings, not misses. A second
   independent reviewer per axis is the only remedy for misses, and the findings are
   merged before the check.
-- **The choice of models is outside this document.**
 
 ## 3. What the user receives
 
@@ -88,6 +85,3 @@ One review is one folder in `~/.review-runs/<name>/`: `00-input` (the pinned dif
 the commits, the criteria), `01-review`, `02-check` and `report.md` at the top. A
 review is usually read and dropped. When it is done, the user chooses: keep the
 record, copied into `records/reviews/` in the repository, or delete the run.
-
-As soon as you create a run folder, or any file the user will read, run
-`open <path>` yourself and give the full path in the same message.

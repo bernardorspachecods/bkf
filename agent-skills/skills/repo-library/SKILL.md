@@ -9,7 +9,7 @@ A repository can define its own procedures and guidelines for how work is done i
 
 1. Look for `repo-library/MAP.md` at the repository root. If it is missing, continue with the task and do not mention it.
 2. Read the map. Open each entry whose description fits the task.
-3. Follow the entries you opened together with the general guidance; they add to it and do not replace it. In the rare case a repo entry contradicts the general guidance, follow the repo entry and tell the user about the conflict.
+3. Follow the entries you opened together with the general guidance; they add to it and do not replace it. If a repo entry contradicts the general guidance, resolve it as [act-within-scope](../../library/modules/act-within-scope.md) says.
 4. When the same procedure or rules recur in the repository, or the user says "we always do X here", open the file below and propose a new entry.
 5. When you hand work to another agent, put the path to `repo-library/MAP.md` in the assignment.
 

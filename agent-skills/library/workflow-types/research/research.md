@@ -48,14 +48,10 @@ Adapt to the task, and keep what the reasons protect.
 - **Work in small units.** Plan and run one piece, check whether it did what the
   user wanted, and only then plan the next from its result. Keep the larger goal
   short and written in one place.
-- **Roles, not headcounts.** Collection, review and digest are roles. Each can
-  be filled by several agents in parallel, merged at the end. Nobody reviews
-  what they wrote.
 - **Collect wide, then filter.** Gather the most that is adequate, then reduce to
   what the objective needs. The size of the answer never decides when to stop
   searching.
-- **The user guides at the start and judges at the end.** The objective and the
-  map of sources are where the user steers; the middle runs without them.
+- **The objective and the map of sources are where the user steers.**
 
 ## 1. The objective
 
@@ -167,10 +163,6 @@ Collection ─► Review of collection ─► Digest ─► Review of digest ─
 
 Rules that hold whatever the number of agents:
 
-- **Review is by someone other than the author.** With parallel work there are
-  several authors and several reviewers; no one reviews their own. The digest is
-  reviewed by an agent other than the digest role, and the delivery by an agent
-  other than you.
 - **Collection and filtering are separate work.** The one gathering does not
   decide what fits the delivery.
 - **Each collector writes only its own file.** No two agents touch the same
@@ -180,17 +172,6 @@ Rules that hold whatever the number of agents:
   that single file. With one collector there is nothing to join.
 - **Count provenance after the merge,** not inside each parallel collection. Two
   collectors can bring the same source. The digest role does this.
-- **Sending back has a cap on rounds.** A review sends work back until the
-  problem is gone, and the number of rounds is capped (three by default) so an
-  unattended run cannot go on without end. If the same problem returns after being
-  sent back, or the cap is reached, it does not go round again: it goes to you,
-  because the objective or the map is probably what is wrong, and you decide
-  whether to revise them with the user. What stays unresolved goes to the weak
-  points.
-- **A review shows what it checked.** Its list begins with what it went through
-  and where it found each thing, so a pass can be traced. A review without that
-  section does not count.
-- **The choice of models is outside this document.**
 
 ## 4. What the user receives
 
@@ -226,17 +207,6 @@ happened sit at the top of the folder, and the reviews of the delivery are in
 `04-delivery-review`. A phase holds its agents, each with its briefs, rounds,
 outputs and the reviews of them, so the user can open a phase and see only it. A flat folder of everything mixes the phases
 and hides which file belongs to which.
-
-As soon as you create a run folder, or any file the user will read, run
-`open <path>` yourself and give the full path in the same message, without waiting
-to be asked and without handing the user a command to type.
-
-**While runs go on unattended, stay silent unless you need the user.** The
-folder is already open, so the user can see progress themselves and will ask if
-they want something. Do not send progress notes, status tables or summaries of
-what a run did. Speak only when a run stops and needs a decision, or when
-everything is ready for the next step (such as `finish`). Then say it short:
-the decision, your recommendation, and what it costs.
 
 When the research is done, the whole folder goes into `records/research/` at the root of
 the repository, not only the delivery. It is the record of what was asked, where

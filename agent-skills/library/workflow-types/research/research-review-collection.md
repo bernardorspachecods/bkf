@@ -56,16 +56,9 @@ review is better than the objective it is checked against.
 
 ## Show what you checked
 
-A verdict with no evidence cannot be told apart from a skim. Before the problems,
-write what you went through, so that someone can see it was read:
-
-- **For each of the four questions, one line** with what you compared and where it
-  sits in the collected file (heading, entry or line). Write what you found, not
-  "looks fine".
-- **A pass is this same list with no problems under it.** It is never a single
-  sentence saying nothing is wrong.
-- **If you did not open part of the input, say which part.** Do not claim a check
-  you did not make.
+Show what you checked as the `review-work` module requires. Here the list has one
+line for each of the four questions, with what you compared and where it sits in
+the collected file (heading, entry or line).
 
 ## Output
 
@@ -73,14 +66,9 @@ What you checked, then a short list of problems, each tied to a field of the obj
 four questions, and a verdict on whether the collection can go to the digest or
 must go back to collection.
 
-When a script runs the review, write the list to the file the brief names. Its
-last line is the verdict, exactly one of `VERDICT: pass`, `VERDICT: back` or
-`VERDICT: escalate`, with nothing after it. A script reads that line, so any other
-form counts as a failed review.
+When a script runs the review, write the list to the file the brief names; the
+brief gives the verdict format.
 
-Send the problems back to the author. A too-early stop can go back more than once,
-because the test is objective, up to the cap of rounds the run sets. But if the
-same problem returns after being sent back, do not send it again. Escalate to the
-coordinator, because the objective or the map of sources
-is probably what is wrong. What remains unresolved goes to the weak points of the
-delivery, stated plainly.
+Send the problems back to the author. A too-early stop can go back more than
+once, because the test is objective. If the same problem returns after being
+sent back, escalate instead of sending it again.

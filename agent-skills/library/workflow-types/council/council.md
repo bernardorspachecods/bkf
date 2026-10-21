@@ -21,8 +21,6 @@ what the reasons protect.
 - **Independence is the point.** Several advisors give advice without seeing each
   other, so the answer is not anchored on the first view. Anything that lets one
   advisor see another, or a reviewer see who wrote what, defeats the council.
-- **The user steers at the start and judges at the end.** They approve the brief,
-  and read the report. The middle runs without them.
 - **You are the chairman.** You know the user's context, so you write the report.
   You do not advise and you do not review.
 
@@ -70,9 +68,7 @@ Rules that hold whatever the models:
   can still reveal its author.
 - **If an advisor fails or returns nothing, the run stops.** A packet of four is
   not a council of five.
-- **Review is by someone other than the author.** The completeness check is by an
-  agent other than you.
-- **The choice of models is outside this document.** Five perspectives on one
+- **Models.** Five perspectives on one
   small model share its biases; if the question matters, say so to the user and
   let them choose.
 
@@ -99,6 +95,3 @@ One council is one folder in `~/.council-runs/<name>/`, with one subfolder per
 phase in order: `00-input` (the brief), `01-advisors`, `02-packet`, `03-review`
 and `04-check`. The report sits at the top. When it is done, the user chooses: keep
 the record, copied into `records/councils/` in the repository, or delete the run.
-
-As soon as you create a run folder, or any file the user will read, run
-`open <path>` yourself and give the full path in the same message.

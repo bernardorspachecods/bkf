@@ -31,8 +31,6 @@ what the reasons protect.
 - **Do not redo or improve a unit.** Each passed its own review against its own
   brief. Change only what the conflict or the problem forces.
 - **Respect each unit's out of scope.** The briefs still bind what you may touch.
-- **Do not touch git state.** No commit, stage, stash, reset or clean. The run
-  records a base before integration and reads the combined diff from it.
 
 ## Verify before you hand over
 

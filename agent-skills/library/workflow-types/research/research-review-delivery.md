@@ -42,17 +42,11 @@ the front or dropped altogether.
 
 ## Show what you checked
 
-A verdict with no evidence cannot be told apart from a skim. Before the list of
-cuts, write what you went through, so that someone can see it was read:
-
-- **For every part of the digest you went through, one line:** the part (a
-  finding, a divergence, a weak point, a source not consulted), and where it is in
-  the delivery (front, annex or not found), including that its source link and
-  location are there. Write where you found it, not "all present".
-- **A pass is this same list with no cuts under it.** It is never a single
-  sentence saying nothing was left out.
-- **If you did not open part of the input, say which part.** Do not claim a check
-  you did not make.
+Show what you checked as the `review-work` module requires. Here the list has one
+line for every part of the digest you went through (a finding, a divergence, a
+weak point, a source not consulted): the part, and where it is in the delivery
+(front, annex or not found), including that its source link and location are
+there.
 
 ## Output
 
@@ -60,5 +54,4 @@ What you checked, then a short list of what was left out or cut, each pointing t
 digest. If nothing was, say so.
 
 Send the list back to the writer. If the same cut returns after being sent back,
-do not send it again; escalate to the coordinator. What remains unresolved goes to
-the weak points of the delivery, stated plainly.
+escalate instead of sending it again.

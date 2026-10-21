@@ -10,7 +10,7 @@ Open the files below before starting; they hold the rules for planning, delegati
 <!-- BKF:GENERATED-TAGGED-LIST tags: always, delegation, planning, review, repo-library -->
 | What it is | Document |
 | --- | --- |
-| Sets rules for acting within an approved task, deciding when to ask, and which rule wins when rules conflict. It governs authorization and scope; activity-specific methods belong in other modules. | [act-within-scope.md](../../library/modules/act-within-scope.md) |
+| Sets rules for acting within an approved task, deciding when to ask, which rule wins when rules conflict, how to make a risky structural change, and when to keep an interface or document for compatibility. Activity-specific methods belong in other modules. | [act-within-scope.md](../../library/modules/act-within-scope.md) |
 | Defines how to prepare prompts and handoffs for agents, including source authority, write boundaries, and completion checks. Coordination across a run is covered by coordinate-a-run. | [brief-another-agent.md](../../library/modules/brief-another-agent.md) |
 | Defines the coordinator's duties in a run where agents work apart and a script chains their phases: stay out of the roles, stay quiet between checkpoints, treat agent output as unverified, and treat a failure as an escalation. Each workflow's coordinator guide owns its own phases and files. | [coordinate-a-run.md](../../library/modules/coordinate-a-run.md) |
 | Defines how to assign work to agents outside a run script and reconcile their handoffs, including independence, write boundaries, and completion reports. Coordination across a run is covered by coordinate-a-run. | [delegate-work.md](../../library/modules/delegate-work.md) |

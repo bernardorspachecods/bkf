@@ -36,22 +36,14 @@ Something that matters to the question and is missing without a word is.
 
 ## Show what you checked
 
-A verdict with no evidence cannot be told apart from a skim. Before the list of
-cuts, write what you went through:
-
-- **For every response and every review you went through, one line:** the point,
-  and where it is in the report (front, dropped with a reason, or not found).
-- **A pass is this same list with no cuts under it.** It is never a single
-  sentence saying nothing was left out.
-- **If you did not open part of the input, say which part.**
+Show what you checked as the `review-work` module requires. Here the list has one
+line for every response and every review you went through: the point, and where
+it is in the report (front, dropped with a reason, or not found).
 
 ## Output
 
 Write `## What I checked`, then the list of what was left out or cut, each pointing
-to where it is in the source. If nothing was, say so. The last line is the verdict,
-exactly one of `VERDICT: pass`, `VERDICT: back` or `VERDICT: escalate`, with nothing
-after it. A script reads that line, so any other form counts as a failed review.
+to where it is in the source. If nothing was, say so. The brief gives the verdict format.
 
-The list goes back to the chairman, up to the cap of rounds the run sets. If the
-same cut returns after being sent back, escalate: the report or the brief is
-probably what is wrong.
+The list goes back to the chairman. If the same cut returns after being sent
+back, escalate instead of sending it again.

@@ -51,23 +51,15 @@ redo the grouping.
 
 ## Show what you checked
 
-A verdict with no evidence cannot be told apart from a skim. Before the list of
-problems, write what you went through, so that someone can see it was read:
-
-- **For every finding in the collected sources that answers the objective, one
-  line:** the finding, and where it is in the digest (view, annex or not found).
-  Do the same for each divergence, each small group and each source not
-  consulted. Write where you found it, not "all present".
-- **A pass is this same list with no problems under it.** It is never a single
-  sentence saying nothing was left out.
-- **If you did not open part of the input, say which part.** Do not claim a check
-  you did not make.
+Show what you checked as the `review-work` module requires. Here the list has one
+line for every finding in the collected sources that answers the objective, and
+for each divergence, each small group and each source not consulted: the item,
+and where it is in the digest (view, annex or not found).
 
 ## Output
 
 What you checked, then a short list of what was left out, cut or misplaced, each pointing to where it is
 in the collected sources. If nothing was, say so.
 
-Send the list back to the digest role. If the same problem returns after being sent
-back, do not send it again; escalate to the coordinator. What remains unresolved
-goes to the weak points of the delivery, stated plainly.
+Send the list back to the digest role. If the same problem returns after being
+sent back, escalate instead of sending it again.

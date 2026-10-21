@@ -37,18 +37,10 @@ keep what the reasons protect.
 
 - **Small, isolated units.** A unit that nobody can review with attention is too
   big. Split it until a reviewer holding only its brief and its diff can judge it.
-- **Roles, not headcounts.** Implementation and review are roles. Nobody reviews
-  what they wrote.
 - **Code decides what code can decide.** An agent checking another agent's work
   is a second opinion, not evidence: two models agreeing is one more guess. A
   unit passes when commands that cannot be talked out of a result pass, run by
   the script and not by an agent. An agent judges only what no command can.
-- **The user steers at the start and judges at the end.** The goal and the
-  split into units are where the user steers; each unit then runs without them.
-- **You brief, you do not do.** You keep the conversation with the user and
-  prepare the briefs. You do not implement or review a unit, even a small one.
-- **You are present at the start, at the end and on an escalation.** Between
-  units you do not step in: the run goes on by itself.
 
 ## 1. The goal and the units
 
@@ -66,13 +58,17 @@ the work (data, interface, behaviour), not the order of effort. Test each unit:
 If a unit fails a test, split it again or merge it with the one it cannot be
 separated from.
 
-**How big is too big.** Measured on 17 units of one plan (one repository, one model, so
-a starting point and not a law): implementation rounds of 14 to 60 agent steps took
-1 to 5 minutes, and rounds of 100 or more steps took 12 to 16 minutes. The slow ones
-were not the ones with the most files, which predict the number of steps poorly: the
-slow units designed several new things at once (a migration, fixtures and tests that
-depend on each other, or five groups of scenarios), while a unit that repeated a known
-pattern across nine files took 32 steps. So:
+Each unit costs a full review round, so size units by their work and risk. Make
+it a separate unit when it has review criteria of its own that a reviewer can
+judge apart from its neighbours, when a dependency or worthwhile parallelism
+separates it, when the user wants a checkpoint there, or when merging it would
+overload one brief. Otherwise fold it into the unit that consumes it. Give the
+reason for each cut.
+
+**How big is too big.** What decides how slow a unit is, in practice, is not how many
+files it touches but how many new things it designs at once: a migration, fixtures and
+tests that depend on each other, or several groups of scenarios. A unit that repeats a
+pattern already settled across many files is mechanical and fast. So:
 
 - **A unit designs one new thing:** one migration, one script, one tool, one set of tests. Repeating
   a pattern already settled across many files is mechanical and can be larger.
@@ -80,11 +76,9 @@ pattern across nine files took 32 steps. So:
 - **Split on the seams the agent would otherwise cross:** a unit that makes the agent
   read a different group of modules for each part is several units.
 
-Long rounds also carry a much larger context (about 156 thousand input tokens per step
-in the slowest, against 30 to 60 thousand usual), which slows every step further. The run
-records, for each implementation round, the minutes, steps, files and input tokens
-(`metrics.tsv`, and a table in `status.md` when it finishes). Read them after a plan and
-correct these numbers.
+Long rounds also carry a much larger context, which slows every step further. The run
+records the size of each implementation round; read it after a plan and correct these
+limits. The measurements so far are in the `dispatch-codex` skill.
 
 **When the split depends on something you do not yet know,** such as how many
 modules cross a boundary or what a move would break, do not write a unit for
@@ -94,7 +88,7 @@ report. Adding units by hand to a run in progress is possible but leaves the
 contracts between units unfixed and can misalign step numbers; two plans keep
 each one complete when it starts.
 
-**Order and parallelism.** Say which units come first and which run together.
+**Order and parallelism.** You decide which units come first and which run together, and tell the user.
 Units run one at a time in the user's checkout by default. Two units may run
 together only if they share nothing: each then runs in its own copy of the
 repository, and their diffs are brought together afterwards. That costs an
@@ -114,12 +108,12 @@ tests.md
 **You always read the gates; the user does not have to.** The user steers the goal
 and judges at the end that what the plan reached is what they wanted. They do not
 read the commands that decide each unit; you do. Before `start`, and again whenever
-you add or change a unit, run `plan-run.sh gates plan.txt` and read the list. Every
+you add or change a unit, run the script's `gates` command and read the list. Every
 unit has a command that fails if it is wrong, or a reason, written in the plan, for
 why none can exist. A unit with neither is not ready to run.
 
-**Checkpoints.** A run can pause after chosen steps (`-p`). Ask the user, when
-you agree the split, who the pauses are for: only for you to check the step
+**Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
+and ask the user, when you agree the split, who the pauses are for: only for you to check the step
 (rerun what the reviewer's sandbox could not, read the diff, then resume without
 reporting unless a fundamental decision changes), or also for the user to read
 it. Write the answer in the plan and follow it. Step numbers count the lines of
@@ -212,22 +206,16 @@ Rules that hold whatever the number of agents:
 
 - **The gate is run by the script, not by an agent,** and a review does not
   replace it. A unit passes when the gate is green and the reviewer passes.
-- **Review is by someone other than the implementer,** and does not see the
-  implementer's reasoning or handoff. The brief, the diff and the gate result are
+- **The reviewer does not see the implementer's reasoning or handoff.** The brief, the diff and the gate result are
   all it needs.
 - **The handoff is a log, not evidence.** It helps the implementer resume when a
   unit is sent back, and helps you read the run. What a unit left ready is attested
   by its review, not by its handoff.
 - **Each agent writes only its own files.** Two agents never touch the same file.
-- **Sending back has a cap on rounds** (three reviews by default; a gate that
-  keeps failing has its own, larger cap). If the same problem returns, or the cap
-  is reached, the unit goes to you, because the brief is probably what is wrong.
-  You decide whether to revise it with the user.
-- **A review shows what it checked.** A review without a list of what it went
-  through does not count.
+- **A gate that keeps failing has its own cap,** larger than the cap on reviews.
+  When it is reached the unit goes to you.
 - **Git state is not touched by agents.** They do not commit, stage, stash or
   reset. The run records a base before the unit starts, and the diff is read from it.
-- **The choice of models is outside this document.**
 
 ## 4. What the user receives
 
@@ -248,17 +236,13 @@ Do not restate the diff: it is the record of what changed.
 
 ## 5. Where the work lives
 
-One plan is one folder in `~/.plan-runs/<name>/`, with one subfolder per unit in
-order. A unit's folder holds its brief, its rounds (the agent prompts, the
-outputs, the reviews and their verdicts) and its handoff, so the user can open one
-unit and see only it. The plan's goal, the order of the units (in `00-input/`) and a `status.log`
-sit at the top. `plan-run.sh start` creates the folder and fails if it already
-exists, so a plan that is ready but not yet launched is kept as its source files
-(`goal.md`, `plan.txt` and the briefs) outside `~/.plan-runs`, and `start` is run
-when it is time.
+One plan is one folder, with one subfolder per unit in order. A unit's folder holds its
+brief, its rounds (the agent prompts, the outputs, the reviews and their verdicts) and
+its handoff, so the user can open one unit and see only it. The plan's goal, the order
+of the units and a status log sit at the top. A plan that is ready but not yet launched
+is kept as its source files (the goal, the order and the briefs) outside the run folder,
+and the run is started when it is time. Where the folder is, and how it is created, is
+in the `dispatch-codex` skill.
 
 When the plan is done, the user chooses: keep the record, which is copied into
 `records/plans/` in the repository, or delete the run. Until they choose, it stays where it is.
-
-As soon as you create a run folder, or any file the user will read, run
-`open <path>` yourself and give the full path in the same message.

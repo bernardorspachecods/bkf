@@ -16,7 +16,6 @@ tags: [writing]
 - Put task-defining instructions and critical constraints early, with their priority stated.
 - In a long document (several hundred lines, or several independent areas), add a short navigation map near the start whose entries link to real headings and are phrased as reader tasks; a generated table of contents is not a substitute.
 - At a link to detail that only some readers need, name the condition for following it. In skills and context files, keep instructions (what to do) separate from descriptions (what something is).
-- State the tie-breaker for conflicting instructions of equal authority; flag conflicts across authority levels and defer to the applicable hierarchy.
 - Remove repeated meaning across instructions, rationale, examples, and checklists, and cut framing, filler, vague intensifiers, and promotional wording that add no operational information.
 - Replace a list of cases with a general rule when it keeps the distinctions the reader needs to act.
 - Omit unused sections entirely; do not leave placeholders such as "N/A".
