@@ -7,20 +7,31 @@
 #   plan-run.sh status  <name>
 #   plan-run.sh gates   <plan.txt|name>
 #   plan-run.sh finish  [--discard] <name>
+#   plan-run.sh rebase-integration <name> <step> [--paths <path>...]
+#   plan-run.sh accept-integration <name> <step> --why <text>
 # plan.txt: one step per line, in order. A line holds the paths of unit briefs (relative to plan.txt),
 # separated by spaces. One brief is a unit run in your checkout. Several on one line are a parallel group:
 # each runs in its own git worktree, made from the state of your checkout when the group starts (untracked
 # files included, ignored ones not), and when all have passed an integration agent applies their diffs to your checkout
 # and a reviewer checks the combined result. Blank lines and lines starting with # are ignored.
+# While a script works on a run it holds <run>/.lock (its pid); a second `resume` or a `finish` on that run is refused.
 # State lives in ${PLAN_RUNS_DIR:-$HOME/.plan-runs}/<name>, one numbered folder per unit. It must not be
-# under /tmp: the workspace-write sandbox leaves /tmp writable. The unit briefs are read from
-# <run>/00-input/units/ on every run, so a brief can be corrected there before `resume`.
+# under /tmp: the workspace-write sandbox leaves /tmp writable. A unit copies its brief from
+# <run>/00-input/units/ to <run>/<unit>/brief.md when it starts, and a unit that has passed does not start again. So
+# a correction in 00-input/units/ before `resume` reaches the units that still have to run, and always the integration
+# of a group and the final review, which read the current briefs; the unit's own copy stays as what its implementer
+# received. When the two differ, the integration brief and the final review show both and say how to weigh them; the
+# integration also notes it in status.log, and more strongly when the gate differs, because the unit passed against
+# another gate.
 # -p sets checkpoints by step number: `each`, or numbers like `2,4`. After such a step passes the run
 # pauses (exit 3, `PAUSED` in status.log) so the user can read it; `resume` goes on. On resume, -p replaces
 # the list (`-p none` clears it). With no -p the run goes through every step.
 # The agents never change git state. A unit's base is the checkout as the previous step left it (a git tree of
 # the working files, untracked ones included); the reviewer reads the diff from it. Changes made in the checkout
-# between steps, or while a unit is stopped, therefore never land in the next unit's diff.
+# between steps, or while a unit is stopped, therefore never land in the next unit's diff. A group's integration is the
+# exception: its base is taken when it starts and kept, so edits to the checkout after that appear in its diff (do not
+# edit the checkout during a step; `rebase-integration` is the emergency exit). The units of a group work in worktrees made
+# once, when the group starts: `resume` does not make them again.
 # The gate: a brief lists commands in a fenced block tagged `gate` (one command per line; blank lines and lines
 # starting with # are ignored). After each implementation round the script runs them itself, in the checkout,
 # outside any agent, and only calls the reviewer when every one passes. A failing command sends the work back to
@@ -40,10 +51,14 @@
 # steps the agent took, files in the diff, input tokens), and `finish` puts them in status.md, so the rule of thumb
 # for the size of a unit can be checked against real runs.
 # Limits: PLAN_MAX_ROUNDS (default 3) escalates a review that keeps sending work back;
-# PLAN_MAX_GATE_ROUNDS (default 5) stops a unit whose gate keeps failing; PLAN_GATE_TIMEOUT (seconds, default
+# PLAN_MAX_GATE_ROUNDS (default 5) stops a unit whose gate keeps failing (both counts start again at every `resume`); PLAN_GATE_TIMEOUT (seconds, default
 # 900) limits each gate command;
 # PLAN_MIN_CHECKED (default 3) is the least number of lines a reviewer must give under
 # "What I checked". PLAN_GUIDES points at the folder with the role guides.
+# When Codex reports a usage limit the run stops and status.log gets `QUOTA: <text after "try again at">`, unparsed.
+# Before a parallel group the first worktree measures its size and the group is refused if the rest will not fit (worktrees
+# only, with a margin of a quarter; not what the units create while they run).
+# `-p` pauses with exit 3, which is a pause and not a failure.
 # PLAN_CODEX_TIER is Codex's service tier: fast unless set; PLAN_CODEX_TIER= (empty) keeps the account default.
 set -uo pipefail
 
@@ -91,6 +106,35 @@ pause_here() { # <step>
   esac
   case ",$pause," in *",$1,"*) return 0 ;; esac
   return 1
+}
+
+# ---- The lock: one script at a time works on a run ----
+# <run>/.lock holds the pid of the plan-run.sh that is working on the run. A lock whose pid is gone, or now belongs to
+# another program, is stale and is replaced. `resume` and `finish` (and the commands that change a stopped run) refuse
+# while a live script holds it.
+
+run_active() { # true when a live plan-run.sh holds the lock of $run
+  local pid
+  pid=$(cat "$run/.lock" 2>/dev/null) || return 1
+  [[ $pid =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  case "$(ps -p "$pid" -o command= 2>/dev/null)" in *plan-run.sh*) return 0 ;; esac
+  return 1
+}
+
+unlock_run() {
+  [ "$(cat "$run/.lock" 2>/dev/null)" = "$$" ] && rm -f "$run/.lock"
+  return 0
+}
+
+lock_run() {
+  local i
+  for i in 1 2; do
+    if (set -C; echo $$ >"$run/.lock") 2>/dev/null; then trap unlock_run EXIT; return 0; fi
+    run_active && die "run $(basename "$run") is already being worked on by pid $(cat "$run/.lock")"
+    rm -f "$run/.lock"
+  done
+  die "cannot lock $run"
 }
 
 # ---- The diff of a unit: the checkout as a tree before it, against the checkout as a tree after it ----
@@ -324,6 +368,61 @@ record_metrics() { # <unit> <round> <round-dir> <start-epoch>
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$((($(date +%s) - $4) / 60))" "$steps" "$files" "$tokens" >>"$run/metrics.tsv"
 }
 
+# ---- The briefs the integration and the final review read: the current ones in 00-input/units/ ----
+# <run>/<u>/brief.md is what the implementer received, and stays as the record of it. A unit that already passed is not
+# started again, so a correction made in 00-input/units/ reaches the integration and the final review only through here.
+
+brief_current() { # <unit>: the current brief
+  echo "$run/00-input/units/$1.md"
+}
+
+check_briefs() { # <unit>...: sets $reason and fails when a current brief is missing or empty
+  local u
+  for u in "$@"; do
+    [ -s "$(brief_current "$u")" ] || { reason="$u: the current brief $(brief_current "$u") is missing or empty"; return 1; }
+  done
+}
+
+brief_differs() { # <unit>: the current brief is not the one the implementer received
+  [ -f "$run/$1/brief.md" ] && ! cmp -s "$(brief_current "$1")" "$run/$1/brief.md"
+}
+
+gate_differs() { # <unit>
+  brief_differs "$1" && [ "$(gate_commands "$(brief_current "$1")")" != "$(gate_commands "$run/$1/brief.md")" ]
+}
+
+# Prints the current brief; when the implementer received another, then that one, with how to weigh the two.
+print_unit_brief() { # <unit> <heading-marks>
+  cat "$(brief_current "$1")"
+  if brief_differs "$1"; then
+    printf '\n\n%s Brief received by the implementer (differs from the current one)\n\nThe current brief defines the intent. The copy below is what the implementer received. Judge against the current brief. If the unit meets the copy but not the current brief, say so: the deviation comes from the change of brief, not from the unit. If it fails both, the unit failed.\n\n' "$2"
+    cat "$run/$1/brief.md"
+  fi
+}
+
+# ---- Usage limit: Codex says so in its events when the account is out of quota ----
+# The text after "try again at" is kept as it came (a time, another day, whatever Codex writes): it is not parsed.
+
+quota_text() { # <events-file>: the usage-limit message, for status.log; fails when there is none
+  local line
+  line=$(grep -m1 'hit your usage limit' "$1" 2>/dev/null) || return 1
+  case "$line" in
+    *'try again at '*) printf '%s' "$line" | sed 's/.*try again at //; s/"[^"]*$//' ;;
+    *) printf '%s' "$line" | sed 's/.*"message":"//; s/"[^"]*$//' ;;
+  esac
+}
+
+# Sets $reason for an agent that exited with an error: the usage limit, when that is why, else the given reason.
+codex_failed() { # <out-prefix> <label> <reason-when-not-quota>
+  local q
+  if q=$(quota_text "$1.events.jsonl"); then
+    reason="$2: usage limit reached. QUOTA: $q (see $1.events.jsonl)"
+    note "QUOTA: $q"
+  else
+    reason=$3
+  fi
+}
+
 # ---- Prompts: fixed templates, so the coordinator never writes them by hand ----
 
 implement_prompt() { # <unit-brief> <round> <resumed> <prev-problems> <prev-handoff>
@@ -392,7 +491,7 @@ do_review() { # <label> <checkout> <brief> <round-dir> <prev-problems-or-empty>
     review_prompt "$3" "$4/diff.patch" "$5" "$attempt" "$([ -s "$4/gate.md" ] && echo "$4/gate.md")" >"$4/review-prompt.md"
     review_run "$2" "$4/review-prompt.md" "$4/review" read-only
     code=$?
-    [ "$code" -eq 0 ] || { reason="$1: review exit=$code (see $4/review.stderr.log)"; return 1; }
+    [ "$code" -eq 0 ] || { codex_failed "$4/review" "$1" "$1: review exit=$code (see $4/review.stderr.log)"; return 1; }
     if [ -s "$4/review.last-message.md" ] && checked_ok "$4/review.last-message.md" && read_verdict "$4/review.last-message.md" >/dev/null; then
       checked=1; break
     fi
@@ -443,7 +542,7 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
     codex_run "$co" "$rd/implement-prompt.md" "$rd/implement" workspace-write
     code=$?
     porteiro_stop "$co" "$pbridge"
-    [ "$code" -eq 0 ] || { reason="$u: implementer exit=$code (see $rd/implement.stderr.log)"; return 1; }
+    [ "$code" -eq 0 ] || { codex_failed "$rd/implement" "$u" "$u: implementer exit=$code (see $rd/implement.stderr.log)"; return 1; }
     [ -s "$rd/implement.last-message.md" ] || { reason="$u: implementer left no handoff"; return 1; }
     cp "$rd/implement.last-message.md" "$rd/handoff.md"
     cp "$rd/handoff.md" "$d/handoff.md"
@@ -493,6 +592,15 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
 run_integration() { # <step> <unit-dir-name>...
   local k=$1; shift
   local idir=$run/S$k-integration name=S$k-integration u round=0 reviews=0 gate_fails=0 prev="" prevh="" rd code failed
+  check_briefs "$@" || { reason="$name: $reason"; return 1; }
+  [ -s "$run/00-input/goal.md" ] || { reason="$name: the goal $run/00-input/goal.md is missing or empty"; return 1; }
+  for u in "$@"; do
+    if gate_differs "$u"; then
+      note "$name: the gate of $u was changed after it passed: it passed against another gate, and the integration runs the current one"
+    elif brief_differs "$u"; then
+      note "$name: the brief of $u differs from the one its implementer received"
+    fi
+  done
   mkdir -p "$idir"
   if [ -f "$idir/base" ]; then
     [ -d "$idir/rounds" ] && mv "$idir/rounds" "$idir/rounds.attempt-$(date +%s)"
@@ -502,7 +610,10 @@ run_integration() { # <step> <unit-dir-name>...
   mkdir -p "$idir/rounds"
   {
     printf '# Integration of a parallel group\n\nThe units below were implemented apart, each in its own copy of the repository, and their diffs were brought together in this checkout. Check the combined result against every brief and against each other: contradictions between units, a "Receives" that the other unit did not leave ready as stated, duplicated or clashing names, and each unit'"'"'s own criteria. Use the section "The integration review" of the review guide.\n'
-    for u in "$@"; do printf '\n## Unit %s\n\n' "$u"; cat "$run/$u/brief.md"; printf '\n'; done
+    printf '\n## The goal of the plan\n\nThis is the goal of the whole plan, read from 00-input/goal.md when this integration started. Use it to judge how the units fit together and what is out of scope, and to read any note the coordinator left in it about how the run was carried out. It adds no criteria to the briefs.\n\n'
+    sed 's/^```gate/``` gate/' "$run/00-input/goal.md"
+    printf '\n'
+    for u in "$@"; do printf '\n## Unit %s\n\n' "$u"; print_unit_brief "$u" '###'; printf '\n'; done
   } >"$idir/brief.md"
 
   while :; do
@@ -528,7 +639,7 @@ run_integration() { # <step> <unit-dir-name>...
       integrate_prompt "$idir/brief.md" "$failed" "$prev" "$prevh" >"$rd/integrate-prompt.md"
       codex_run "$repo" "$rd/integrate-prompt.md" "$rd/integrate" workspace-write
       code=$?
-      [ "$code" -eq 0 ] || { reason="$name: integrator exit=$code (see $rd/integrate.stderr.log)"; return 1; }
+      [ "$code" -eq 0 ] || { codex_failed "$rd/integrate" "$name" "$name: integrator exit=$code (see $rd/integrate.stderr.log)"; return 1; }
       [ -s "$rd/integrate.last-message.md" ] || { reason="$name: integrator left no handoff"; return 1; }
       cp "$rd/integrate.last-message.md" "$rd/handoff.md"
       for u in "$@"; do touch "$idir/.applied-$u"; done
@@ -574,6 +685,8 @@ run_integration() { # <step> <unit-dir-name>...
   done
 }
 
+free_kb() { df -k "$1" | awk 'NR==2 { print $4 }'; }
+
 remove_worktrees() {
   local w
   for w in "$run"/worktrees/*; do
@@ -587,7 +700,7 @@ remove_worktrees() {
 # One step: a single unit in the checkout, or a parallel group in worktrees plus its integration.
 run_step() { # <step> <unit-dir-name>...
   local k=$1; shift
-  local u pids=() bad="" gb
+  local u pids=() bad="" gb todo=0 first=1 before=0 after=0 used need
   if [ "$#" -eq 1 ]; then
     [ -e "$run/.done-$1" ] || run_unit "$1" "$repo" "$k" || return 1
     touch "$run/.done-$1"
@@ -596,10 +709,24 @@ run_step() { # <step> <unit-dir-name>...
   if [ ! -e "$run/.group-ready-S$k" ]; then
     gb=$(snapshot_commit "$repo") || gb=$(git -C "$repo" rev-parse HEAD)
     mkdir -p "$run/worktrees"
+    for u in "$@"; do [ -d "$run/worktrees/$u" ] || todo=$((todo + 1)); done
     for u in "$@"; do
       [ -d "$run/worktrees/$u" ] && continue
+      [ "$first" -eq 1 ] && before=$(free_kb "$run")
       git -C "$repo" worktree add --detach "$run/worktrees/$u" "$gb" >"$run/$u.worktree.log" 2>&1 \
         || { reason="could not create the worktree for $u (see $run/$u.worktree.log)"; return 1; }
+      if [ "$first" -eq 1 ]; then
+        # The first worktree measures what each one takes; the rest are projected from it, with a margin of a quarter.
+        first=0
+        after=$(free_kb "$run"); used=$((before - after)); [ "$used" -gt 0 ] || used=0
+        need=$(((todo - 1) * used * 5 / 4))
+        if [ "$after" -lt "$need" ]; then
+          remove_worktrees
+          reason="not enough free disk for the parallel group of step $k: the first worktree took $((used / 1024)) MB, the other $((todo - 1)) need about $((need / 1024)) MB with a margin of a quarter, and $((after / 1024)) MB is free where the run lives ($run). Free some space, then resume. The estimate covers the worktrees only, not what the units create while they run (temporary database clusters, build output)."
+          return 1
+        fi
+        note "S$k: disk: the first worktree took $((used / 1024)) MB; $((todo - 1)) more need about $((need / 1024)) MB, $((after / 1024)) MB free"
+      fi
     done
     touch "$run/.group-ready-S$k"
   fi
@@ -627,12 +754,13 @@ run_step() { # <step> <unit-dir-name>...
 # The last review: does the whole result meet the goal. A report, with no verdict loop.
 run_report() {
   local code u
+  check_briefs $(all_units) || return 1
   make_patch "$run/plan-base" "$run/cumulative.patch" "$repo"
   {
     printf '# Final review of the plan\n\n## The goal\n\n'
     cat "$run/00-input/goal.md"
     printf '\n\n## The unit briefs, in order\n'
-    for u in $(all_units); do printf '\n### %s\n\n' "$u"; cat "$run/$u/brief.md"; printf '\n'; done
+    for u in $(all_units); do printf '\n### %s\n\n' "$u"; print_unit_brief "$u" '####'; printf '\n'; done
     printf '\n## Inputs (read-only)\n- The diff of the whole plan, new files included: %s\n- The reviews of each unit and of each parallel group: ' "$run/cumulative.patch"
     for u in $(all_units); do printf '%s/rounds/*/problems.md ' "$run/$u"; done
     printf '%s/S*-integration/rounds/*/problems.md' "$run"
@@ -642,7 +770,7 @@ run_report() {
   } >"$run/report-prompt.md"
   review_run "$repo" "$run/report-prompt.md" "$run/report" read-only
   code=$?
-  [ "$code" -eq 0 ] || { reason="final review exit=$code (see $run/report.stderr.log)"; return 1; }
+  [ "$code" -eq 0 ] || { codex_failed "$run/report" "final review" "final review exit=$code (see $run/report.stderr.log)"; return 1; }
   [ -s "$run/report.last-message.md" ] || { reason="final review wrote no report"; return 1; }
   cp "$run/report.last-message.md" "$run/report.md"
 }
@@ -725,6 +853,7 @@ cmd_start() {
   [ "${#steps[@]}" -gt 0 ] || die "plan.txt has no step"
 
   mkdir -p "$run/00-input/units"
+  lock_run
   cp "$goal" "$run/00-input/goal.md"
   : >"$run/00-input/order"
   for line in "${steps[@]}"; do
@@ -764,6 +893,7 @@ cmd_resume() {
   shift $((OPTIND - 1))
   [ "$#" -eq 1 ] || die 'usage: resume [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name>'
   load_run "$1"
+  lock_run
   if [ -n "$fp" ]; then
     valid_pause "$fp" || die "bad checkpoints: $fp (use each, none, or step numbers like 2,4)"
     pause=$fp; echo "$pause" >"$run/pause"
@@ -848,6 +978,7 @@ cmd_finish() {
   [ "${1:-}" = --discard ] && { discard=1; shift; }
   [ "$#" -eq 1 ] || die 'usage: finish [--discard] <name>'
   load_run "$1"
+  run_active && die "run $1 is being worked on by pid $(cat "$run/.lock"): finish it when it stops"
   remove_worktrees
   if [ "$discard" -eq 1 ]; then
     rm -rf "$run"
@@ -875,6 +1006,130 @@ cmd_finish() {
   records_note "$repo"
 }
 
+# Move the base of a group's integration, for when the checkout was edited after the integration started and those
+# edits sit in its diff. Without --paths: the base becomes the checkout minus the diffs of the units already applied, which
+# is only right while the integrator never ran (its own edits would be hidden too). With --paths: the base stays and the
+# given paths take the checkout's current version as their base; the files that stop showing up are listed and logged.
+# An emergency exit: the rule is not to edit the checkout during a step.
+step_units() { sed -n "${1}p" "$run/00-input/order"; }
+
+integrator_ran() { # <integration-dir>: in this attempt or an earlier one
+  local f
+  for f in "$1"/rounds*/*/integrate.last-message.md; do [ -e "$f" ] && return 0; done
+  return 1
+}
+
+cmd_rebase_integration() { # <name> <step> [--paths <path>...]
+  local usage='usage: rebase-integration <name> <step> [--paths <path>...]'
+  [ "$#" -ge 2 ] || die "$usage"
+  local name=$1 k=$2 mode=1 u p f idir old cur new tmp err hidden units head i
+  local -a paths=() applied=()
+  shift 2
+  if [ "$#" -gt 0 ]; then
+    [ "$1" = --paths ] && [ "$#" -ge 2 ] || die "$usage"
+    shift; paths=("$@"); mode=2
+  fi
+  [[ $k =~ ^[0-9]+$ ]] || die "bad step: $k"
+  load_run "$name"
+  run_active && die "run $name is being worked on by pid $(cat "$run/.lock"): stop it first"
+  [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$repo" ] || die "run rebase-integration inside the plan's repository: $repo"
+  units=$(step_units "$k")
+  # shellcheck disable=SC2086
+  set -- $units
+  [ "$#" -gt 1 ] || die "step $k is not a parallel group: it has no integration"
+  idir=$run/S$k-integration
+  [ -f "$idir/base" ] || die "the integration of step $k has not started: there is no base to move"
+  [ ! -e "$run/.done-S$k-integration" ] || die "the integration of step $k is already closed"
+  [ "$(cat "$idir/base-format" 2>/dev/null)" = tree ] || die "the integration of step $k keeps an old-format base: finish it as it is"
+  old=$(cat "$idir/base")
+  cur=$(snapshot_tree "$repo") || die "cannot snapshot the checkout $repo"
+  tmp=$(mktemp -u "${TMPDIR:-/tmp}/plan-run-rebase.XXXXXX")
+  head=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null)
+
+  if [ "$mode" -eq 1 ]; then
+    integrator_ran "$idir" && die "the integrator already changed the checkout in step $k, so its edits would become part of the base and hide from the reviewer. Name what to leave out of the diff: rebase-integration $name $k --paths <path>..."
+    for u in "$@"; do [ -e "$idir/.applied-$u" ] && applied+=("$u"); done
+    [ "${#applied[@]}" -gt 0 ] || die "no unit of step $k was applied to the checkout: nothing to subtract"
+    GIT_INDEX_FILE=$tmp git -C "$repo" read-tree "$cur" || { rm -f "$tmp"; die "cannot read the checkout tree"; }
+    for ((i = ${#applied[@]} - 1; i >= 0; i--)); do
+      u=${applied[$i]}
+      if ! err=$(GIT_INDEX_FILE=$tmp git -C "$repo" apply -R --cached "$run/$u/final.patch" 2>&1); then
+        rm -f "$tmp"
+        die "the diff of $u cannot be taken back out of the checkout, so the checkout changed files it touches. Nothing was changed. Git says: $err"
+      fi
+    done
+    new=$(GIT_INDEX_FILE=$tmp git -C "$repo" write-tree) || { rm -f "$tmp"; die "cannot write the new base"; }
+    rm -f "$tmp"
+    cp "$idir/base" "$idir/.base.before-rebase-$(date +%s)"
+    echo "$new" >"$idir/base"; echo tree >"$idir/base-format"
+    note "S$k-integration: base moved to the checkout minus the diffs of ${applied[*]} (HEAD $head)"
+    printf 'The base of S%s-integration is now the checkout minus the diffs of %s.\n' "$k" "${applied[*]}"
+    return 0
+  fi
+
+  local -a np=()
+  local bad="" q
+  for p in "${paths[@]}"; do
+    q=${p#./}; q=${q%/}
+    case "/$q/" in //*|*/../*|*/./*) die "bad path (it must be relative to the repository, with no . or ..): $p" ;; esac
+    np+=("$q")
+  done
+  paths=("${np[@]}")
+  for u in "$@"; do
+    [ -f "$run/$u/final.patch" ] || continue
+    while IFS= read -r f; do
+      for p in "${paths[@]}"; do
+        if [ "$f" = "$p" ] || [ "${f#"$p"/}" != "$f" ]; then bad="$bad  $u: $f"$'\n'; fi
+      done
+    done < <(grep '^diff --git a/' "$run/$u/final.patch" | sed -E 's#^diff --git a/(.*) b/(.*)$#\1\n\2#' | sort -u)
+  done
+  [ -z "$bad" ] || die "these paths hold files that a unit's diff changed, so leaving them out would hide that unit's work. Nothing was changed:"$'\n'"$bad"
+  GIT_INDEX_FILE=$tmp git -C "$repo" read-tree "$old" || { rm -f "$tmp"; die "cannot read the base tree"; }
+  for p in "${paths[@]}"; do
+    GIT_INDEX_FILE=$tmp git --literal-pathspecs -C "$repo" rm --cached -r -q --ignore-unmatch -- "$p" >/dev/null 2>&1
+    git --literal-pathspecs -C "$repo" ls-tree -r -z "$cur" -- "$p" | perl -0pe 's/^(\d+) \w+ (\w+)\t/$1 $2\t/' \
+      | GIT_INDEX_FILE=$tmp git -C "$repo" update-index -z --index-info || { rm -f "$tmp"; die "cannot update the base under $p"; }
+  done
+  new=$(GIT_INDEX_FILE=$tmp git -C "$repo" write-tree) || { rm -f "$tmp"; die "cannot write the new base"; }
+  rm -f "$tmp"
+  hidden=$(git -C "$repo" diff --name-only "$old" "$new")
+  [ -n "$hidden" ] || die "nothing under ${paths[*]} differs from the base: nothing to do"
+  cp "$idir/base" "$idir/.base.before-rebase-$(date +%s)"
+  echo "$new" >"$idir/base"; echo tree >"$idir/base-format"
+  note "S$k-integration: base moved under ${paths[*]}; $(printf '%s\n' "$hidden" | wc -l | tr -d ' ') file(s) no longer in the diff: $(printf '%s' "$hidden" | tr '\n' ' ') (HEAD $head)"
+  printf 'The diff of S%s-integration no longer shows these files (they stay in the checkout):\n%s\n' "$k" "$hidden"
+  printf 'If one of them is an edit of the integrator, the reviewer will not see it either.\n'
+}
+
+# Close a group's integration by hand, when the owner has judged the combined result himself. It applies nothing and
+# reviews nothing: it only records that the integration is closed, on top of units that passed and whose diffs are in
+# the checkout. The reason and the commit it was closed at go to status.log.
+cmd_accept_integration() { # <name> <step> --why <text>
+  local usage='usage: accept-integration <name> <step> --why <text>'
+  [ "$#" -eq 4 ] && [ "$3" = --why ] || die "$usage"
+  local name=$1 k=$2 why=$4 u idir units head
+  [ -n "${why//[[:space:]]/}" ] || die "$usage (the reason cannot be empty)"
+  [[ $k =~ ^[0-9]+$ ]] || die "bad step: $k"
+  load_run "$name"
+  run_active && die "run $name is being worked on by pid $(cat "$run/.lock"): stop it first"
+  units=$(step_units "$k")
+  # shellcheck disable=SC2086
+  set -- $units
+  [ "$#" -gt 1 ] || die "step $k is not a parallel group: it has no integration"
+  idir=$run/S$k-integration
+  [ ! -e "$run/.done-S$k-integration" ] || die "the integration of step $k is already closed"
+  for u in "$@"; do
+    [ -e "$run/.done-$u" ] && [ "$(cat "$run/$u/status" 2>/dev/null)" = passed ] || die "unit $u has not passed: the integration cannot be closed over it"
+    [ -e "$idir/.applied-$u" ] || die "the diff of unit $u was never applied to the checkout: the integration cannot be closed over it"
+  done
+  head=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null)
+  echo passed >"$idir/status"
+  touch "$run/.done-S$k-integration"
+  remove_worktrees
+  note "S$k-integration: closed by hand by $(id -un) at HEAD $head, without a review of the combined result. Reason: $why"
+  printf 'S%s-integration is closed. Continue with: plan-run.sh resume %s\n' "$k" "$name"
+}
+
 sub=${1:-}
 [ "$#" -gt 0 ] && shift
 case "$sub" in
@@ -883,5 +1138,7 @@ case "$sub" in
   status) cmd_status "$@" ;;
   gates) cmd_gates "$@" ;;
   finish) cmd_finish "$@" ;;
-  *) die 'usage: plan-run.sh start|resume|status|gates|finish ...' ;;
+  rebase-integration) cmd_rebase_integration "$@" ;;
+  accept-integration) cmd_accept_integration "$@" ;;
+  *) die 'usage: plan-run.sh start|resume|status|gates|finish|rebase-integration|accept-integration ...' ;;
 esac

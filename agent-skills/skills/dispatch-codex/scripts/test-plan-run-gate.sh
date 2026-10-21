@@ -12,6 +12,15 @@ check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
 # A fake codex. The final review of the plan ("# Final review") just writes a report. Reviews (prompt starting "# Review") answer with $FAKE_VERDICT and count themselves in
 # $FAKE_STATE/reviews; implementations run $FAKE_IMPL in the checkout, with the call number in $FAKE_N.
 mkdir -p "$work/bin" "$work/guides"
+# A fake df: with FAKE_DF_BEFORE and FAKE_DF_AFTER set, the first call reports that much free space (KB) and later calls the other.
+cat >"$work/bin/df" <<'EOF4'
+#!/usr/bin/env bash
+if [ -z "${FAKE_DF_BEFORE:-}" ]; then exec /bin/df "$@"; fi
+n=$(($(cat "$FAKE_STATE/df-calls" 2>/dev/null || echo 0) + 1)); echo "$n" >"$FAKE_STATE/df-calls"
+avail=$FAKE_DF_AFTER; [ "$n" -eq 1 ] && avail=$FAKE_DF_BEFORE
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/fake 9999999 1 %s 1%% /\n' "$avail"
+EOF4
+chmod +x "$work/bin/df"
 touch "$work/guides/plan-implementation.md" "$work/guides/plan-review.md" "$work/guides/plan-integration.md"
 cat >"$work/bin/codex" <<'EOF'
 #!/usr/bin/env bash
@@ -20,12 +29,22 @@ while [ "$#" -gt 0 ]; do
   case "$1" in -C) dir=$2; shift 2 ;; -o) out=$2; shift 2 ;; -c) echo "$2" >>"$FAKE_STATE/codex-config"; shift 2 ;; *) shift ;; esac
 done
 prompt=$(cat)
+stage=implement
+case "$prompt" in "# Final review"*) stage=report ;; "# Review"*) stage=review ;; "# Integration of"*) stage=integrate ;; esac
+if [ "${FAKE_QUOTA:-}" = "$stage" ]; then
+  msg=${FAKE_QUOTA_MSG:-"You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 9:43 PM."}
+  printf '%s\n' '{"type":"thread.started","thread_id":"t"}' '{"type":"turn.started"}' "{\"type\":\"error\",\"message\":\"$msg\"}" "{\"type\":\"turn.failed\",\"error\":{\"message\":\"$msg\"}}"
+  exit 1
+fi
+if [ "${FAKE_FAIL:-}" = "$stage" ]; then echo "something else broke" >&2; exit 1; fi
 if [ "${prompt#\# Final review}" != "$prompt" ]; then
   echo "report" >"$out"
 elif [ "${prompt#\# Review}" != "$prompt" ]; then
   n=$(($(cat "$FAKE_STATE/reviews" 2>/dev/null || echo 0) + 1)); echo "$n" >"$FAKE_STATE/reviews"
   printf '%s\n' "$prompt" >"$FAKE_STATE/review-prompt-$n.md"
-  printf '## What I checked\n\n- one\n- two\n- three\n\n## Problems\n\nnone\n\nVERDICT: %s\n' "${FAKE_VERDICT:-pass}" >"$out"
+  verdict=${FAKE_VERDICT:-pass}
+  case "$prompt" in *"# Integration of a parallel group"*) verdict=${FAKE_INT_VERDICT:-$verdict} ;; esac
+  printf '## What I checked\n\n- one\n- two\n- three\n\n## Problems\n\nnone\n\nVERDICT: %s\n' "$verdict" >"$out"
 else
   n=$(($(cat "$FAKE_STATE/impls" 2>/dev/null || echo 0) + 1)); echo "$n" >"$FAKE_STATE/impls"
   printf '%s\n' "$prompt" >"$FAKE_STATE/impl-prompt-$n.md"
@@ -43,6 +62,13 @@ for a in "$@"; do [ "$a" = fail ] && exit 3; done
 exit 0
 EOF2
 chmod +x "$work/bin/pnpm"
+# Every plan-run.sh call goes through this wrapper, which kills it after PLAN_TEST_LIMIT seconds (default 120): a broken
+# guard then fails its test instead of leaving the suite waiting for ever.
+cat >"$work/bin/plan-run-limited" <<EOF3
+#!/usr/bin/env bash
+exec perl -e 'alarm shift @ARGV; exec @ARGV' "\${PLAN_TEST_LIMIT:-120}" "$here/plan-run.sh" "\$@"
+EOF3
+chmod +x "$work/bin/plan-run-limited"
 
 new_case() { # <name> <gate-block-or-empty> <impl-script>   (BRIDGE_CONFIG: the .plan-run.json of the base, or none)
   case_dir=$work/$1; mkdir -p "$case_dir/repo" "$case_dir/state" "$case_dir/plan"
@@ -59,7 +85,7 @@ new_case() { # <name> <gate-block-or-empty> <impl-script>   (BRIDGE_CONFIG: the 
 }
 run() { # <name> [env...]  -> runs start, prints nothing; the exit code is in $code
   (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "${@:2}" \
-    "$here/plan-run.sh" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/out.txt" 2>&1
+    "$work/bin/plan-run-limited" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/out.txt" 2>&1
   code=$?
 }
 reviews() { cat "$case_dir/state/reviews" 2>/dev/null || echo 0; }
@@ -111,7 +137,7 @@ check "parsing: only gate lines, deduplicated, in order" '[ "$cmds" = "$(printf 
 # 8. `gates` prints the commands and flags a unit without one.
 new_case gates 'echo hello' 'true'
 printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; printf 'unit.md\nunit2.md\n' >"$case_dir/plan/plan.txt"
-gout=$("$here/plan-run.sh" gates "$case_dir/plan/plan.txt" 2>&1); gcode=$?
+gout=$("$work/bin/plan-run-limited" gates "$case_dir/plan/plan.txt" 2>&1); gcode=$?
 check "gates: lists the command" 'echo "$gout" | grep -q "\$ echo hello"'
 check "gates: flags the unit with no gate and exits 1" 'echo "$gout" | grep -q "NO GATE" && [ "$gcode" -eq 1 ]'
 
@@ -150,7 +176,7 @@ check "bridge: a db:test script redefined in the unit is refused" 'grep -q "was 
 new_case metrics 'true' 'echo change >>a.txt'
 run metrics
 check "metrics: one line per round with steps, files and tokens" 'awk -F"\t" "\$1==\"01-unit\" && \$2==1 && \$4==3 && \$5==1 && \$6==1234 {ok=1} END{exit !ok}" "$case_dir/runs/r/metrics.tsv"'
-(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$here/plan-run.sh" finish r) >"$case_dir/finish.txt" 2>&1
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$work/bin/plan-run-limited" finish r) >"$case_dir/finish.txt" 2>&1
 check "metrics: finish writes the table into status.md" 'grep -q "Implementation rounds" "$case_dir/repo/records/plans/r/status.md" && grep -q "| 01-unit | 1 |" "$case_dir/repo/records/plans/r/status.md"'
 
 # 12. The service tier: fast unless PLAN_CODEX_TIER says otherwise (empty keeps the account default).
@@ -227,5 +253,254 @@ run untracked
 r=$case_dir/repo
 check "untracked config: start says it is not committed" 'grep -q "is not committed" $case_dir/runs/r/status.log'
 check "untracked config: the base copy is used, so pnpm db:test:query runs" 'grep -qx "FAKEPNPM: db:test:query" $r/r1.txt && [ "$(cat $r/c1.txt)" = 0 ]'
+
+# 20. The integration and the final review read the current briefs in 00-input/units/, not the copy the implementer got.
+# The fake implementer of the first unit corrects its own brief in 00-input/units/ while it works, as the coordinator would between runs.
+HDR='Brief received by the implementer (differs from the current one)'
+GRPIMPL='n=$(basename "$PWD"); echo x >"f-$n.txt"'
+new_case grp '' "$GRPIMPL; [ \"\$n\" = 01-unit ] && echo CURRENT-NOTE >>$work/grp/runs/r/00-input/units/01-unit.md; true"
+printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
+run grp
+rp=$case_dir/runs/r
+check "current briefs: the group run is READY" '[ "$code" -eq 0 ] && grep -q READY "$case_dir/out.txt"'
+check "current briefs: the unit keeps the brief its implementer received" '! grep -q CURRENT-NOTE $rp/01-unit/brief.md'
+check "current briefs: the integration brief holds the current brief" 'grep -q CURRENT-NOTE $rp/S1-integration/brief.md'
+check "current briefs: the integration brief also holds the received one, with the rule for weighing the two" '[ "$(grep -c "$HDR" $rp/S1-integration/brief.md)" -eq 1 ] && grep -q "The current brief defines the intent" $rp/S1-integration/brief.md'
+check "current briefs: only the unit that changed gets that section" '[ "$(grep -c "$HDR" $rp/S1-integration/brief.md)" -eq 1 ]'
+check "current briefs: the integration logs the difference once" '[ "$(grep -c "the brief of 01-unit differs" $rp/status.log)" -eq 1 ] && ! grep -q "brief of 02-unit2 differs" $rp/status.log'
+check "current briefs: the final review reads the same, and logs nothing" 'grep -q CURRENT-NOTE $rp/report-prompt.md && [ "$(grep -c "$HDR" $rp/report-prompt.md)" -eq 1 ] && [ "$(grep -c "differs from the one" $rp/status.log)" -eq 1 ]'
+
+# 21. A unit that did not change adds nothing to the integration brief or the report.
+new_case grpsame '' "$GRPIMPL"
+printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
+run grpsame
+check "same briefs: no received-brief section and no note" '[ "$code" -eq 0 ] && ! grep -q "$HDR" $case_dir/runs/r/S1-integration/brief.md && ! grep -q "$HDR" $case_dir/runs/r/report-prompt.md && ! grep -q differs $case_dir/runs/r/status.log'
+
+# 22. A changed gate gets the stronger note: the unit passed against another gate.
+new_case grpgate 'true' "$GRPIMPL; [ \"\$n\" = 01-unit ] && sed -i.bak 's/^true\$/echo changed/' $work/grpgate/runs/r/00-input/units/01-unit.md; true"
+printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
+run grpgate
+check "changed gate: the integration notes that the unit passed against another gate" 'grep -q "gate of 01-unit was changed after it passed" $case_dir/runs/r/status.log && ! grep -q "brief of 01-unit differs" $case_dir/runs/r/status.log'
+check "changed gate: the integration runs the current gate" 'grep -q "echo changed" $case_dir/runs/r/S1-integration/rounds/1/gate.md'
+
+# 23. A current brief that is gone stops the integration with a reason, not a silent empty section.
+new_case grpgone '' "$GRPIMPL; [ \"\$n\" = 02-unit2 ] && rm $work/grpgone/runs/r/00-input/units/02-unit2.md; true"
+printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
+run grpgone
+check "missing brief: the run stops and says which brief is missing" '[ "$code" -ne 0 ] && grep -q "S1-integration: 02-unit2: the current brief .* is missing or empty" $case_dir/runs/r/status.log'
+check "missing brief: no reviewer saw an integration" '[ ! -e $case_dir/runs/r/S1-integration/rounds/1/diff.patch ]'
+
+# 24. A plain step has no integration: the final review still shows the current brief and the received one, and logs nothing.
+new_case single '' "echo change >>a.txt; echo CURRENT-NOTE >>$work/single/runs/r/00-input/units/01-unit.md"
+run single
+check "final review: a plain unit shows the current brief and the received one" 'grep -q CURRENT-NOTE $case_dir/runs/r/report-prompt.md && grep -q "$HDR" $case_dir/runs/r/report-prompt.md && ! grep -q differs $case_dir/runs/r/status.log'
+
+# 25. The lock: <run>/.lock holds the pid of the script while it works; a second resume or a finish on that run is refused.
+new_case lk '' "cat $work/lk/runs/r/.lock >$work/lk/lock-seen; sleep 6; echo change >>a.txt"
+( run lk ) &
+bg=$!
+for _ in $(seq 1 40); do [ -s "$case_dir/lock-seen" ] && break; sleep 0.25; done
+rp=$case_dir/runs/r
+resume_out=$(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$work/bin/plan-run-limited" resume r 2>&1); resume_code=$?
+finish_out=$(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$work/bin/plan-run-limited" finish --discard r 2>&1); finish_code=$?
+check "lock: while the run works, .lock holds a pid" 'grep -qE "^[0-9]+$" "$case_dir/lock-seen"'
+check "lock: a second resume is refused and says who holds it" '[ "$resume_code" -ne 0 ] && echo "$resume_out" | grep -q "already being worked on by pid $(cat "$case_dir/lock-seen")"'
+check "lock: finish is refused while the run works, and the run folder is still there" '[ "$finish_code" -ne 0 ] && echo "$finish_out" | grep -q "being worked on by pid" && [ -d "$rp" ]'
+wait "$bg"
+check "lock: the refused commands did not disturb the run" '[ -e "$rp/.done-report" ] && grep -q READY "$case_dir/out.txt"'
+check "lock: the lock is gone when the script ends" '[ ! -e "$rp/.lock" ]'
+
+# A lock whose pid is dead, or alive but not a plan-run.sh, is stale: resume replaces it.
+resume_r() { (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$work/bin/plan-run-limited" resume r) >"$case_dir/resume.txt" 2>&1; }
+echo 999999 >"$rp/.lock"; resume_r; rc=$?
+check "lock: a lock with a dead pid is replaced" '[ "$rc" -eq 0 ] && grep -q READY "$case_dir/resume.txt" && [ ! -e "$rp/.lock" ]'
+sleep 30 & other=$!
+echo "$other" >"$rp/.lock"; resume_r; rc=$?
+kill "$other" 2>/dev/null
+check "lock: a live pid that is not a plan-run.sh does not hold the run" '[ "$rc" -eq 0 ] && grep -q READY "$case_dir/resume.txt"'
+
+# 26. rebase-integration without --paths: the base becomes the checkout minus the units' diffs, while the integrator never ran.
+envrun() { (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$@") >"$case_dir/cmd.txt" 2>&1; }
+rbi() { envrun "$work/bin/plan-run-limited" rebase-integration r "$@"; }
+resume_with() { envrun "$work/bin/plan-run-limited" resume r; }
+grp_case() { # <name>: a parallel group of two units
+  new_case "$1" '' "$GRPIMPL"
+  printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
+}
+owner_edits() { (cd "$case_dir/repo" && echo mine >owner.txt && git add owner.txt && git commit -qm owner && echo more >owner2.txt); }
+difffiles() { grep '^diff --git' "$1" | sed -E 's#^diff --git a/(.*) b/.*#\1#'; }
+
+grp_case rb
+run rb FAKE_INT_VERDICT=escalate
+rp=$case_dir/runs/r
+check "rebase 1: the integration review escalated and the run stopped there" '[ "$code" -ne 0 ] && grep -q "S1-integration: the reviewer escalated" $rp/status.log && ! ls $rp/S1-integration/rounds/*/integrate.last-message.md >/dev/null 2>&1'
+owner_edits
+base_before=$(cat $rp/S1-integration/base)
+rbi 1; rc=$?
+check "rebase 1: succeeds, the base moved and the old one is kept" '[ "$rc" -eq 0 ] && [ "$(cat $rp/S1-integration/base)" != "$base_before" ] && ls $rp/S1-integration/.base.before-rebase-* >/dev/null 2>&1'
+check "rebase 1: status.log says what was subtracted and at which HEAD" 'grep -q "S1-integration: base moved to the checkout minus the diffs of 01-unit 02-unit2 (HEAD " $rp/status.log'
+FAKE_INT_VERDICT=pass resume_with
+check "rebase 1: after resume the integration passes" 'grep -q READY $case_dir/cmd.txt'
+check "rebase 1: the integration diff holds the units and not the owner's files" 'f=$(difffiles $rp/S1-integration/rounds/1/diff.patch); echo "$f" | grep -qx f-01-unit.txt && echo "$f" | grep -qx f-02-unit2.txt && ! echo "$f" | grep -q owner'
+rbi 1; rc=$?
+check "rebase 1: refused once the integration is closed" '[ "$rc" -ne 0 ] && grep -q "already closed" $case_dir/cmd.txt'
+
+# The same stop and resume without the command: the owner's files stay in the diff (the case the command exists for).
+grp_case rbctl
+run rbctl FAKE_INT_VERDICT=escalate
+owner_edits
+FAKE_INT_VERDICT=pass resume_with
+check "rebase 1 control: without the command the owner's files are in the integration diff" 'difffiles $case_dir/runs/r/S1-integration/rounds/1/diff.patch | grep -q owner'
+
+# Refusals.
+grp_case rbref
+run rbref FAKE_INT_VERDICT=escalate
+rp=$case_dir/runs/r
+(cd "$case_dir/repo" && echo more >>f-01-unit.txt)
+base_before=$(cat $rp/S1-integration/base)
+rbi 1; rc=$?
+check "rebase 1: a file of a unit's diff edited in the checkout is refused, and the git message names it" '[ "$rc" -ne 0 ] && grep -q "f-01-unit.txt" $case_dir/cmd.txt && grep -q "Nothing was changed" $case_dir/cmd.txt && [ "$(cat $rp/S1-integration/base)" = "$base_before" ]'
+bash -c 'exec -a plan-run.sh sleep 30' & fakepid=$!
+echo "$fakepid" >"$rp/.lock"
+rbi 1; rc=$?
+kill "$fakepid" 2>/dev/null; rm -f "$rp/.lock"
+check "rebase: refused while a plan-run.sh holds the run" '[ "$rc" -ne 0 ] && grep -q "being worked on by pid $fakepid" $case_dir/cmd.txt'
+rbi 9; rc=$?
+check "rebase: a step that does not exist is refused" '[ "$rc" -ne 0 ]'
+
+new_case rbs '' 'echo change >>a.txt'
+run rbs
+rbi 1; rc=$?
+check "rebase: a step that is not a group is refused" '[ "$rc" -ne 0 ] && grep -q "not a parallel group" $case_dir/cmd.txt'
+
+# 27. Once the integrator ran, in this attempt or an earlier one, only --paths is allowed.
+grp_case rbint
+run rbint FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=2
+rp=$case_dir/runs/r
+check "rebase 1: the integrator ran in the stopped attempt" 'ls $rp/S1-integration/rounds/*/integrate.last-message.md >/dev/null 2>&1'
+rbi 1; rc=$?
+check "rebase 1: refused after the integrator ran, and the message names --paths" '[ "$rc" -ne 0 ] && grep -q -- "--paths" $case_dir/cmd.txt'
+FAKE_INT_VERDICT=escalate resume_with
+check "rebase 1: the integrator's rounds are now in an earlier attempt" '! ls $rp/S1-integration/rounds/*/integrate.last-message.md >/dev/null 2>&1 && ls $rp/S1-integration/rounds.attempt-*/*/integrate.last-message.md >/dev/null 2>&1'
+rbi 1; rc=$?
+check "rebase 1: still refused when the integrator's rounds are in an earlier attempt" '[ "$rc" -ne 0 ] && grep -q -- "--paths" $case_dir/cmd.txt'
+
+# 28. rebase-integration --paths: the scenario that happened. Integration at its round cap after the integrator edited
+# files, the owner commits plans/ and tests/ meanwhile: those leave the diff, the integrator's own edits stay.
+grp_case rbp
+run rbp FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=3
+rp=$case_dir/runs/r
+check "paths: the integration stopped at its round cap after two integrator rounds" '[ "$code" -ne 0 ] && grep -q "S1-integration: round cap 3 reached" $rp/status.log && [ "$(ls $rp/S1-integration/rounds/*/integrate.last-message.md | wc -l)" -eq 2 ]'
+(cd "$case_dir/repo" && mkdir -p plans tests/sub && echo p >plans/a.md && git add plans && git commit -qm plans && echo t >tests/sub/x.txt)
+base_before=$(cat $rp/S1-integration/base)
+rbi 1 --paths f-01-unit.txt; rc=$?
+check "paths: a file of a unit's diff is refused, naming the unit" '[ "$rc" -ne 0 ] && grep -q "01-unit: f-01-unit.txt" $case_dir/cmd.txt && [ "$(cat $rp/S1-integration/base)" = "$base_before" ]'
+rbi 1 --paths /etc; rc1=$?; grep -q "bad path" $case_dir/cmd.txt && m1=1
+rbi 1 --paths plans/../plans; rc2=$?; grep -q "bad path" $case_dir/cmd.txt && m2=1
+rbi 1 --paths nothing/here; rc3=$?
+check "paths: absolute and .. paths are refused as bad paths, an unchanged path as nothing to do" '[ "$rc1" -ne 0 ] && [ "${m1:-}" = 1 ] && [ "$rc2" -ne 0 ] && [ "${m2:-}" = 1 ] && [ "$rc3" -ne 0 ] && grep -q "nothing to do" $case_dir/cmd.txt && [ "$(cat $rp/S1-integration/base)" = "$base_before" ]'
+rbi 1 --paths plans/ tests; rc=$?
+check "paths: accepted, the files that leave the diff are listed" '[ "$rc" -eq 0 ] && grep -qx plans/a.md $case_dir/cmd.txt && grep -qx tests/sub/x.txt $case_dir/cmd.txt && grep -q "integrator, the reviewer will not see it" $case_dir/cmd.txt'
+check "paths: status.log has the exact list" 'grep -q "S1-integration: base moved under plans tests; 2 file(s) no longer in the diff: plans/a.md tests/sub/x.txt" $rp/status.log'
+FAKE_INT_VERDICT=pass resume_with
+check "paths: after resume the integration passes" 'grep -q READY $case_dir/cmd.txt'
+check "paths: the owner's plans/ and tests/ left the diff; the units' and the integrator's files stay" 'f=$(difffiles $rp/S1-integration/rounds/1/diff.patch); echo "$f" | grep -qx f-01-unit.txt && echo "$f" | grep -qx f-02-unit2.txt && echo "$f" | grep -qx f-repo.txt && ! echo "$f" | grep -qE "^(plans|tests)/"'
+
+# 29. The integrator and the integration review also get the goal, read from 00-input/goal.md when the integration starts.
+# The unit's implementer and reviewer do not. A gate block in the goal is not a gate of the integration.
+GOALIMPL="$GRPIMPL; [ \"\$n\" = 01-unit ] && echo GOALCURRENT >>$work/goalc/runs/r/00-input/goal.md; true"
+new_case goalc '' "$GOALIMPL"
+printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
+printf 'GOALMARK\n\n```gate\nfalse\n```\n' >"$case_dir/plan/goal.md"
+run goalc FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=2
+rp=$case_dir/runs/r
+check "goal: the integration brief holds the goal as it is when the integration starts" 'grep -q GOALMARK $rp/S1-integration/brief.md && grep -q GOALCURRENT $rp/S1-integration/brief.md'
+check "goal: it says the goal adds no criteria to the briefs" 'grep -q "It adds no criteria to the briefs" $rp/S1-integration/brief.md'
+check "goal: the integration review prompt has it" 'grep -q GOALMARK $rp/S1-integration/rounds/1/review-prompt.md'
+check "goal: the integrator prompt has it" 'grep -q GOALMARK $rp/S1-integration/rounds/2/integrate-prompt.md'
+check "goal: the unit implementer and reviewer do not see it" '! grep -q GOALMARK $rp/01-unit/rounds/1/implement-prompt.md && ! grep -q GOALMARK $rp/01-unit/rounds/1/review-prompt.md'
+check "goal: a gate block in the goal is not run as a gate of the integration" '[ ! -e $rp/S1-integration/rounds/1/gate.md ]'
+
+# A goal that is gone stops the integration with a reason.
+new_case goalgone '' "$GRPIMPL; [ \"\$n\" = 01-unit ] && rm $work/goalgone/runs/r/00-input/goal.md; true"
+printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
+run goalgone
+check "goal: missing goal stops the integration and says which file" '[ "$code" -ne 0 ] && grep -q "S1-integration: the goal .*goal.md is missing or empty" $case_dir/runs/r/status.log'
+
+# 30. accept-integration: closes a group's integration by hand, on units that passed and were applied.
+acc() { envrun "$work/bin/plan-run-limited" accept-integration r "$@"; }
+grp_case ac
+run ac FAKE_INT_VERDICT=escalate
+rp=$case_dir/runs/r
+acc 1; rc=$?
+check "accept: the reason is required" '[ "$rc" -ne 0 ] && grep -q -- "--why" $case_dir/cmd.txt && [ ! -e $rp/.done-S1-integration ]'
+acc 1 --why " "; rc=$?
+check "accept: an empty reason is refused" '[ "$rc" -ne 0 ] && [ ! -e $rp/.done-S1-integration ]'
+acc 9 --why x; rc=$?
+check "accept: a step that does not exist is refused" '[ "$rc" -ne 0 ]'
+rm "$rp/S1-integration/.applied-01-unit"
+acc 1 --why "reviewed by hand"; rc=$?
+check "accept: a unit whose diff was never applied is refused, naming it" '[ "$rc" -ne 0 ] && grep -q "diff of unit 01-unit was never applied" $case_dir/cmd.txt && [ ! -e $rp/.done-S1-integration ]'
+touch "$rp/S1-integration/.applied-01-unit"
+bash -c 'exec -a plan-run.sh sleep 30' & fakepid=$!
+echo "$fakepid" >"$rp/.lock"
+acc 1 --why "reviewed by hand"; rc=$?
+kill "$fakepid" 2>/dev/null; rm -f "$rp/.lock"
+check "accept: refused while a plan-run.sh holds the run" '[ "$rc" -ne 0 ] && grep -q "being worked on by pid $fakepid" $case_dir/cmd.txt && [ ! -e $rp/.done-S1-integration ]'
+check "accept: the group's worktrees are still there before it succeeds" '[ -d $rp/worktrees/01-unit ]'
+acc 1 --why "the owner reviewed the combined diff by hand"; rc=$?
+check "accept: closes the integration: marker and status written, worktrees removed" '[ "$rc" -eq 0 ] && [ -e $rp/.done-S1-integration ] && [ "$(cat $rp/S1-integration/status)" = passed ] && [ ! -d $rp/worktrees ]'
+check "accept: status.log says who, at which HEAD, why, and that nothing was reviewed" 'grep -qE "S1-integration: closed by hand by $(id -un) at HEAD [0-9a-f]+, without a review of the combined result. Reason: the owner reviewed the combined diff by hand" $rp/status.log'
+acc 1 --why again; rc=$?
+check "accept: refused once the integration is closed" '[ "$rc" -ne 0 ] && grep -q "already closed" $case_dir/cmd.txt'
+resume_with
+check "accept: resume goes on to the final review" 'grep -q READY $case_dir/cmd.txt'
+
+grp_case acbad
+run acbad FAKE_VERDICT=escalate
+acc 1 --why "x"; rc=$?
+check "accept: a unit that did not pass is refused, naming it" '[ "$rc" -ne 0 ] && grep -q "unit 01-unit has not passed" $case_dir/cmd.txt && [ ! -e $case_dir/runs/r/.done-S1-integration ]'
+
+new_case acs '' 'echo change >>a.txt'
+run acs
+acc 1 --why x; rc=$?
+check "accept: a step that is not a group is refused" '[ "$rc" -ne 0 ] && grep -q "not a parallel group" $case_dir/cmd.txt'
+
+# 31. A usage limit is named in status.log as QUOTA: <the text as Codex wrote it>, wherever it hits; other failures keep their message.
+for stage in implement review report; do
+  new_case "q-$stage" '' 'echo change >>a.txt'
+  run "q-$stage" FAKE_QUOTA=$stage
+  rp=$case_dir/runs/r
+  check "quota ($stage): the run stops and status.log has the text after 'try again at', unparsed" '[ "$code" -ne 0 ] && grep -q "QUOTA: 9:43 PM\.$" $rp/status.log'
+  check "quota ($stage): the reason says usage limit, not a bare exit code" 'grep -q "usage limit reached. QUOTA: 9:43 PM." $rp/status.log && ! grep -q "exit=1" $rp/status.log'
+done
+grp_case q-integrate
+run q-integrate FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=2 FAKE_QUOTA=integrate
+check "quota (integrate): named too" '[ "$code" -ne 0 ] && grep -q "S1-integration: usage limit reached. QUOTA: 9:43 PM." $case_dir/runs/r/status.log'
+new_case q-other '' 'echo change >>a.txt'
+run q-other FAKE_QUOTA=implement FAKE_QUOTA_MSG="You’ve hit your usage limit. Resets on Friday, 3 Nov."
+check "quota: a message with no 'try again at' is kept whole, not guessed" 'grep -q "QUOTA: You’ve hit your usage limit. Resets on Friday, 3 Nov." $case_dir/runs/r/status.log'
+new_case q-none '' 'echo change >>a.txt'
+run q-none FAKE_FAIL=implement
+check "quota: another failure keeps its exit message and no QUOTA line" '[ "$code" -ne 0 ] && grep -q "01-unit: implementer exit=1" $case_dir/runs/r/status.log && ! grep -q QUOTA $case_dir/runs/r/status.log'
+
+# 32. Disk: the first worktree of a group measures what one takes; the group is refused when the rest cannot fit (with a margin of a quarter).
+grp_case dk-ok
+run dk-ok FAKE_DF_BEFORE=300000 FAKE_DF_AFTER=200000
+check "disk: room for the rest (125000 KB needed, 200000 free): the group runs" '[ "$code" -eq 0 ] && grep -q "READY" $case_dir/out.txt'
+check "disk: status.log says what was measured and projected" 'grep -q "S1: disk: the first worktree took 97 MB; 1 more need about 122 MB, 195 MB free" $case_dir/runs/r/status.log'
+
+grp_case dk-no
+run dk-no FAKE_DF_BEFORE=210000 FAKE_DF_AFTER=110000
+rp=$case_dir/runs/r
+check "disk: 100000 KB per worktree, 110000 free: the margin makes 125000 needed, so the step is refused" '[ "$code" -ne 0 ] && grep -q "not enough free disk for the parallel group of step 1: the first worktree took 97 MB, the other 1 need about 122 MB with a margin of a quarter, and 107 MB is free" $rp/status.log'
+check "disk: the refusal says what the estimate leaves out" 'grep -q "temporary database clusters" $rp/status.log'
+check "disk: the refusal removes the worktrees it made and leaves no ready marker" '[ ! -d $rp/worktrees ] && [ ! -e $rp/.group-ready-S1 ] && ! ls $rp/*-unit*/status >/dev/null 2>&1'
+resume_with
+check "disk: after the space is back, resume runs the group" 'grep -q READY $case_dir/cmd.txt'
+
+grp_case dk-noise
+run dk-noise FAKE_DF_BEFORE=1000 FAKE_DF_AFTER=2000
+check "disk: a measure that shows no consumption (noise) never refuses, and is reported as 0 MB, not a negative number" '[ "$code" -eq 0 ] && grep -q "S1: disk: the first worktree took 0 MB; 1 more need about 0 MB" $case_dir/runs/r/status.log'
 
 exit "$fail"
