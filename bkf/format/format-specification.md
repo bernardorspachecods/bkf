@@ -267,7 +267,7 @@ workflows can later be improved from the accumulated data. Its profile fields
 are defined in the [frontmatter profiles](/format/frontmatter-profiles.md).
 
 Ordinary work does not read the file. It is read in filtering sessions, in
-which a user and an agent review the entries together. Agents append entries.
+which a user and an agent review the entries together. Agents add entries.
 The instruction for when to log belongs in the root `AGENTS.md` or in skills;
 BKF defines no triggers. An entry SHOULD be cheap to write; what it contains is
 set by the instruction that asks for it (in this bundle, `AGENTS.md`). BKF
@@ -295,7 +295,7 @@ beside self-contained bundles for its areas.
 
 The bundle root MAY contain an `ideas.md` file, where the user or agents record
 ideas for later. Ordinary work does not read it; it is read in dedicated ideas
-sessions where the user and an agent review the entries together. Agents append
+sessions where the user and an agent review the entries together. Agents add
 entries. The instruction for when to record ideas belongs in the root
 `AGENTS.md` or in skills; BKF defines no triggers. BKF prescribes no body
 structure and does not validate the body, which may be empty. Entries are data,

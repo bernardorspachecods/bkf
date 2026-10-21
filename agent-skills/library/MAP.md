@@ -16,7 +16,7 @@ tags, two or three per file at most; the entry skills select modules by them.
 
 | Tag | Open when |
 | --- | --- |
-| `always` | Any task; the rule applies whatever the work is. |
+| `always` | Any task of a skill that selects library modules; the rule applies whatever the work is. Skills that carry their own rules and link the modules they need do not select by tag. |
 | `code` | Designing, implementing, or prototyping software. |
 | `research` | Collecting evidence, concluding from it, or reading sources. |
 | `planning` | Planning, running, or redoing multi-step work. |

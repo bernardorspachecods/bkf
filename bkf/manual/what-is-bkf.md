@@ -17,11 +17,11 @@ BKF answers this with a few ideas applied consistently, not with a fixed set of 
 ## The ideas
 
 - **One owner for every fact, rule, and procedure.** Everything else links to it. This makes a change cheap (one place), makes documents trustworthy (one place can be wrong, not five), and makes the documents small enough to read. The rule itself is in the library module `organize-documents`.
-- **Discovery is generated, not remembered.** Each document has a description that says what it owns and where its edge is. Maps are generated from those descriptions and checked for staleness, so an agent finds a document by what it is and not by guessing a filename. A hand-written router is allowed only to add routes the map cannot express.
+- **Discovery is generated, not remembered.** Each document has a description that says what it owns and where its edge is. Maps are generated from those descriptions and checked for staleness, so an agent finds a document by what it is and not by guessing a filename. Hand-written task routes follow the format specification.
 - **Tools do mechanical work; agents and users do judgment.** Scripts check structure, generate maps, and allocate identifiers, because an agent cannot do those reliably by hand. What belongs in a repo and what to name it are decisions between the agent and the user.
 - **The user decides, the agent executes.** Organizing a repo comes from understanding what it is for and what the user needs. The agent proposes and the user decides before the agent acts. This is why the build procedure is a conversation.
 - **Principles, not a fixed set of documents.** Repos differ: an app, a data project, a thesis. BKF does not prescribe which documents a repo has. The documents each one needs follow from its readers, purposes, lifecycles, and authority.
-- **A rule earns its place.** A library rule is kept only if a capable agent would not follow it unprompted, it records a local preference, or it prevents a failure agents credibly show.
+- **A rule earns its place.** The test is in the library module `grow-libraries`.
 
 ## The layers
 
