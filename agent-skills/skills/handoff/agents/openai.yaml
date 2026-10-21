@@ -1,0 +1,5 @@
+interface:
+  display_name: "Handoff"
+  short_description: "Continue the current task in a fresh Claude session"
+policy:
+  allow_implicit_invocation: false

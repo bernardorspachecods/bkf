@@ -60,6 +60,16 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Grill Stuck
   - `short_description`: Recover from a stuck approach
 
+## handoff
+
+- Description: Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new Terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task.
+- Package: [`agent-skills/skills/handoff`](skills/handoff/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Handoff
+  - `short_description`: Continue the current task in a fresh Claude session
+- Runtime policy: `explicit invocation required`
+
 ## maintain-knowledge
 
 - Description: Use when creating, placing, or reorganizing project documentation, glossaries, or decision records, or when asked to organize a repository's documents, including under BKF.
