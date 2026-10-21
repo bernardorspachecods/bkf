@@ -12,6 +12,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from validate_bundle import Validator
 
 STATE_DIR = Path.home() / ".agent-hooks" / "state"
 MAX_BLOCKS = 2
@@ -310,13 +314,18 @@ def _run(main, argv: list[str]) -> tuple[int, str]:
     return code, output.getvalue().strip()
 
 
-def problems(roots: list[Path]) -> list[str]:
+def problems(roots: list[Path], validators: dict[Path, Validator] | None = None) -> list[str]:
+    """Return failed checks; each validator that ran is stored in `validators` for `warnings`."""
     import generate_inventory
     import validate_bundle
 
     found: list[str] = []
     for root in roots:
-        code, text = _run(validate_bundle.main, [str(root), "--this-bundle"])
+        validator = validate_bundle.Validator(root)
+        validator.validate()
+        if validators is not None:
+            validators[root] = validator
+        code, text = _run(lambda _argv: validate_bundle.validate_one(root, validator), [])
         validation_failed = code == 1
         if code == 1:
             found.append(f"bkf validate {root}\n{text}")
@@ -332,15 +341,17 @@ def problems(roots: list[Path]) -> list[str]:
     return found
 
 
-def warnings(roots: list[Path], paths: set[Path]) -> list[str]:
-    """Return validation warnings for the files this session changed."""
+def warnings(roots: list[Path], paths: set[Path], validators: dict[Path, Validator] | None = None) -> list[str]:
+    """Return validation warnings for the files this session changed, reusing validators that already ran."""
     from validate_bundle import Validator
 
     changed = {path.resolve() for path in paths}
     found: list[str] = []
     for root in roots:
-        validator = Validator(root)
-        validator.validate()
+        validator = (validators or {}).get(root)
+        if validator is None:
+            validator = Validator(root)
+            validator.validate()
         found.extend(
             f"{finding.code} {finding.path}: {finding.message}"
             for finding in validator.findings
@@ -371,7 +382,8 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
         if current is not None and str(current_repo) == baseline.get("repo"):
             paths.update(_baseline_paths(baseline, current, current_repo))
     roots = sorted({root for path in paths if (root := bundle_root_of(path)) is not None})
-    found = problems(roots) if roots else []
+    validators: dict[Path, Validator] = {}
+    found = problems(roots, validators) if roots else []
 
     count = int(blocks.read_text()) if blocks.exists() else 0
     if not found or count >= MAX_BLOCKS:
@@ -384,7 +396,7 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
                 temporary.replace(baseline_path)
         touched.unlink(missing_ok=True)
         blocks.unlink(missing_ok=True)
-        notes = warnings(roots, paths) if roots else []
+        notes = warnings(roots, paths, validators) if roots else []
         if notes:
             pending = _state(session_id, "warnings", state_dir)
             pending.parent.mkdir(parents=True, exist_ok=True)

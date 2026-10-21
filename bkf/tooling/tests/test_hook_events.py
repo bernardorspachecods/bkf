@@ -15,6 +15,7 @@ TOOLING = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOLING))
 import generate_inventory
 import hook_events
+import validate_bundle
 
 MAP = (
     '---\nbkf_version: "0.1"\ndescription: A test bundle.\n---\n\n# Map\n\n## Member inventory\n\n'
@@ -329,6 +330,14 @@ class HookEventsTest(unittest.TestCase):
         self.assertIn("validation did not run", json.loads(output)["systemMessage"])
         self.assertTrue(touched.exists())
         self.assertIn("stop", stderr)
+
+    def test_stop_validates_each_bundle_once(self) -> None:
+        touched = self.state / "s.touched"
+        touched.parent.mkdir(parents=True)
+        touched.write_text(str(self.root / "guide.md"))
+        with patch.object(validate_bundle.Validator, "validate", autospec=True, side_effect=validate_bundle.Validator.validate) as validate:
+            hook_events.stop({"session_id": "s", "cwd": str(self.base)}, self.state)
+        self.assertEqual(validate.call_count, 1)
 
     def test_unknown_event_is_reported_without_blocking(self) -> None:
         stdin, sys.stdin = sys.stdin, io.StringIO("{}")

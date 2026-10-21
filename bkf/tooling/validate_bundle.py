@@ -640,9 +640,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def validate_one(root: Path) -> int:
-    validator = Validator(root)
-    validator.validate()
+def validate_one(root: Path, validator: Validator | None = None) -> int:
+    """Print the findings for one bundle; pass a validator that already ran to reuse its findings."""
+    if validator is None:
+        validator = Validator(root)
+        validator.validate()
     for finding in validator.findings:
         print(f"{finding.severity} {finding.code} {finding.path}: {finding.message}")
     if any(finding.code in WARNING_CODES for finding in validator.findings):
