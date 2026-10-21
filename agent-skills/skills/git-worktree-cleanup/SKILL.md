@@ -3,6 +3,8 @@ name: git-worktree-cleanup
 description: Commit selected worktree changes while preserving changes outside the chosen scope.
 ---
 
+# Git worktree cleanup
+
 ## Core rules
 
 - Keep ignored files out of scope unless requested.
@@ -14,19 +16,19 @@ description: Commit selected worktree changes while preserving changes outside t
 
 ### `all`
 
-When the user says `$git-worktree-cleanup all`, commit all non-ignored changes in the worktree in one commit. This includes unrelated pre-existing changes. Ignored files remain out of scope unless the user explicitly requests them.
+When the user says `git-worktree-cleanup all`, commit all non-ignored changes in the worktree in one commit. This includes unrelated pre-existing changes. Ignored files remain out of scope unless the user explicitly requests them.
 
 ### `only`
 
-When the user says `$git-worktree-cleanup only`, commit only changes made for the current task and preserve unrelated pre-existing work. If isolating the task changes requires more than three separate staging groups, stop and report back to the user. Count each group that must be selectively staged or excluded as one staging group.
+When the user says `git-worktree-cleanup only`, commit only changes made for the current task and preserve unrelated pre-existing work. If isolating the task changes requires more than three separate staging groups, stop and report back to the user. Count each group that must be selectively staged or excluded as one staging group.
 
 ### `pre-existing`
 
-When the user says `$git-worktree-cleanup pre`, use the snapshot captured before the current work to identify and commit only the changes that were already present then. Preserve changes made after that snapshot in the worktree and keep them out of the commit. If the snapshot contains no changes relative to its base, report that no commit was necessary.
+When the user says `git-worktree-cleanup pre-existing`, use the snapshot captured before the current work to identify and commit only the changes that were already present then. The snapshot is whatever the user or the harness recorded before the work (for example a commit or a saved `git status` and diff); if none can be found, stop and ask the user for it instead of guessing. Preserve changes made after that snapshot in the worktree and keep them out of the commit. If the snapshot contains no changes relative to its base, report that no commit was necessary.
 
 ### No mode specified
 
-If the user says `$git-worktree-cleanup` without a mode, assume `$git-worktree-cleanup all`.
+If the user says `git-worktree-cleanup` without a mode, assume `git-worktree-cleanup all`.
 
 ## Runtime metadata
 

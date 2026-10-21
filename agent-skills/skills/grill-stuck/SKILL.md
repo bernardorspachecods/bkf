@@ -24,8 +24,7 @@ When failed attempts left changes in the repository, after diagnosing the cause 
 
 - inspect the current changes;
 - identify the cleanup scope and revert or remove only changes attributable to the failed attempts;
-- preserve unrelated or uncertain changes;
-- ask before destructive actions;
+- ask before destructive actions, as [act-within-scope](../../library/modules/act-within-scope.md) says;
 - verify the baseline, then implement the approved direction.
 
 If ownership is uncertain, leave the change untouched and report it.

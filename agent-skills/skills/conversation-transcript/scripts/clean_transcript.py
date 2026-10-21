@@ -107,9 +107,9 @@ def clean_transcript(text: str, mode: str) -> str:
 
 def next_transcript_path(directory: Path) -> Path:
     number = 1
-    while (directory / f"codex-trancript-{number}.md").exists():
+    while (directory / f"codex-transcript-{number}.md").exists():
         number += 1
-    return directory / f"codex-trancript-{number}.md"
+    return directory / f"codex-transcript-{number}.md"
 
 
 def write_text(path: Path, text: str) -> None:
@@ -138,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     destination = parser.add_mutually_exclusive_group()
     destination.add_argument("--output", type=Path, help="write to this path (default: stdout)")
     destination.add_argument("--in-place", action="store_true", help="replace the source file")
-    destination.add_argument("--rename", action="store_true", help="rename to the next codex-trancript-N.md")
+    destination.add_argument("--rename", action="store_true", help="rename to the next codex-transcript-N.md")
     parser.add_argument("--rename-number", type=int, help="number to use with --rename")
     return parser
 
@@ -159,7 +159,7 @@ def main() -> int:
             write_text(source, cleaned)
         elif args.rename:
             target = (
-                source.parent / f"codex-trancript-{args.rename_number}.md"
+                source.parent / f"codex-transcript-{args.rename_number}.md"
                 if args.rename_number is not None
                 else next_transcript_path(source.parent)
             )

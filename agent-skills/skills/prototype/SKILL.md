@@ -61,9 +61,10 @@ Stop when the question is answered.
 ## 4. Capture the decision
 
 Rebuild the validated decision properly in the real code, following the
-repository's own rules, and discard the prototype. Record the decision in the
-repository's decision or design documents when it has a place for them, not in
-the prototype and not on a kept branch. If the user adopts nothing, only
+repository's own rules, and discard the prototype. Record the decision as
+[record-domain-terms](../../library/modules/record-domain-terms.md) says, only when
+it warrants a record, in the place the repository has for it, not in the
+prototype and not on a kept branch. If the user adopts nothing, only
 discard the prototype.
 
 This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

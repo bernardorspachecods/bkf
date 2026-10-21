@@ -12,7 +12,7 @@ skill packaging, invocation, and resource boundaries.
 ### Invocation
 
 - **Model-invoked:** omit `disable-model-invocation`. The description is a context pointer that is always available for automatic selection, and the user can still invoke the skill by name.
-- **User-invoked:** set `policy.allowimplicitinvocation: false` in `agents/openai.yaml`. Use this when the workflow should run only when the human explicitly asks for it.
+- **User-invoked:** set `policy.allow_implicit_invocation: false` in `agents/openai.yaml`. Use this when the workflow should run only when the human explicitly asks for it.
 
 Keep automatic skills' descriptions narrow enough to avoid competing with similar skills.
 
@@ -54,6 +54,10 @@ repeating them across files. Link every authored package file from `SKILL.md`,
 with a clear condition for reading it and the point in the workflow when it is
 needed.
 
+### Skills that select library modules
+
+An entry skill selects modules from the shared library by tag. Its list sits between `<!-- BKF:GENERATED-TAGGED-LIST tags: ... -->` and `<!-- BKF:GENERATED-TAGGED-LIST-END -->`, with the tags it selects on the opening line. Use only the tags in the [library map](../../library/MAP.md#tag-vocabulary). Do not write the list by hand: [`bkf skills`](../../../bkf/tooling/commands.md#bkf-skills) checks it, and `bkf skills --write` regenerates it and the skill catalog. Run it after adding or editing an entry skill, or after changing a module a skill lists.
+
 ### Bundled scripts
 
 When a skill bundles scripts that generate files or folders, the script is the
@@ -74,7 +78,8 @@ Before publishing, verify that:
   must check that all files are reachable through those links;
 - invocation policy matches the intended human/agent ownership;
 - the skill does not duplicate a stronger source of truth or impose process on unrelated work.
-- instructions for bundled scripts do not restate output the scripts already define.
+- instructions for bundled scripts do not restate output the scripts already define;
+- `bkf skills` passes.
 
 ## Runtime metadata
 

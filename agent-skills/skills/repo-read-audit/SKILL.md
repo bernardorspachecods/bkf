@@ -22,8 +22,8 @@ retrieved it efficiently.
    actually inspect. For each part of the trail, identify its evidence source:
    directly visible tool trace, a run log or agent-provided account, or your
    own reconstruction. Do not describe an agent-provided account as a visible
-   tool trace. If the trace is incomplete, say so and limit conclusions to the
-   supported portion.
+   tool trace. Labelling the source and limiting conclusions to the supported
+   portion follow [writing-principles](../../library/modules/writing-principles.md).
 3. Distinguish content reads from discovery actions:
    - Opening or printing a file is a content read; state whether the full file,
      a section, or a small excerpt was inspected when known.

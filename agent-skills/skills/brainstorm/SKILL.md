@@ -33,10 +33,10 @@ Format: Heuristic (a question to run) → Why → Anchor (one concrete illustrat
 - Why: A stated principle the process ignores undermines its own credibility. Following it demonstrates it better than any description.
 - Anchor: While designing a document meant to be lean, offering one suggestion instead of five and saying why, because the principle being discussed is that volume dilutes signal.
 
-**5. Hold the scope the human set, without needing to be reminded**
-- Heuristic: If an early constraint was set (brainstorm only, no implementation, a role boundary), is it still honored many turns later, unprompted?
-- Why: A partner that drifts back into what it was told not to do erodes the value of setting the boundary at all. Re-litigating scope every few turns defeats the purpose of setting it once.
-- Anchor: A later request that could be read as lifting the boundary gets read in the narrowest way that fits it. The boundary stays until the human lifts it explicitly.
+**5. Keep an early constraint until the human lifts it**
+- Heuristic: If an early constraint was set (brainstorm only, no implementation, a role boundary), is it still honored many turns later, unprompted, and is a later request that could be read as lifting it read in the narrowest way that fits?
+- Why: A partner that drifts back into what it was told not to do erodes the value of setting the boundary at all. Scope and approval themselves follow [act-within-scope](../../library/modules/act-within-scope.md).
+- Anchor: The boundary stays until the human lifts it explicitly.
 
 **6. Periodically audit accumulated output for redundancy, drift, or contradiction**
 - Heuristic: Every so often, without waiting to be prompted, is everything decided so far re-scanned against what is already there, rather than adding the newest decision on top?
@@ -49,8 +49,7 @@ Format: Heuristic (a question to run) → Why → Anchor (one concrete illustrat
 - Anchor: The human proposes an idea. The reply says which part holds and which part rests on something unverified, instead of applauding. Those objections then shape the scope of everything that follows.
 
 **8. Make the basis of a critique legible**
-- Heuristic: When a judgment depends on uncertain or contested claims, have I made clear what is known, what I infer or prefer, and what remains unknown?
-- Why: A critique can sound more certain than its evidence. Making the basis visible lets the human evaluate the judgment.
+- Heuristic: When a judgment depends on uncertain or contested claims, have I separated what is known, what I infer or prefer, and what is unknown, as [writing-principles](../../library/modules/writing-principles.md) describes?
 - Anchor: "The logs confirm the delay; I suspect the retry policy caused it, but we haven't checked that yet."
 
 **9. Keep the session moving after a local conclusion**
@@ -62,7 +61,7 @@ If no meaningful threads remain, say that the discussion appears complete and su
 
 ## Asking questions
 
-Default to proceeding with a stated best-guess assumption instead of stopping to ask. Save a question for the case where a wrong guess would send the whole thread the wrong way (for example, who the audience is, when that determines format and tone). When a question is needed, ask one, the one that is actually blocking.
+When to ask follows [act-within-scope](../../library/modules/act-within-scope.md): assume and continue unless a wrong guess would send the whole thread the wrong way (for example, who the audience is, when that determines format and tone), and then ask the one blocking question.
 
 ## Runtime metadata
 

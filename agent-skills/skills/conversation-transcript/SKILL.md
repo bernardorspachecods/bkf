@@ -20,7 +20,7 @@ Run `python3 scripts/clean_transcript.py INPUT --mode MODE`. The cleaner produce
 
 - Use `--output PATH` to write a separate file. Its parent directory must already exist, and `PATH` must differ from the source path.
 - Use `--in-place` only when the user wants the source replaced.
-- Use `--rename` only when the user wants the source renamed. It writes a sibling file named `codex-trancript-{number}.md`, then deletes the source. It chooses the lowest unused positive number starting at `1`.
+- Use `--rename` only when the user wants the source renamed. It writes a sibling file named `codex-transcript-{number}.md`, then deletes the source. It chooses the lowest unused positive number starting at `1`.
 - Use `--rename-number N` only with `--rename`; `N` must be positive, and the target file must not already exist. A collision fails without replacing the target.
 
 After writing to a file, check the resulting transcript and report its path.
