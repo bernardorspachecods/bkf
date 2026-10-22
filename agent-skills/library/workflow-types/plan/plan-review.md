@@ -57,8 +57,9 @@ looks fine.
 Propose a fix only for what is clearly wrong against the brief. Taste and style
 that the brief did not ask for are not problems.
 
-<!-- inject: ../../modules/determinism.md -->
-**A check written by a model can be empty.** The rules of `determinism` end your
+<!-- inject: ../../modules/core-code-principles.md -->
+<!-- inject: ../../modules/gate.md -->
+**A check written by a model can be empty.** The rules of `core-code-principles` and `gate` end your
 brief. The gate passing says the checks ran and passed, not that they could have
 failed. For each test, script or check the diff adds, find the case in it that makes
 it fail (the wrong input it rejects, the behaviour it would catch) and say where. A

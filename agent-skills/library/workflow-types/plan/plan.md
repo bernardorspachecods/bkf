@@ -170,12 +170,12 @@ Unit brief
   write build output. A failing command sends the work back to the implementer
   with its output and no review; the reviewer cannot override it, and cannot be
   asked until it is green.
-  Following the `determinism` module, write every criterion that a command can
+  Following the `core-code-principles` module, write every criterion that a command can
   decide as a gate line: a test, a script, a query, a comparison of the behaviour
   before and after.
 - **When the checking tool does not exist yet,** make building it a unit that
   comes first, and put the commands of the unit that uses it in that later unit.
-- **Say how each command was shown to fail.** The `determinism` module requires a
+- **Say how each command was shown to fail.** The `core-code-principles` module requires a
   check to be able to fail. Write in the unit how that was shown: a test that was
   run against a broken copy, or a case that is expected to be rejected.
 - **Criteria are what the gate cannot decide:** whether the diff stays in scope,

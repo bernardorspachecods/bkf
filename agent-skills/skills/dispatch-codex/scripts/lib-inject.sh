@@ -1,7 +1,7 @@
 # Shared through lib-codex.sh: add to a brief the text of the files that its role guides ask for.
 # Source it; it defines functions only.
 #
-# A role guide asks for a file with a line of its own: <!-- inject: ../../modules/determinism.md -->
+# A role guide asks for a file with a line of its own: <!-- inject: ../../modules/core-code-principles.md -->
 # The path is relative to the guide's folder and names a Markdown file. The brief names its guides as
 # "role guide: <absolute path>.md" (a path with a space in it is not found).
 

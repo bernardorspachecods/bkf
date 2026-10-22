@@ -38,7 +38,7 @@ BKF also covers what a collection does not: how a repo's own documents are organ
 
 - Adoption takes effort. Organizing a repo is a conversation with the user, and the documents have to be kept up to date on every change.
 - The tooling must be installed, and its checks cover structure only. A wrong fact, or a document that is missing, passes validation.
-- Discipline is the real requirement. A repo that ignores the upkeep rules in [keep a repo's organization](/manual/keep-repo-organization.md) ends up with the drift BKF was built to prevent, now with more files.
+- Discipline is the real requirement. A repo that ignores the upkeep rules in the `repo-maintenance` skill ends up with the drift BKF was built to prevent, now with more files.
 - BKF is young and has one maintainer's conventions built in. Expect to adapt it.
 
 ## When not to use BKF

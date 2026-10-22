@@ -13,6 +13,15 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Brainstorm
   - `short_description`: Think through ideas and decisions together
 
+## code-work
+
+- Description: Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules.
+- Package: [`agent-skills/skills/code-work`](skills/code-work/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Code work
+  - `short_description`: Principles for writing and fixing code, and for verifying it
+
 ## conversation-transcript
 
 - Description: Clean exported Codex session files into a user-assistant transcript, optionally retaining a compact activity trail. Use when asked to remove session artifacts or preserve an audit trail; do not use to summarize or rewrite the conversation.
@@ -90,12 +99,12 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## repo-maintenance
 
-- Description: Use when changing or organizing a repository's documentation, including under BKF, when writing or revising a document, guide, report, prompt, handoff or instruction that another reader will act on, or when recording repeated procedures.
+- Description: Use when your change affects a repository's documents, when organizing or restructuring them, or when writing or revising a document that other agents will act on, mostly under BKF.
 - Package: [`agent-skills/skills/repo-maintenance`](skills/repo-maintenance/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Repo maintenance
-  - `short_description`: Rules for writing, documentation, repo organization, glossaries, decisions
+  - `short_description`: Rules for keeping, organizing and writing a repo's documents under BKF
 
 ## retrieval-chat-audit
 
@@ -130,12 +139,3 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Work in stages
   - `short_description`: Rules for planning, delegating, and reviewing multi-step work
-
-## work-with-code
-
-- Description: Use when building a feature, fixing a bug, or reviewing code changes (source code and tests).
-- Package: [`agent-skills/skills/work-with-code`](skills/work-with-code/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Work with code
-  - `short_description`: Rules for building, fixing, and reviewing code

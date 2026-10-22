@@ -16,7 +16,6 @@ tags, two or three per file at most; the entry skills select modules by them.
 
 | Tag | Open when |
 | --- | --- |
-| `code` | Designing, implementing, or prototyping software. |
 | `research` | Collecting evidence, concluding from it, or reading sources. |
 | `planning` | Planning, running, or redoing multi-step work. |
 | `review` | Assessing work against criteria. |
@@ -31,8 +30,8 @@ tags, two or three per file at most; the entry skills select modules by them.
 | What it is | Document |
 | --- | --- |
 | Defines the coordinator's duties in a run where agents work apart and a script chains their phases: stay out of the roles, stay quiet between checkpoints, treat agent output as unverified, and treat a failure as an escalation. Each workflow's coordinator guide owns its own phases and files, and points here for what every run shares. | [coordinate-a-run.md](/modules/coordinate-a-run.md) |
-| Sets the principles and practices for building code: test first, growing in layers, long-term decisions, dependency choices and code smells. How work is verified follows determinism, reviews follow the plan and code-review guides. | [core-code-principles.md](/modules/core-code-principles.md) |
-| Sets the rules for verifying work with code: let code decide what code can decide, make every check able to fail, never weaken an existing check, and report what is unverified and what ran. Covers any work with code, including work handed to other agents; how a plan or a code review runs its checks is owned by the plan and code-review guides. | [determinism.md](/modules/determinism.md) |
+| Sets the principles for work with code: test first, growing in layers, long-term decisions, reuse and code smells; and how it is verified: let code decide what code can decide, make every check able to fail. Covers any work with code, including work handed to other agents; the gate a script runs for a plan or a review is owned by the gate module. | [core-code-principles.md](/modules/core-code-principles.md) |
+| States the contract of the gate, the commands a script runs outside any agent to decide what code can decide: how they run, what they record, and what an agent that receives the result does with it. | [gate.md](/modules/gate.md) |
 | Owns the code review guides - the coordinator's guide and one guide per role, axis reviewer and checker - that a review brief points agents to. | [MAP.md](/workflow-types/code-review/MAP.md) |
 | Owns the council guides - the coordinator's guide and one guide per role in advice, review and the completeness check - that a council brief points agents to. | [MAP.md](/workflow-types/council/MAP.md) |
 | Owns the plan guides - the coordinator's guide and one guide per role in implementation, review and integration - that a plan brief points agents to. | [MAP.md](/workflow-types/plan/MAP.md) |

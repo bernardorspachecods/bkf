@@ -28,8 +28,9 @@ what the reasons protect.
 
 ## Verify before you hand over
 
-<!-- inject: ../../modules/determinism.md -->
-The rules of `determinism` end your brief and apply to every check below. Run the
+<!-- inject: ../../modules/core-code-principles.md -->
+<!-- inject: ../../modules/gate.md -->
+The rules of `core-code-principles` and `gate` end your brief and apply to every check below. Run the
 checks the criteria name, and any others that tell you the unit works.
 
 When the brief has a `gate`, the script runs those commands itself after you finish
