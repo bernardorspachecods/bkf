@@ -60,6 +60,7 @@
 # only, with a margin of a quarter; not what the units create while they run).
 # `-p` pauses with exit 3, which is a pause and not a failure.
 # PLAN_CODEX_TIER is Codex's service tier: fast unless set; PLAN_CODEX_TIER= (empty) keeps the account default.
+# Progress goes to stderr as `[plan] S<k> ...` and `[plan] final · ...` lines.
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -72,11 +73,13 @@ gate_timeout=${PLAN_GATE_TIMEOUT:-900}
 export PLAN_CODEX_TIER=${PLAN_CODEX_TIER-fast}
 porteiro_timeout=${PLAN_PORTEIRO_TIMEOUT:-900}
 model=gpt-6-luna effort=xhigh review_effort=
+plan_step=0
 
 # shellcheck source=lib-codex.sh
 . "$here/lib-codex.sh"
 
 note() { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$run/status.log"; }
+progress() { printf '[plan] %s\n' "$*" >&2; }
 valid_pause() { [[ $1 =~ ^(none|each|[0-9]+(,[0-9]+)*)$ ]]; }
 
 # Reviewers (and the final review) may use their own reasoning effort: -r, default the implementers' effort.
@@ -532,6 +535,7 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
     rd=$d/rounds/$round
     mkdir -p "$rd"
 
+    progress "S$plan_step unidade $u · ronda $round · implementação"
     echo "implementing round $round" >"$d/status"
     note "$u round $round: implement"
     implement_prompt "$d/brief.md" "$round" "$resumed" "$prev" "$prevh" >"$rd/implement-prompt.md"
@@ -554,12 +558,15 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
       echo "gate round $round" >"$d/status"
       note "$u round $round: gate"
       if run_gate "$d/brief.md" "$co" "$rd"; then
+        progress "S$plan_step unidade $u · ronda $round · gate PASS"
         note "$u round $round: gate passed"
       else
+        progress "S$plan_step unidade $u · ronda $round · gate FAIL"
         gate_fails=$((gate_fails + 1))
         write_gate_problems "$rd"; echo back >"$rd/verdict"
         note "$u: round $round: gate failed (see $rd/gate.md)"
         if [ "$gate_fails" -ge "$max_gate_rounds" ]; then
+          progress "S$plan_step unidade $u · ronda $round · escalada"
           echo escalated >"$d/status"
           reason="$u: the gate still fails after $gate_fails rounds (see $rd/gate.md)"
           return 1
@@ -570,15 +577,18 @@ run_unit() { # <unit-dir-name> <checkout> [<step>]
     fi
 
     reviews=$((reviews + 1))
+    progress "S$plan_step unidade $u · ronda $round · revisão"
     echo "reviewing round $round" >"$d/status"
     note "$u round $round: review"
     do_review "$u" "$co" "$d/brief.md" "$rd" "$prev" || return 1
 
     case "$verdict" in
-      pass) echo passed >"$d/status"; cp "$rd/diff.patch" "$d/final.patch"; return 0 ;;
-      escalate) echo escalated >"$d/status"; reason="$u: the reviewer escalated (see $rd/problems.md)"; return 1 ;;
+      pass) progress "S$plan_step unidade $u · ronda $round · passou"; echo passed >"$d/status"; cp "$rd/diff.patch" "$d/final.patch"; return 0 ;;
+      escalate) progress "S$plan_step unidade $u · ronda $round · escalada"; echo escalated >"$d/status"; reason="$u: the reviewer escalated (see $rd/problems.md)"; return 1 ;;
       back)
+        progress "S$plan_step unidade $u · ronda $round · devolvida"
         if [ "$reviews" -ge "$max_rounds" ]; then
+          progress "S$plan_step unidade $u · ronda $round · escalada"
           echo escalated >"$d/status"
           reason="$u: round cap $max_rounds reached (see $rd/problems.md)"
           return 1
@@ -622,6 +632,7 @@ run_integration() { # <step> <unit-dir-name>...
     mkdir -p "$rd"
     failed=""
     if [ "$round" -eq 1 ]; then
+      progress "S$plan_step integração · ronda $round · aplicar diffs"
       note "$name: apply the diffs"
       for u in "$@"; do
         [ -e "$idir/.applied-$u" ] && continue
@@ -634,6 +645,7 @@ run_integration() { # <step> <unit-dir-name>...
       done
     fi
     if [ -n "$failed" ] || [ "$round" -gt 1 ]; then
+      progress "S$plan_step integração · ronda $round · integrar"
       echo "integrating round $round" >"$idir/status"
       note "$name round $round: integrate"
       integrate_prompt "$idir/brief.md" "$failed" "$prev" "$prevh" >"$rd/integrate-prompt.md"
@@ -651,12 +663,15 @@ run_integration() { # <step> <unit-dir-name>...
       echo "gate round $round" >"$idir/status"
       note "$name round $round: gate"
       if run_gate "$idir/brief.md" "$repo" "$rd"; then
+        progress "S$plan_step integração · ronda $round · gate PASS"
         note "$name round $round: gate passed"
       else
+        progress "S$plan_step integração · ronda $round · gate FAIL"
         gate_fails=$((gate_fails + 1))
         write_gate_problems "$rd"; echo back >"$rd/verdict"
         note "$name: round $round: gate failed (see $rd/gate.md)"
         if [ "$gate_fails" -ge "$max_gate_rounds" ]; then
+          progress "S$plan_step integração · ronda $round · escalada"
           echo escalated >"$idir/status"
           reason="$name: the gate still fails after $gate_fails rounds (see $rd/gate.md)"
           return 1
@@ -667,15 +682,18 @@ run_integration() { # <step> <unit-dir-name>...
     fi
 
     reviews=$((reviews + 1))
+    progress "S$plan_step integração · ronda $round · revisão"
     echo "reviewing round $round" >"$idir/status"
     note "$name round $round: review"
     do_review "$name" "$repo" "$idir/brief.md" "$rd" "$prev" || return 1
 
     case "$verdict" in
-      pass) echo passed >"$idir/status"; return 0 ;;
-      escalate) echo escalated >"$idir/status"; reason="$name: the reviewer escalated (see $rd/problems.md)"; return 1 ;;
+      pass) progress "S$plan_step integração · ronda $round · passou"; echo passed >"$idir/status"; return 0 ;;
+      escalate) progress "S$plan_step integração · ronda $round · escalada"; echo escalated >"$idir/status"; reason="$name: the reviewer escalated (see $rd/problems.md)"; return 1 ;;
       back)
+        progress "S$plan_step integração · ronda $round · devolvida"
         if [ "$reviews" -ge "$max_rounds" ]; then
+          progress "S$plan_step integração · ronda $round · escalada"
           echo escalated >"$idir/status"
           reason="$name: round cap $max_rounds reached (see $rd/problems.md)"
           return 1
@@ -700,12 +718,14 @@ remove_worktrees() {
 # One step: a single unit in the checkout, or a parallel group in worktrees plus its integration.
 run_step() { # <step> <unit-dir-name>...
   local k=$1; shift
-  local u pids=() bad="" gb todo=0 first=1 before=0 after=0 used need
+  local u pids=() bad="" gb todo=0 first=1 before=0 after=0 used need joined
   if [ "$#" -eq 1 ]; then
     [ -e "$run/.done-$1" ] || run_unit "$1" "$repo" "$k" || return 1
     touch "$run/.done-$1"
     return 0
   fi
+  printf -v joined '%s, ' "$@"
+  progress "S$plan_step início · paralelo · ${joined%, }"
   if [ ! -e "$run/.group-ready-S$k" ]; then
     gb=$(snapshot_commit "$repo") || gb=$(git -C "$repo" rev-parse HEAD)
     mkdir -p "$run/worktrees"
@@ -783,32 +803,40 @@ pipeline() {
   while IFS= read -r line; do
     k=$((k + 1))
     [ -e "$run/.done-S$k" ] && continue
+    plan_step=$k
+    if [[ $line != *' '* ]]; then progress "S$plan_step início · unidade $line"; fi
     note "start step $k: $line ($model $effort)"
     reason=""
     # shellcheck disable=SC2086
     if run_step "$k" $line; then
       touch "$run/.done-S$k"; note "done step $k"
+      progress "S$plan_step concluído"
       snapshot_tree "$repo" >"$run/state-after-S$k" 2>/dev/null || rm -f "$run/state-after-S$k"
       if pause_here "$k"; then
         touch "$run/.paused-S$k"
         note "PAUSED after step $k: read $run, then: plan-run.sh resume $(basename "$run")"
+        progress "S$plan_step pausa"
         printf 'PAUSED after step %s (%s). Read it in %s, then: plan-run.sh resume %s\nSee %s/status.log\n' "$k" "$line" "$run" "$(basename "$run")" "$run"
         return 3
       fi
     else
       note "STOPPED at step $k: $reason"
       note "Read the rounds in $run, fix the cause (the briefs in $run/00-input/units/, or the checkout), then: plan-run.sh resume $(basename "$run")"
+      progress "S$plan_step parou"
       printf 'STOPPED at step %s (%s): %s\nSee %s/status.log\n' "$k" "$line" "$reason" "$run"
       return 1
     fi
   done <"$run/00-input/order"
   if [ ! -e "$run/.done-report" ]; then
     note "start final review ($model $effort)"
+    progress "final · revisão"
     reason=""
     if run_report; then
       touch "$run/.done-report"; note "done final review"
+      progress "final · concluído"
     else
       note "STOPPED at the final review: $reason"
+      progress "final · parou"
       printf 'STOPPED at the final review: %s\nSee %s/status.log\n' "$reason" "$run"
       return 1
     fi

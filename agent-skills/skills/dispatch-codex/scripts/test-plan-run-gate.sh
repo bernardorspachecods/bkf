@@ -503,4 +503,72 @@ grp_case dk-noise
 run dk-noise FAKE_DF_BEFORE=1000 FAKE_DF_AFTER=2000
 check "disk: a measure that shows no consumption (noise) never refuses, and is reported as 0 MB, not a negative number" '[ "$code" -eq 0 ] && grep -q "S1: disk: the first worktree took 0 MB; 1 more need about 0 MB" $case_dir/runs/r/status.log'
 
+# 33. Progress: a green single-unit gate reports each stage in order.
+new_case progress-green 'true' 'echo change >>a.txt'
+run progress-green
+pg_start=$(grep -nF '[plan] S1 início · unidade 01-unit' "$case_dir/out.txt" | cut -d: -f1)
+pg_impl=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · implementação' "$case_dir/out.txt" | cut -d: -f1)
+pg_gate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · gate PASS' "$case_dir/out.txt" | cut -d: -f1)
+pg_review=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · revisão' "$case_dir/out.txt" | cut -d: -f1)
+pg_pass=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · passou' "$case_dir/out.txt" | cut -d: -f1)
+pg_done=$(grep -nF '[plan] S1 concluído' "$case_dir/out.txt" | cut -d: -f1)
+pg_final_review=$(grep -nF '[plan] final · revisão' "$case_dir/out.txt" | cut -d: -f1)
+pg_final_done=$(grep -nF '[plan] final · concluído' "$case_dir/out.txt" | cut -d: -f1)
+check "progress green: all expected lines appear in order" '[ "$code" -eq 0 ] && [ "$pg_start" -lt "$pg_impl" ] && [ "$pg_impl" -lt "$pg_gate" ] && [ "$pg_gate" -lt "$pg_review" ] && [ "$pg_review" -lt "$pg_pass" ] && [ "$pg_pass" -lt "$pg_done" ] && [ "$pg_done" -lt "$pg_final_review" ] && [ "$pg_final_review" -lt "$pg_final_done" ]'
+
+# 34. Progress: a red gate reports the failure before the next implementation round.
+new_case progress-redfix 'test -f ok' 'echo change >>a.txt; [ "$FAKE_N" -ge 2 ] && touch ok; true'
+run progress-redfix
+pg_fail=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · gate FAIL' "$case_dir/out.txt" | cut -d: -f1)
+pg_retry=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · implementação' "$case_dir/out.txt" | cut -d: -f1)
+check "progress redfix: gate FAIL precedes round 2 implementation" '[ "$code" -eq 0 ] && [ "$pg_fail" -lt "$pg_retry" ]'
+
+# 35. Progress: reviewer backs are reported and the round cap escalates.
+new_case progress-backs 'true' 'echo change >>a.txt'
+FAKE_VERDICT=back run progress-backs PLAN_MAX_ROUNDS=2
+pg_back=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · devolvida' "$case_dir/out.txt" | cut -d: -f1)
+pg_escalate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · escalada' "$case_dir/out.txt" | cut -d: -f1)
+check "progress backs: the final back is followed by escalation" '[ "$code" -ne 0 ] && [ "$pg_back" -lt "$pg_escalate" ] && grep -qF "[plan] S1 parou" "$case_dir/out.txt"'
+
+# 36. Progress: a parallel step names the group and reports both units.
+grp_case progress-group
+printf '# Unit\n\n## Result\nx\n\n```gate\ntrue\n```\n' >"$case_dir/plan/unit.md"
+printf '# U2\n\n## Result\nx\n\n```gate\ntrue\n```\n' >"$case_dir/plan/unit2.md"
+FAKE_IMPL='printf "%s\n" "$PWD" > shared.txt' run progress-group
+pg_apply=$(grep -nF '[plan] S1 integração · ronda 1 · aplicar diffs' "$case_dir/out.txt" | cut -d: -f1)
+pg_integrate=$(grep -nF '[plan] S1 integração · ronda 1 · integrar' "$case_dir/out.txt" | cut -d: -f1)
+pg_gate=$(grep -nF '[plan] S1 integração · ronda 1 · gate PASS' "$case_dir/out.txt" | cut -d: -f1)
+pg_review=$(grep -nF '[plan] S1 integração · ronda 1 · revisão' "$case_dir/out.txt" | cut -d: -f1)
+pg_pass=$(grep -nF '[plan] S1 integração · ronda 1 · passou' "$case_dir/out.txt" | cut -d: -f1)
+check "progress group: names both units and reports each implementation" 'grep -qF "[plan] S1 início · paralelo · 01-unit, 02-unit2" "$case_dir/out.txt" && grep -qF "[plan] S1 unidade 01-unit · ronda 1 · implementação" "$case_dir/out.txt" && grep -qF "[plan] S1 unidade 02-unit2 · ronda 1 · implementação" "$case_dir/out.txt"'
+check "progress group: integration stages are in order" '[ "$code" -eq 0 ] && [ "$pg_apply" -lt "$pg_integrate" ] && [ "$pg_integrate" -lt "$pg_gate" ] && [ "$pg_gate" -lt "$pg_review" ] && [ "$pg_review" -lt "$pg_pass" ]'
+
+# 37. Progress: stdout keeps READY and does not receive progress lines.
+new_case progress-stdout '' 'echo change >>a.txt'
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") 2>/dev/null >"$case_dir/stdout.txt"
+stdout_code=$?
+check "progress stdout: READY stays on stdout and progress does not" '[ "$stdout_code" -eq 0 ] && grep -q "^READY:" "$case_dir/stdout.txt" && ! grep -qF "[plan]" "$case_dir/stdout.txt"'
+
+# 38. Progress: a gate that reaches its cap escalates and stops the step.
+new_case progress-gate-cap 'false' 'echo change >>a.txt'
+run progress-gate-cap PLAN_MAX_GATE_ROUNDS=1
+pg_fail=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · gate FAIL' "$case_dir/out.txt" | cut -d: -f1)
+pg_escalate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · escalada' "$case_dir/out.txt" | cut -d: -f1)
+check "progress gate cap: failure is followed by escalation and step stop" '[ "$code" -ne 0 ] && [ "$pg_fail" -lt "$pg_escalate" ] && grep -qF "[plan] S1 parou" "$case_dir/out.txt"'
+
+# 39. Progress: a checkpoint reports the pause after the completed step.
+new_case progress-pause '' 'echo change >>a.txt'
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" start -p each r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/out.txt" 2>&1
+pause_code=$?
+pg_done=$(grep -nF '[plan] S1 concluído' "$case_dir/out.txt" | cut -d: -f1)
+pg_pause=$(grep -nF '[plan] S1 pausa' "$case_dir/out.txt" | cut -d: -f1)
+check "progress pause: the completed step is followed by pause" '[ "$pause_code" -eq 3 ] && [ "$pg_done" -lt "$pg_pause" ]'
+
+# 40. Progress: a failed final review reports its stop.
+new_case progress-final-stop '' 'echo change >>a.txt'
+run progress-final-stop FAKE_FAIL=report
+check "progress final stop: review and stop are reported without READY" '[ "$code" -ne 0 ] && grep -qF "[plan] final · revisão" "$case_dir/out.txt" && grep -qF "[plan] final · parou" "$case_dir/out.txt" && ! grep -q "^READY:" "$case_dir/out.txt"'
+
 exit "$fail"
