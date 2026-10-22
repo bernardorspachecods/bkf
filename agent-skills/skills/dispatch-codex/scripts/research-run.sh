@@ -6,6 +6,7 @@
 #   research-run.sh resume  [-m model] [-e effort] <name>
 #   research-run.sh deliver [-m model] [-e effort] <name> <delivery.md>
 #   research-run.sh status  <name>
+#   research-run.sh board   <name>
 #   research-run.sh finish  [--delivery-only] <name>
 # sourcemap.md: one niche per line, numbered ("1. **Name.** where to look"). collectors.txt: one
 # collector per line, "name: 1,2,5" (the niches it covers). Niches the map agent adds are shared out
@@ -29,7 +30,12 @@ model=gpt-6-luna effort=xhigh
 . "$here/lib-codex.sh"
 
 note() { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$run/status.log"; }
-progress() { printf '[research] %s\n' "$*" >&2; }
+progress() {
+  local current_board
+  current_board=$(board 2>/dev/null) || current_board=
+  printf '[research] %s\n\n%s\n' "$*" "$current_board" >&2 || true
+  return 0
+}
 
 objective_body() { sed '/^# /d' "$1"; }              # the objective, without its title line
 max_niche() { grep -Eo '^[0-9]+\.' "$1" | tr -d . | sort -n | tail -1; }
@@ -42,6 +48,33 @@ load_run() { # <name>
   run=$root/$1
   [ -d "$run" ] || die "no such run: $run"
   if [ -f "$run/settings" ]; then read -r model effort <"$run/settings"; fi
+}
+
+collection_agents() { # list collector folders from collectors.txt, ignoring comments and blank lines
+  awk '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      name = $0
+      sub(/:.*/, "", name)
+      gsub(/[[:space:]]/, "", name)
+      if (name != "") printf "%s ", name
+    }
+  ' "$run/00-input/collectors.txt" 2>/dev/null | sed 's/[[:space:]]*$//'
+}
+
+board() { # print the research steps and collector states
+  local agents collector_output
+  agents=$(collection_agents 2>/dev/null) || agents=
+  collector_output=$(cat "$run/02-collection/outfile" 2>/dev/null) || collector_output=
+  [ -n "$collector_output" ] || collector_output=sources.md
+  (
+    board_title=Pesquisa
+    board_steps \
+      'map|Mapa|01-map||' \
+      "collection|Recolha|02-collection|$agents|work/$collector_output" \
+      'digest|Digest|03-digest||' 2>/dev/null
+  ) || true
+  return 0
 }
 
 # ---- Briefs: fixed templates, so the coordinator never writes them by hand ----
@@ -265,6 +298,7 @@ cmd_start() {
   printf '%s %s\n' "$model" "$effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
   note "start $1 ($model $effort, max $max_rounds rounds)"
+  board >&2 || true
   pipeline
 }
 
@@ -354,6 +388,12 @@ cmd_status() {
   cat "$run/status.log"
 }
 
+cmd_board() {
+  [ "$#" -eq 1 ] || die 'usage: board <name>'
+  load_run "$1"
+  board
+}
+
 # The run's history as a readable summary, without paths: what each phase did, with what, and what went wrong.
 write_summary() {
   local log=$run/status.log out=$run/status.md st dir me rounds notes n add cnt last verdict tab
@@ -435,6 +475,7 @@ case "$sub" in
   resume) cmd_resume "$@" ;;
   deliver) cmd_deliver "$@" ;;
   status) cmd_status "$@" ;;
+  board) cmd_board "$@" ;;
   finish) cmd_finish "$@" ;;
-  *) die 'usage: research-run.sh start|resume|deliver|status|finish ...' ;;
+  *) die 'usage: research-run.sh start|resume|deliver|status|board|finish ...' ;;
 esac

@@ -6,6 +6,7 @@
 #   council-run.sh resume  [-m model] [-e effort] <name>
 #   council-run.sh check   [-m model] [-e effort] <name> <report.md>   (exit 0 pass, 1 back, 2 escalate)
 #   council-run.sh status  <name>
+#   council-run.sh board   <name>
 #   council-run.sh finish  [--discard] <name>
 # Every agent works in its own folder and writes one file: the advisors get the brief and a perspective,
 # the reviewers only the packet, and the key that maps labels to perspectives stays in 02-packet/, which no
@@ -31,9 +32,26 @@ model=gpt-6-luna effort=xhigh
 . "$here/lib-codex.sh"
 
 note() { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$run/status.log"; }
-progress() { printf '[council] %s\n' "$*" >&2; }
+progress() {
+  local current_board
+  current_board=$(board 2>/dev/null) || current_board=
+  printf '[council] %s\n\n%s\n' "$*" "$current_board" >&2 || true
+  return 0
+}
 
 perspectives() { printf '%s\n' contrarian first-principles expansionist outsider executor; }
+board() { # print the council's current step and agent states
+  local advisor_folders
+  advisor_folders=$(perspectives | tr '\n' ' ')
+  advisor_folders=${advisor_folders% }
+  board_title=Conselho
+  board_steps \
+    "advisors|Conselheiros|01-advisors|$advisor_folders|advice.md" \
+    'packet|Pacote anónimo|02-packet||' \
+    'review|Revisores|03-review|1 2 3 4 5|review.md' \
+    2>/dev/null || true
+  return 0
+}
 perspective_title() { # <name> -> the heading in council-advisor.md
   case $1 in
     contrarian) echo Contrarian ;;
@@ -185,6 +203,7 @@ cmd_start() {
   printf '%s %s\n' "$model" "$effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
   note "start $1 ($model $effort)"
+  board >&2 || true
   pipeline
 }
 
@@ -267,6 +286,12 @@ cmd_status() {
   cat "$run/status.log"
 }
 
+cmd_board() {
+  [ "$#" -eq 1 ] || die 'usage: board <name>'
+  load_run "$1"
+  board
+}
+
 cmd_finish() {
   local discard=0
   [ "${1:-}" = --discard ] && { discard=1; shift; }
@@ -302,6 +327,7 @@ case "$sub" in
   resume) cmd_resume "$@" ;;
   check) cmd_check "$@" ;;
   status) cmd_status "$@" ;;
+  board) cmd_board "$@" ;;
   finish) cmd_finish "$@" ;;
-  *) die 'usage: council-run.sh start|resume|check|status|finish ...' ;;
+  *) die 'usage: council-run.sh start|resume|check|status|board|finish ...' ;;
 esac
