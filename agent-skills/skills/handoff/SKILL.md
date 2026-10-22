@@ -8,7 +8,7 @@ description: Write a handoff for the task in progress and open a fresh Claude or
 A handoff carries work in flight into a new session that does not
 inherit the old chat. Its value is what it leaves out. Facts that stay true
 after the task belong in the repository's documents, placed by
-[organize-documents](../../library/modules/organize-documents.md), not here.
+[keep-repo-organization](../../../bkf/manual/keep-repo-organization.md), not here.
 
 ## Write
 

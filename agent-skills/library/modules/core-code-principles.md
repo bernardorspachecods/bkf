@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Sets the principles and practices for building code: test first, growing in layers, long-term decisions, dependency choices and code smells. How work is verified follows determinism, reviews follow the plan and code-review guides, and restructuring follows act-within-scope."
+description: "Sets the principles and practices for building code: test first, growing in layers, long-term decisions, dependency choices and code smells. How work is verified follows determinism, reviews follow the plan and code-review guides."
 tags: [code]
 ---
 
@@ -15,4 +15,4 @@ tags: [code]
   - Speculative generality, meaning abstraction, parameters or hooks nobody asked for: delete them and add them back when a real need shows.
   - Middle man, a function or class that only passes the call on: call the real target.
   - Shotgun surgery, one change forcing scattered edits: gather what changes together into one module.
-- How work is verified is owned by the determinism module; how a review checks code is owned by the plan and code-review guides; changing the structure of existing code follows act-within-scope.
+- How work is verified is owned by the determinism module; how a review checks code is owned by the plan and code-review guides.

@@ -9,14 +9,18 @@ A repository can define its own procedures and guidelines for how work is done i
 
 1. Look for `repo-library/MAP.md` at the repository root. If it is missing, continue with the task and do not mention it.
 2. Read the map. Open each entry whose description fits the task.
-3. Follow the entries you opened together with the general guidance; they add to it and do not replace it. If a repo entry contradicts the general guidance, resolve it as [act-within-scope](../../library/modules/act-within-scope.md) says.
-4. When the same procedure or rules recur in the repository, or the user says "we always do X here", open the file below and propose a new entry.
+3. Follow the entries you opened together with the general guidance; they add to it and do not replace it. If a repo entry contradicts the general guidance, the more specific rule wins and the conflict is flagged to the user, not resolved silently.
+4. When the same procedure or rules recur in the repository, or the user says "we always do X here", follow [Grow the repo library](#grow-the-repo-library) and propose a new entry.
 5. When you hand work to another agent, put the path to `repo-library/MAP.md` in the assignment.
 
-<!-- BKF:GENERATED-TAGGED-LIST tags: repo-library -->
-| What it is | Document |
-| --- | --- |
-| Defines how to identify, propose, write, and validate reusable procedures in a repository's repo-library, or in the general library when the rule applies to any repository, including when it comes from an external source. Day-to-day document organization is covered by organize-documents. | [grow-libraries.md](../../library/modules/grow-libraries.md) |
-<!-- BKF:GENERATED-TAGGED-LIST-END -->
+## Grow the repo library
+
+- A repository's own procedures live in `repo-library/` at the repository root, which is a BKF bundle in the same shape as this library: modules for rules in `modules/`, workflows for staged procedures in `workflow-types/`, and a `MAP.md` with the generated member inventory. An entry's frontmatter `description` follows the Descriptions section of `bkf/format/frontmatter-profiles.md`. If the folder does not exist yet, create it with the root `MAP.md`.
+- A candidate is a procedure or rule set the work has applied more than once, or one the user says always applies here, and that is scoped to an activity (for example, editing the database). Prose about how the repository works, with no activity to act on, is not a candidate. A third trigger is an external source (a page, document, or file) the user wants turned into a rule. It is a candidate only when it holds a rule or procedure scoped to an activity; if it holds only information, say so and stop. Keep a candidate only if a capable agent would not follow it unprompted, it records a local preference, or it prevents a failure agents credibly show.
+- Propose a candidate; do not write it first. Name the activity, the rules or stages it would hold, and whether it is a module or a workflow; also name the two or three closest existing entries and what each owns, so the user can inspect and correct the overlap check. Then wait for the user's answer.
+- Decide the destination when proposing. A rule that depends on this repository's code, structure, or conventions goes to `repo-library/`. A rule that would hold in any repository goes to the general library instead; this is rarer, and the proposal says why. Write nothing in the general library without the user's answer. An entry derived from a source names it (URL or path, and the date collected), and each of its claims is located in the source exactly as written, as the research collection guide requires.
+- Write a module for one rule set about one activity. Write a workflow only when the procedure has stages, such as a release or a migration.
+- Before writing, check the map for an entry with the same activity and extend it when it fits. Have a fresh agent who did not draft the proposal independently find where the proposed rule already lives, in the repo-library and the general library; give it only that job, have it report only the overlap locations, and have it make no edits. Do not duplicate a rule the general library already owns; the repo entry holds only what is specific to the repository.
+- After writing, run `bkf inventory --write` and `bkf validate` on `repo-library/`, and say what was added. If the `bkf` command is not installed, do not write the map by hand: tell the user the tool is missing.
 
 This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

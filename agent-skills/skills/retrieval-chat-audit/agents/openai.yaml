@@ -1,5 +1,5 @@
 interface:
-  display_name: "Repository Read Audit"
+  display_name: "Retrieval Chat Audit"
   short_description: "Audit repository reading and retrieval"
 policy:
   allow_implicit_invocation: false

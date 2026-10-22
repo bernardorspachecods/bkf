@@ -16,12 +16,12 @@ BKF answers this with a few ideas applied consistently, not with a fixed set of 
 
 ## The ideas
 
-- **One owner for every fact, rule, and procedure.** Everything else links to it. This makes a change cheap (one place), makes documents trustworthy (one place can be wrong, not five), and makes the documents small enough to read. The rule itself is in the library module `organize-documents`.
+- **One owner for every fact, rule, and procedure.** Everything else links to it. This makes a change cheap (one place), makes documents trustworthy (one place can be wrong, not five), and makes the documents small enough to read. The rule itself is in [keep a repo's organization](/manual/keep-repo-organization.md).
 - **Discovery is generated, not remembered.** Each document has a description that says what it owns and where its edge is. Maps are generated from those descriptions and checked for staleness, so an agent finds a document by what it is and not by guessing a filename. Hand-written task routes follow the format specification.
 - **Tools do mechanical work; agents and users do judgment.** Scripts check structure, generate maps, and allocate identifiers, because an agent cannot do those reliably by hand. What belongs in a repo and what to name it are decisions between the agent and the user.
 - **The user decides, the agent executes.** Organizing a repo comes from understanding what it is for and what the user needs. The agent proposes and the user decides before the agent acts. This is why the build procedure is a conversation.
 - **Principles, not a fixed set of documents.** Repos differ: an app, a data project, a thesis. BKF does not prescribe which documents a repo has. The documents each one needs follow from its readers, purposes, lifecycles, and authority.
-- **A rule earns its place.** The test is in the library module `grow-libraries`.
+- **A rule earns its place.** The test is in the `repo-library` skill.
 
 ## The layers
 
@@ -43,13 +43,13 @@ Hooks handle behavior that must run in every session, which a skill cannot guara
 
 An entry skill matches the request. It lists the library modules that apply, and the agent reads the ones that fit. If the repo has a `repo-library/`, a line in its `AGENTS.md` sends the agent to the repo's map first, and the repo's rules add to the library's. The agent finds the documents it needs through the maps. If the task is complex, a workflow gives it roles, handoffs, and review. When it changes something, it updates the owner document in the same change.
 
-For a complex task the coordinator picks a workflow type and agrees the objective with the user. A script then runs the agents in their roles, each reviewed by another, and stops when a review escalates. The run lives outside the repository until the user chooses to keep it. The steps for the coordinator are in the workflow type's guide and the library module `coordinate-a-run`. Small skills such as `write-text` run anywhere in this flow.
+For a complex task the coordinator picks a workflow type and agrees the objective with the user. A script then runs the agents in their roles, each reviewed by another, and stops when a review escalates. The run lives outside the repository until the user chooses to keep it. The steps for the coordinator are in the workflow type's guide and the library module `coordinate-a-run`. Small skills such as `repo-maintenance` run anywhere in this flow.
 
 ## Keeping a BKF repo healthy
 
-- Follow the upkeep rules in the library module `organize-documents` on every change. They are what keeps the documents current.
+- Follow the upkeep rules in [keep a repo's organization](/manual/keep-repo-organization.md) on every change. They are what keeps the documents current.
 - Run the validator and the inventory check after changing documents. They catch structural drift. They cannot catch a wrong fact or a missing document, so judgment still reads the result.
 - Record what goes wrong, a correction, an ambiguity, a failed check, in the feedback file. Review it with the user to fix the rules, not only the symptom.
 - Record ideas for later in the ideas file. Review them with the user in dedicated ideas sessions.
-- When the signs of drift described in `organize-documents` appear, stop and rebuild with the user using [the build procedure](/manual/build-repo-organization.md). Do not patch around them.
+- When the signs of drift described in [keep a repo's organization](/manual/keep-repo-organization.md) appear, stop and rebuild with the user using [the build procedure](/manual/build-repo-organization.md). Do not patch around them.
 - When a repeated procedure appears in a repo, offer to add it to the repo library; the user approves.

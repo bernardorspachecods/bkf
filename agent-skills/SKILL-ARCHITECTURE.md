@@ -70,15 +70,6 @@ It contains only package metadata and supported runtime metadata derived from th
   - `short_description`: Continue the current task in a fresh Claude session
 - Runtime policy: `explicit invocation required`
 
-## maintain-knowledge
-
-- Description: Use when creating, placing, or reorganizing project documentation, glossaries, or decision records, or when asked to organize a repository's documents, including under BKF.
-- Package: [`agent-skills/skills/maintain-knowledge`](skills/maintain-knowledge/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Maintain knowledge
-  - `short_description`: Rules for documentation, repo organization, glossaries, decisions
-
 ## prototype
 
 - Description: Build throwaway code that answers a design question - does a logic or state model feel right, or what should a page look like - then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship.
@@ -97,13 +88,22 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Repo library
   - `short_description`: Find and follow a repository's own procedures and modules
 
-## repo-read-audit
+## repo-maintenance
 
-- Description: Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses.
-- Package: [`agent-skills/skills/repo-read-audit`](skills/repo-read-audit/SKILL.md)
+- Description: Use when changing or organizing a repository's documentation, including under BKF, when writing or revising a document, guide, report, prompt, handoff or instruction that another reader will act on, or when recording repeated procedures.
+- Package: [`agent-skills/skills/repo-maintenance`](skills/repo-maintenance/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
-  - `display_name`: Repository Read Audit
+  - `display_name`: Repo maintenance
+  - `short_description`: Rules for writing, documentation, repo organization, glossaries, decisions
+
+## retrieval-chat-audit
+
+- Description: Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses.
+- Package: [`agent-skills/skills/retrieval-chat-audit`](skills/retrieval-chat-audit/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Retrieval Chat Audit
   - `short_description`: Audit repository reading and retrieval
 - Runtime policy: `explicit invocation required`
 
@@ -139,12 +139,3 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Work with code
   - `short_description`: Rules for building, fixing, and reviewing code
-
-## write-text
-
-- Description: Use whenever the main output is a document, guide, report, prompt, handoff, or instruction, including one written inside a repository, or when revising or shortening one that another reader will act on.
-- Package: [`agent-skills/skills/write-text`](skills/write-text/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Write text
-  - `short_description`: Rules for writing and revising documents and prompts
