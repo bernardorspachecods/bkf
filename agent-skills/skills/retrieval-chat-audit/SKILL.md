@@ -1,5 +1,5 @@
 ---
-name: repo-read-audit
+name: retrieval-chat-audit
 description: Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses.
 ---
 
@@ -22,8 +22,7 @@ retrieved it efficiently.
    actually inspect. For each part of the trail, identify its evidence source:
    directly visible tool trace, a run log or agent-provided account, or your
    own reconstruction. Do not describe an agent-provided account as a visible
-   tool trace. Labelling the source and limiting conclusions to the supported
-   portion follow [writing-principles](../../library/modules/writing-principles.md).
+   tool trace. Label the source and limit conclusions to the supported portion.
 3. Distinguish content reads from discovery actions:
    - Opening or printing a file is a content read; state whether the full file,
      a section, or a small excerpt was inspected when known.

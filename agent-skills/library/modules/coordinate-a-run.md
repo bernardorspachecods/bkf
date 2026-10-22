@@ -1,12 +1,12 @@
 ---
 bkf: document
 description: "Defines the coordinator's duties in a run where agents work apart and a script chains their phases: stay out of the roles, stay quiet between checkpoints, treat agent output as unverified, and treat a failure as an escalation. Each workflow's coordinator guide owns its own phases and files, and points here for what every run shares."
-tags: [planning, delegation, review]
+tags: [injected]
 ---
 
 # Coordinate a run
 
-The coordinator guides of the plan, code review, council and research workflows send you here. They own their phases, files and roles; this module holds what every run shares.
+The skills of the plan, code review, council and research workflows include this module. Their coordinator guides own the phases, files and roles; this module holds what every run shares.
 
 - Stay out of the roles. The coordinator keeps the conversation with the user and prepares the briefs and inputs; it does not act as researcher, implementer, advisor or reviewer, even for a small run. A gap in an agent's work goes back to a fresh agent through the script, not to the coordinator to fill.
 - A run has its checkpoints, usually the start, the end and an escalation. The user steers at the start and judges at the end; between checkpoints do not message them: no progress updates, status summaries or questions about small decisions. Decide those within the agreed scope and continue. Stop and ask only for a decision that changes the goal, the scope or the agreed settings, or for a requirement that cannot be met within scope, and then say it short: the decision, your recommendation and what it costs. The user asks for status when they want it.

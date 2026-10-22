@@ -41,8 +41,6 @@ an unstructured search.
 
 ## How to read this
 
-You are the coordinator, so also read the `coordinate-a-run` module before you start: it holds the rules every run shares.
-
 These are principles with reasons, not a procedure. You can judge; what goes
 wrong in research is losing the thread over long, varied work, not deciding.
 Adapt to the task, and keep what the reasons protect.

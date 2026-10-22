@@ -134,6 +134,14 @@ for the library files with matching tags, grouped `modules/` then
 `workflow-types/` and sorted by filename. Files without markers are unchanged.
 From the repository root, `bkf inventory agent-skills/library --skills agent-skills/skills --write` refreshes these lists; use the same invocation with `--check` to verify them.
 
+With `--skills`, a line `<!-- inject: path -->` in an entry skill (the path is relative to the
+skill file and names a Markdown file) is followed by a generated block, between
+`<!-- BKF:GENERATED-INJECTED -->` and `<!-- BKF:GENERATED-INJECTED-END -->`, holding the
+file's text without its frontmatter, with headings one level lower and relative links
+rebased to the skill. A bundle-root link (`/...`) in the file stops generation with an error,
+because it would not resolve from the skill. The block is replaced when the source changes, and
+`--check` reports the skill stale.
+
 ## bkf skills
 
 `bkf skills [REPOSITORY-ROOT] [--check|--write]` checks or regenerates the

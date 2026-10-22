@@ -36,8 +36,6 @@ the rest of this guide is for the plan that runs.
 
 ## How to read this
 
-You are the coordinator, so also read the `coordinate-a-run` module before you start: it holds the rules every run shares.
-
 These are principles with reasons, not a procedure. You can judge; what goes
 wrong in long work is losing the thread, not deciding. Adapt to the task, and
 keep what the reasons protect.
