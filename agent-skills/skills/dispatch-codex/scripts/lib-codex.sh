@@ -8,6 +8,9 @@ die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 valid_name() { [[ $1 =~ ^[A-Za-z0-9._-]+$ && $1 != . && $1 != .. ]]; }
 
+# Run the harness CLI from any script.
+harness() { PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../harness" && pwd)" python3 -m harness "$@"; }
+
 # Run codex in <dir> with the prompt on stdin. Events and errors go to <out-prefix>.*
 # The sandbox is workspace-write unless the fourth argument names another.
 # PLAN_CODEX_TIER (for example fast) sets Codex's service tier; unset keeps the account default.

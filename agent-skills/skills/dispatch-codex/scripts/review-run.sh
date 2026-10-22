@@ -110,42 +110,19 @@ check_brief() { # <axis>
 
 # ---- Gate: the script runs the repository's checks itself, so no agent's reading stands in for them ----
 
-# Run one command with a time limit, in its own process group so a timeout also stops its children.
-# Prints nothing; the exit code is the command's, or 124 when the limit was hit.
-run_limited() { # <seconds> <command>
-  perl -e 'setpgrp(0,0); $SIG{ALRM}=sub{ $SIG{TERM}="IGNORE"; kill("TERM",-$$); exit 124 }; alarm shift;
-    my $p=fork; if(!$p){ exec @ARGV or exit 127 } waitpid($p,0); exit($? >> 8)' "$1" bash -c "$2"
-}
-
 run_gates() { # <command>...   writes $run/00-input/gate.md
-  local out=$run/00-input/gate.md n=$# red=0 c code tmp head target
-  target=$(cat "$run/00-input/target")
-  head=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo unknown)
-  tmp=$(mktemp)
-  for c in "$@"; do
-    local log; log=$(mktemp)
-    (cd "$repo" && run_limited "$gate_timeout" "$c") >"$log" 2>&1
-    code=$?
-    {
-      printf '### `%s`\n\n' "$c"
-      if [ "$code" -eq 124 ]; then printf 'exit code: 124 (timed out after %s seconds)\n\n' "$gate_timeout"; else printf 'exit code: %s\n\n' "$code"; fi
-      printf '~~~~\n'; tail -n 100 "$log"; printf '~~~~\n\n'
-    } >>"$tmp"
-    [ "$code" -eq 0 ] || red=$((red + 1))
-    rm -f "$log"
-  done
-  {
-    printf '# Gate\n\n'
-    if [ "$n" -eq 0 ]; then
-      printf 'No gate commands were given (-g), so the repository'"'"'s checks were not run. This is a gap, not a pass.\n'
-    else
-      printf 'The script ran these commands in %s (HEAD %s) before any agent started, outside the agents.\n' "$repo" "$head"
-      [ "$target" = working-tree ] || printf 'The target is a revision range, so the commands ran in the current checkout, which may not be the target.\n'
-      if [ "$red" -eq 0 ]; then printf '\nResult: all green (%s commands).\n\n' "$n"; else printf '\nResult: RED, %s of %s commands failed. A reviewer cannot override a red result.\n\n' "$red" "$n"; fi
-      cat "$tmp"
-    fi
-  } >"$out"
-  rm -f "$tmp"
+  local head target code=0
+  local -a args=(gate run --cwd "$repo" --timeout "$gate_timeout" --out "$run/00-input")
+  if [ "$#" -gt 0 ]; then
+    head=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo unknown)
+    target=$(cat "$run/00-input/target")
+    args+=(--note "HEAD $head of the repository")
+    [ "$target" = working-tree ] || args+=(--note 'The target is a revision range, so the commands ran in the current checkout, which may not be the target.')
+  fi
+  harness "${args[@]}" -- "$@" || code=$?
+  # Exit 1 means one or more commands were red; their results remain in gate.md and review continues.
+  [ "$code" -eq 1 ] && return 0
+  return "$code"
 }
 
 # ---- Phases: each returns nonzero (with $reason) when it stops ----

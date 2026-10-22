@@ -122,8 +122,8 @@ new_case redfix 'test -f ok' 'echo change >>a.txt; [ "$FAKE_N" -ge 2 ] && touch 
 run redfix
 check "gate red then fixed: ready" '[ "$code" -eq 0 ]'
 check "gate red then fixed: two implementations, one review" '[ "$(impls)" -eq 2 ] && [ "$(reviews)" -eq 1 ]'
-check "gate red then fixed: round 1 verdict is back, written by the script" '[ "$(cat "$case_dir/runs/r/01-unit/rounds/1/verdict")" = back ] && grep -q "FAIL \`test -f ok\`" "$case_dir/runs/r/01-unit/rounds/1/problems.md"'
-check "gate red then fixed: round 2 implementer saw the failing command" 'grep -q "FAIL \`test -f ok\`" "$case_dir/state/impl-prompt-2.md"'
+check "gate red then fixed: round 1 verdict is back, written by the script" '[ "$(cat "$case_dir/runs/r/01-unit/rounds/1/verdict")" = back ] && grep -q "### \`test -f ok\`" "$case_dir/runs/r/01-unit/rounds/1/problems.md"'
+check "gate red then fixed: round 2 implementer saw the failing command" 'grep -q "### \`test -f ok\`" "$case_dir/state/impl-prompt-2.md"'
 
 # 4. Gate always red: the reviewer can never pass it. The unit stops after PLAN_MAX_GATE_ROUNDS.
 new_case alwaysred 'false' 'echo change >>a.txt'
@@ -139,9 +139,17 @@ check "reviewer back: stops at the review cap" '[ "$code" -ne 0 ] && [ "$(review
 # 6. A command that runs too long fails the gate.
 new_case slow 'sleep 5' 'echo change >>a.txt'
 run slow PLAN_GATE_TIMEOUT=1 PLAN_MAX_GATE_ROUNDS=1
-check "timeout: the gate fails" '[ "$code" -ne 0 ] && grep -q "FAIL \`sleep 5\`" "$case_dir/runs/r/01-unit/rounds/1/gate.md"'
+check "timeout: the gate fails with the harness timeout format" '[ "$code" -ne 0 ] && grep -q "### \`sleep 5\`" "$case_dir/runs/r/01-unit/rounds/1/gate.md" && grep -q "exit code: 124 (timed out after" "$case_dir/runs/r/01-unit/rounds/1/gate.md"'
 
-# 7. Parsing: comments, blank lines and duplicates; two blocks; a block without the tag is ignored.
+# 7. A gate timeout kills background children as well as the command shell.
+new_case child 'sleep 30 & echo $! >child.pid; wait' 'echo change >>a.txt'
+run child PLAN_GATE_TIMEOUT=1 PLAN_MAX_GATE_ROUNDS=1
+child_pid=$(cat "$case_dir/repo/child.pid" 2>/dev/null || echo missing)
+check "timeout child: gate fails with exit code 124" '[ "$code" -ne 0 ] && grep -q "exit code: 124 (timed out after" "$case_dir/runs/r/01-unit/rounds/1/gate.md"'
+check "timeout child: background sleep is gone after the gate" '[ "$child_pid" != missing ] && ! kill -0 "$child_pid" 2>/dev/null'
+if [ "$child_pid" != missing ]; then kill "$child_pid" 2>/dev/null || true; fi
+
+# 8. Parsing: comments, blank lines and duplicates; two blocks; a block without the tag is ignored.
 printf '# U\n```gate\n# comment\n\ntrue\ntrue\n```\ntext\n```gate\nfalse\n```\n```bash\nexit 9\n```\n' >"$work/parse.md"
 cmds=$(bash -c ". '$here/lib-codex.sh'; eval \"\$(sed -n '/^gate_commands() {/,/^}/p' '$here/plan-run.sh')\"; gate_commands '$work/parse.md'")
 check "parsing: only gate lines, deduplicated, in order" '[ "$cmds" = "$(printf "true\nfalse")" ]'

@@ -338,27 +338,18 @@ gate_commands() { # <brief>...: the commands of every ```gate block, one per lin
   ' "$@"
 }
 
-# Runs the gate of a brief in a checkout. Writes <round>/gate.md (each command, its result, the tail of the
-# output of those that failed) and gate-<n>.log; returns nonzero when any command failed.
+# Runs the gate of a brief in a checkout. Writes <round>/gate.md, gate.json and gate-<n>.log.
 run_gate() { # <brief> <checkout> <round-dir>
-  local cmd n=0 failed=0 code start secs log out=$3/gate.md
-  printf '# Gate\n\nThe script ran these commands in %s, outside any agent.\n\n' "$2" >"$out"
-  while IFS= read -r cmd; do
-    n=$((n + 1))
-    log=$3/gate-$n.log
-    start=$(date +%s)
-    (cd "$2" && perl -e 'alarm shift @ARGV; exec @ARGV' "$gate_timeout" bash -c "$cmd") >"$log" 2>&1 </dev/null
-    code=$?
-    secs=$(($(date +%s) - start))
-    if [ "$code" -eq 0 ]; then
-      printf -- '- PASS `%s` (%ss)\n' "$cmd" "$secs" >>"$out"
-    else
-      failed=1
-      [ "$code" -eq 142 ] && printf 'timed out after %ss\n' "$gate_timeout" >>"$log"
-      printf -- '- FAIL `%s` exit %s (%ss)\n\n```\n%s\n```\n\n' "$cmd" "$code" "$secs" "$(tail -n 60 "$log")" >>"$out"
-    fi
-  done < <(gate_commands "$1")
-  return "$failed"
+  local cmd code
+  local -a commands=()
+  while IFS= read -r cmd; do commands+=("$cmd"); done < <(gate_commands "$1")
+  [ "${#commands[@]}" -gt 0 ] || return 0
+  harness gate run --cwd "$2" --timeout "$gate_timeout" --out "$3" -- "${commands[@]}"
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '\n<!-- - FAIL gate -->\n' >>"$3/gate.md"
+  fi
+  return "$code"
 }
 
 # The review a failed gate produces in place of a reviewer: back, with the commands and their output.
