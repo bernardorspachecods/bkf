@@ -92,12 +92,13 @@ while IFS= read -r g; do
 done < <(find "$here/../../../library/workflow-types" -name '*.md' ! -name MAP.md)
 check "real guides: every directive resolves${bad:+ (broken:$bad)}" '[ -z "$bad" ]'
 
-# The guides that apply determinism still ask for it, so a brief for each of these roles carries the rules.
+# The guides that apply core-code-principles still ask for it, so a brief for each of these roles carries the rules.
 lib=$(cd "$here/../../../library/workflow-types" && pwd)
 for g in plan/plan-implementation.md plan/plan-review.md code-review/code-review-axis.md; do
   printf '# Brief\n\n## Role\nOpen and follow the role guide: %s/%s (read-only).\n' "$lib" "$g" >"$work/p.md"
   inject_rules "$work/p.md"
-  check "real guides: $g brings determinism into the brief" 'grep -q "^## Rules from determinism$" "$work/p.md"'
+  check "real guides: $g brings core-code-principles into the brief" 'grep -q "^## Rules from core-code-principles$" "$work/p.md"'
+  check "real guides: $g brings the gate into the brief" 'grep -q "^## Rules from gate$" "$work/p.md"'
 done
 
 exit "$fail"

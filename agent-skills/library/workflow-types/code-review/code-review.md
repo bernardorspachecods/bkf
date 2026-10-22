@@ -52,12 +52,12 @@ You find the commands in the repository's documents or scripts, such as the READ
 the package scripts or the CI configuration, and pass each to the script with `-g`.
 The script runs them itself, outside the agents, records each command and its result
 in `00-input`, and gives them to both reviewers as evidence.
-Following the `determinism` module, these checks, not a reviewer's reading, are
+Following the `core-code-principles` module, these checks, not a reviewer's reading, are
 the evidence of what a run can show.
 
 - **A red result is a finding.** Say so to the user at once. The review goes on, but
   no reviewer can override a red result: it stands in the report as a finding of its own.
-- **No check is a gap.** The `determinism` module says a missing check is a gap,
+- **No check is a gap.** The `core-code-principles` module says a missing check is a gap,
   not a pass: if the repository has no check for the changed behavior, report that
   absence as a gap.
 

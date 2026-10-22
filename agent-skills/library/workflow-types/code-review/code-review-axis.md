@@ -17,8 +17,9 @@ what the reasons protect.
 
 ## The gate results
 
-<!-- inject: ../../modules/determinism.md -->
-The rules of `determinism` end your brief. The coordinator ran the repository's
+<!-- inject: ../../modules/core-code-principles.md -->
+<!-- inject: ../../modules/gate.md -->
+The rules of `core-code-principles` and `gate` end your brief. The coordinator ran the repository's
 checks before you started and gave you the commands and their results. Take them as
 given: do not run them again and do not argue again the behavior they cover. Spend
 your reading on what running a check cannot show: intent, the fit with the spec, and

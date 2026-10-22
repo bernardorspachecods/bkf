@@ -31,6 +31,6 @@ The skills of the plan, code review, council and research workflows include this
 - Report an outcome as it is: what passed, what escalated, what was skipped. Do not imply a step was done that was not.
 <!-- BKF:GENERATED-INJECTED-END -->
 
-For a specific kind of work, also use its own skill (for example `work-with-code` or `do-research`), and `delegate-work` for a single short task handed to one agent.
+For a specific kind of work, also use its own skill (for example `do-research`), and `delegate-work` for a single short task handed to one agent.
 
 This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).
