@@ -127,7 +127,7 @@ board_state_row() { # <kind:unit|integration> <label> <dir> <step> <step-done> <
     fi
     if [ -n "$back_round" ]; then
       icon=↩
-      if grep -q -- '- FAIL ' "$dir/rounds/$back_round/gate.md" 2>/dev/null; then
+      if grep -q -- '^Result: RED' "$dir/rounds/$back_round/gate.md" 2>/dev/null; then
         state="gate falhou · ronda $((back_round + 1)) a implementar"
       else
         state="devolvida · ronda $((back_round + 1)) a implementar"
@@ -340,16 +340,11 @@ gate_commands() { # <brief>...: the commands of every ```gate block, one per lin
 
 # Runs the gate of a brief in a checkout. Writes <round>/gate.md, gate.json and gate-<n>.log.
 run_gate() { # <brief> <checkout> <round-dir>
-  local cmd code
+  local cmd
   local -a commands=()
   while IFS= read -r cmd; do commands+=("$cmd"); done < <(gate_commands "$1")
   [ "${#commands[@]}" -gt 0 ] || return 0
   harness gate run --cwd "$2" --timeout "$gate_timeout" --out "$3" -- "${commands[@]}"
-  code=$?
-  if [ "$code" -ne 0 ]; then
-    printf '\n<!-- - FAIL gate -->\n' >>"$3/gate.md"
-  fi
-  return "$code"
 }
 
 # The review a failed gate produces in place of a reviewer: back, with the commands and their output.
