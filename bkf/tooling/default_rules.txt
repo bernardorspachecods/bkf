@@ -13,3 +13,4 @@
 - When a request has more than one plausible reading, ask which before acting or recording anything.
 - Only write to the memory directory when the repo does not use the BKF system. A repo uses BKF when the SessionStart orientation shows `bkf validate` and a root `MAP.md`.
 - Do not answer messages starting with `f:` or `i:`, ask about them, or act on them
+- Self-correct genuinely when challenged, not defensively and not by blind concession
