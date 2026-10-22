@@ -1,4 +1,4 @@
-# Shared by phase-codex.sh, research-run.sh and plan-run.sh: run a Codex agent, read a reviewer's verdict.
+# Shared by phase-codex.sh and the run scripts: agent execution, verdict checks and step boards.
 # Source it; it defines functions only. The caller sets $model and $effort before codex_run and
 # $min_checked (0 turns the check off) before checked_ok, and reads $reason after run_agents fails.
 
@@ -74,4 +74,92 @@ run_agents() { # <phase-dir> <output-file> <folder>...
 records_note() { # <repo>
   grep -qs 'records/' "$1/AGENTS.md" ||
     printf 'Note: %s/AGENTS.md does not mention records/. Add a line saying records/ holds the history of past runs, not rules, to be opened only when asked.\n' "$1"
+}
+
+# Print the current state of a step-based run. The caller sets $run and $board_title.
+# Specs are <id>|<label>|<directory>|<agent folders>|<agent output file>.
+board_steps() { # <step-spec>...
+  local run_dir=${run:-} title=${board_title:-Run} run_name status_log
+  local start_stamp= start_time now_time event_state stopped_id running_id
+  local spec id label step_dir agent_folders output_file agent_path agent first_pending_seen=0
+  local step_running icon
+  local -a agents=()
+
+  run_name=${run_dir##*/}
+  status_log=$run_dir/status.log
+  if [ -r "$status_log" ]; then
+    start_stamp=$(awk -F '\t' 'NR == 2 { print $1; exit }' "$status_log" 2>/dev/null) || start_stamp=
+  fi
+  start_time=${start_stamp#*T}
+  start_time=${start_time:0:5}
+  [ -n "$start_time" ] || start_time=--:--
+  now_time=$(date '+%H:%M' 2>/dev/null) || now_time=--:--
+  printf '%s %s · início %s → agora %s\n\n' "$title" "$run_name" "$start_time" "$now_time" || true
+
+  for spec in "$@"; do
+    id= label= step_dir= agent_folders= output_file=
+    IFS='|' read -r id label step_dir agent_folders output_file <<<"$spec"
+
+    event_state=
+    if [ -r "$status_log" ]; then
+      event_state=$(awk -F '\t' '
+        $2 == "resume" { stopped = ""; active = ""; next }
+        index($2, "STOPPED at ") == 1 {
+          stopped = substr($2, 12)
+          sub(/:.*/, "", stopped)
+          active = ""
+          next
+        }
+        index($2, "start ") == 1 {
+          event = substr($2, 7)
+          if (event ~ / /) { sub(/ .*/, "", event); active = event }
+          else active = ""
+          next
+        }
+        index($2, "done ") == 1 {
+          event = substr($2, 6)
+          sub(/ .*/, "", event)
+          if (active == event) active = ""
+          next
+        }
+        END { printf "%s|%s", stopped, active }
+      ' "$status_log" 2>/dev/null) || event_state='|'
+    else
+      event_state='|'
+    fi
+    stopped_id=${event_state%%|*}
+    running_id=${event_state#*|}
+
+    step_running=0
+    if [ -e "$run_dir/.done-$id" ]; then
+      icon=✓
+    elif [ "$stopped_id" = "$id" ]; then
+      icon=✗
+      first_pending_seen=1
+    elif [ "$first_pending_seen" -eq 0 ]; then
+      first_pending_seen=1
+      icon=○
+      if [ "$running_id" = "$id" ]; then icon=◐; step_running=1; fi
+    else
+      icon=○
+    fi
+    printf '%s %s\n' "$icon" "$label" || true
+
+    agents=()
+    if [ -n "$agent_folders" ]; then read -r -a agents <<<"$agent_folders"; fi
+    for agent in "${agents[@]+"${agents[@]}"}"; do
+      agent_path=$run_dir/$step_dir/$agent
+      if [ -n "$output_file" ] && [ -s "$agent_path/$output_file" ]; then
+        icon=✓
+      elif [ -e "$agent_path/failed" ]; then
+        icon=✗
+      elif [ "$step_running" -eq 1 ]; then
+        icon=◐
+      else
+        icon=○
+      fi
+      printf '    %s %s\n' "$icon" "$agent" || true
+    done
+  done
+  return 0
 }

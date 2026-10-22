@@ -6,6 +6,7 @@
 #   review-run.sh start   [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>
 #   review-run.sh resume  [-m model] [-e effort] <name>
 #   review-run.sh status  <name>
+#   review-run.sh board   <name>
 #   review-run.sh finish  [--discard] <name>
 # target: `working-tree` (tracked changes against HEAD plus new files), or a git revision range such as
 # `main...feature` (three dots, so the comparison is against the merge-base), passed to git diff as it is.
@@ -36,6 +37,12 @@ model=gpt-6-luna effort=xhigh
 . "$here/lib-codex.sh"
 
 note() { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$run/status.log"; }
+progress() {
+  local current_board
+  current_board=$(board 2>/dev/null) || current_board=
+  printf '[review] %s\n\n%s\n' "$*" "$current_board" >&2 || true
+  return 0
+}
 
 load_run() { # <name>
   valid_name "$1" || die "bad run name: $1"
@@ -53,6 +60,22 @@ axes() {
   return 0
 }
 axis_title() { case $1 in standards) echo Standards ;; spec) echo Spec ;; esac; }
+
+board() { # print the review and check steps with their axis agents
+  local a review_agents="" check_agents=""
+  for a in $(axes); do
+    review_agents="${review_agents:+$review_agents }$a"
+    [ "$second" -eq 1 ] && review_agents="$review_agents $a-2"
+    check_agents="${check_agents:+$check_agents }$a"
+  done
+  (
+    board_title=Revisão
+    board_steps \
+      "review|Revisores|01-review|$review_agents|report.md" \
+      "check|Verificação|02-check|$check_agents|checked.md" 2>/dev/null
+  ) || true
+  return 0
+}
 
 # ---- Briefs: fixed templates, so the coordinator never writes them by hand ----
 
@@ -127,10 +150,23 @@ run_gates() { # <command>...   writes $run/00-input/gate.md
 
 # ---- Phases: each returns nonzero (with $reason) when it stops ----
 
+run_review_axis() { # <phase-dir> <axis> <second-reviewer> [<reason-file>]
+  local d=$1 a=$2 second_axis=$3 reason_file=${4:-}
+  local names=("$a")
+  [ "$second_axis" -eq 1 ] && names+=("$a-2")
+  if run_agents "$d" report.md "${names[@]}"; then
+    progress "review · $a · concluído"
+    return 0
+  fi
+  [ -z "$reason_file" ] || printf '%s\n' "$reason" >"$reason_file"
+  return 1
+}
+
 run_review() {
-  local d=$run/01-review a f
-  local names=()
+  local d=$run/01-review a f tmp p1 p2 code bad=""
+  local axis_list=()
   for a in $(axes); do
+    axis_list+=("$a")
     for f in "$a" $([ "$second" -eq 1 ] && echo "$a-2"); do
       mkdir -p "$d/$f"
       cp "$run/00-input/diff.patch" "$d/$f/diff.patch"
@@ -141,10 +177,25 @@ run_review() {
         spec) cp "$run/00-input/spec.md" "$d/$f/spec.md" ;;
       esac
       [ -s "$d/$f/report.md" ] || axis_brief "$a" >"$d/$f/brief.md"
-      names+=("$f")
     done
   done
-  run_agents "$d" report.md "${names[@]}"
+  [ "${#axis_list[@]}" -gt 0 ] || return 0
+  if [ "${#axis_list[@]}" -eq 2 ]; then
+    tmp=$run/.axis-reasons
+    mkdir -p "$tmp" || { reason="could not create a temporary directory for review progress"; return 1; }
+    run_review_axis "$d" standards "$second" "$tmp/standards.reason" &
+    p1=$!
+    run_review_axis "$d" spec "$second" "$tmp/spec.reason" &
+    p2=$!
+    wait "$p1"; code=$?
+    [ "$code" -eq 0 ] || bad="$(cat "$tmp/standards.reason" 2>/dev/null)"
+    wait "$p2"; code=$?
+    [ "$code" -eq 0 ] || bad="$bad$(cat "$tmp/spec.reason" 2>/dev/null)"
+    rm -rf "$tmp"
+    [ -z "$bad" ] || { reason="$bad"; return 1; }
+    return 0
+  fi
+  run_review_axis "$d" "${axis_list[0]}" "$second"
 }
 
 run_check() {
@@ -193,12 +244,18 @@ pipeline() {
   for st in review check; do
     [ -e "$run/.done-$st" ] && continue
     note "start $st ($model $effort)"
+    progress "$st · início"
     reason=""
     if "run_$st"; then
       touch "$run/.done-$st"; note "done $st"
+      if [ "$st" = check ]; then
+        progress 'check · ronda 1 · passou'
+      fi
+      progress "$st · concluído"
     else
       note "STOPPED at $st: $reason"
       note "Read $run/*$st*, fix the cause, then: review-run.sh resume $(basename "$run")"
+      progress "$st · parou"
       printf 'STOPPED at %s: %s\nSee %s/status.log\n' "$st" "$reason" "$run"
       return 1
     fi
@@ -257,6 +314,7 @@ cmd_start() {
   printf '%s %s\n' "$model" "$effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
   note "start $name ($model $effort, target $target, second reviewer $second)"
+  board >&2 || true
   note "gate: ${#gates[@]} commands"
   run_gates "${gates[@]+"${gates[@]}"}"
   pipeline
@@ -279,6 +337,12 @@ cmd_status() {
   [ "$#" -eq 1 ] || die 'usage: status <name>'
   load_run "$1"
   cat "$run/status.log"
+}
+
+cmd_board() {
+  [ "$#" -eq 1 ] || die 'usage: board <name>'
+  load_run "$1"
+  board
 }
 
 cmd_finish() {
@@ -314,6 +378,7 @@ case "$sub" in
   start) cmd_start "$@" ;;
   resume) cmd_resume "$@" ;;
   status) cmd_status "$@" ;;
+  board) cmd_board "$@" ;;
   finish) cmd_finish "$@" ;;
-  *) die 'usage: review-run.sh start|resume|status|finish ...' ;;
+  *) die 'usage: review-run.sh start|resume|status|board|finish ...' ;;
 esac

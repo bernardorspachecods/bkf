@@ -6,6 +6,7 @@
 #   research-run.sh resume  [-m model] [-e effort] <name>
 #   research-run.sh deliver [-m model] [-e effort] <name> <delivery.md>
 #   research-run.sh status  <name>
+#   research-run.sh board   <name>
 #   research-run.sh finish  [--delivery-only] <name>
 # sourcemap.md: one niche per line, numbered ("1. **Name.** where to look"). collectors.txt: one
 # collector per line, "name: 1,2,5" (the niches it covers). Niches the map agent adds are shared out
@@ -29,6 +30,12 @@ model=gpt-6-luna effort=xhigh
 . "$here/lib-codex.sh"
 
 note() { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$run/status.log"; }
+progress() {
+  local current_board
+  current_board=$(board 2>/dev/null) || current_board=
+  printf '[research] %s\n\n%s\n' "$*" "$current_board" >&2 || true
+  return 0
+}
 
 objective_body() { sed '/^# /d' "$1"; }              # the objective, without its title line
 max_niche() { grep -Eo '^[0-9]+\.' "$1" | tr -d . | sort -n | tail -1; }
@@ -41,6 +48,33 @@ load_run() { # <name>
   run=$root/$1
   [ -d "$run" ] || die "no such run: $run"
   if [ -f "$run/settings" ]; then read -r model effort <"$run/settings"; fi
+}
+
+collection_agents() { # list collector folders from collectors.txt, ignoring comments and blank lines
+  awk '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      name = $0
+      sub(/:.*/, "", name)
+      gsub(/[[:space:]]/, "", name)
+      if (name != "") printf "%s ", name
+    }
+  ' "$run/00-input/collectors.txt" 2>/dev/null | sed 's/[[:space:]]*$//'
+}
+
+board() { # print the research steps and collector states
+  local agents collector_output
+  agents=$(collection_agents 2>/dev/null) || agents=
+  collector_output=$(cat "$run/02-collection/outfile" 2>/dev/null) || collector_output=
+  [ -n "$collector_output" ] || collector_output=sources.md
+  (
+    board_title=Pesquisa
+    board_steps \
+      'map|Mapa|01-map||' \
+      "collection|Recolha|02-collection|$agents|work/$collector_output" \
+      'digest|Digest|03-digest||' 2>/dev/null
+  ) || true
+  return 0
 }
 
 # ---- Briefs: fixed templates, so the coordinator never writes them by hand ----
@@ -113,7 +147,8 @@ run_collection() {
   local sm=$run/01-map/sourcemap.md orig_max b=$run/.briefs/collection
   orig_max=$(max_niche "$run/00-input/sourcemap.md")
   rm -rf "$b"; mkdir -p "$b"
-  local names=() lists=() line n l k found i idx
+  local names=() lists=() niches=() niche_reported=() collector_done=() collector_passed=()
+  local line n l k found i idx collection_status phase_pid phase_finished status j owner_count all_done all_passed rc=0
   while IFS= read -r line || [ -n "$line" ]; do
     case $line in ''|'#'*) continue ;; esac
     n=$(printf '%s' "${line%%:*}" | tr -d ' '); l=$(printf '%s' "${line#*:}" | tr -d ' ')
@@ -137,10 +172,46 @@ run_collection() {
     brief_collector "${names[$i]}" "$b/niches-${names[$i]}.md" >"$b/brief-${names[$i]}.md"
     review_collector "${names[$i]}" "$b/niches-${names[$i]}.md" >"$b/review-${names[$i]}.md"
     args+=("${names[$i]}" "$b/brief-${names[$i]}.md" "$b/review-${names[$i]}.md")
+    collector_done[$i]=0; collector_passed[$i]=0
+  done
+  for k in $(grep -Eo '^[0-9]+\.' "$sm" | tr -d . | sort -nu); do
+    niches+=("$k"); niche_reported+=(0)
   done
   PHASE_RUNS_DIR=$run PHASE_MAX_ROUNDS=$max_rounds PHASE_MIN_CHECKED=$min_checked \
-    "$phase" start -m "$model" -e "$effort" -f sources.md 02-collection "${args[@]}" >"$b/phase.out" 2>&1
-  local rc=$?
+    "$phase" start -m "$model" -e "$effort" -f sources.md 02-collection "${args[@]}" >"$b/phase.out" 2>&1 &
+  phase_pid=$!
+  while :; do
+    phase_finished=0
+    kill -0 "$phase_pid" 2>/dev/null || phase_finished=1
+    for i in "${!names[@]}"; do
+      [ "${collector_done[$i]}" -eq 0 ] || continue
+      status=$(cat "$run/02-collection/${names[$i]}/status" 2>/dev/null) || status=""
+      case $status in
+        passed) collector_done[$i]=1; collector_passed[$i]=1 ;;
+        escalated|failed:*) collector_done[$i]=1 ;;
+      esac
+    done
+    for j in "${!niches[@]}"; do
+      [ "${niche_reported[$j]}" -eq 0 ] || continue
+      k=${niches[$j]}; owner_count=0; all_done=1; all_passed=1
+      for i in "${!names[@]}"; do
+        case ",${lists[$i]}," in
+          *",$k,"*)
+            owner_count=$((owner_count + 1))
+            [ "${collector_done[$i]}" -eq 1 ] || all_done=0
+            [ "${collector_passed[$i]}" -eq 1 ] || all_passed=0
+            ;;
+        esac
+      done
+      if [ "$owner_count" -gt 0 ] && [ "$all_done" -eq 1 ] && [ "$all_passed" -eq 1 ]; then
+        progress "collection · nicho $k · concluído"
+        niche_reported[$j]=1
+      fi
+    done
+    [ "$phase_finished" -eq 0 ] || break
+    sleep 0.1
+  done
+  wait "$phase_pid" || rc=$?
   phase_summary 02-collection
   [ "$rc" -eq 0 ] || { reason="collection did not pass for every collector: $summary"; return 1; }
   PHASE_RUNS_DIR=$run "$phase" join 02-collection >/dev/null || { reason="join failed"; return 1; }
@@ -152,6 +223,8 @@ run_collection() {
       printf '\n\n' >>"$run/02-collection/review-notes.md"
     done
   done
+  collection_status=$?
+  return "$collection_status"
 }
 
 run_digest() {
@@ -191,12 +264,15 @@ pipeline() {
     case $st in map) dir=01-map ;; collection) dir=02-collection ;; digest) dir=03-digest ;; esac
     archive_stage "$dir"
     note "start $st ($model $effort)"
+    progress "$st · início"
     reason=""
     if "run_$st"; then
       touch "$run/.done-$st"; note "done $st"
+      progress "$st · concluído"
     else
       note "STOPPED at $st: $reason"
       note "Read the rounds in $run/$dir, fix the cause (objective, map or briefs), then: research-run.sh resume $(basename "$run")"
+      progress "$st · parou"
       printf 'STOPPED at %s: %s\nSee %s/status.log\n' "$st" "$reason" "$run"
       return 1
     fi
@@ -222,6 +298,7 @@ cmd_start() {
   printf '%s %s\n' "$model" "$effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
   note "start $1 ($model $effort, max $max_rounds rounds)"
+  board >&2 || true
   pipeline
 }
 
@@ -278,24 +355,43 @@ cmd_deliver() {
     } >"$rd/review-prompt.md"
     codex_run "$rd/review" "$rd/review-prompt.md" "$rd/review-run"
     code=$?
-    [ "$code" -eq 0 ] || die "review exit=$code (see $rd/review-run.stderr.log)"
+    if [ "$code" -ne 0 ]; then
+      progress 'delivery · parou'
+      die "review exit=$code (see $rd/review-run.stderr.log)"
+    fi
     if [ ! -s "$rd/review/problems.md" ]; then note "delivery review attempt $attempt wrote no problems.md"; continue; fi
     if checked_ok "$rd/review/problems.md"; then ok=1; break; fi
   done
-  [ "$ok" -eq 1 ] || die "reviewer left no usable problems.md after $attempt attempts (see $rd/review-run.last-message.md)"
+  if [ "$ok" -ne 1 ]; then
+    progress 'delivery · parou'
+    die "reviewer left no usable problems.md after $attempt attempts (see $rd/review-run.last-message.md)"
+  fi
   cp "$rd/review/problems.md" "$rd/problems.md"
-  verdict=$(read_verdict "$rd/problems.md") || die "last line of $rd/problems.md is not a valid verdict"
+  if ! verdict=$(read_verdict "$rd/problems.md"); then
+    progress 'delivery · parou'
+    die "last line of $rd/problems.md is not a valid verdict"
+  fi
   if [ "$verdict" = back ] && [ "$n" -ge "$max_rounds" ]; then verdict=escalate; note "delivery review: round cap $max_rounds reached"; fi
   echo "$verdict" >"$rd/verdict"
   note "delivery review round $n ($model $effort): $verdict"
   printf 'Review of the delivery, round %s: %s\nProblems: %s/problems.md\n' "$n" "$verdict" "$rd"
-  case $verdict in pass) exit 0 ;; back) exit 1 ;; *) exit 2 ;; esac
+  case $verdict in
+    pass) progress "delivery · ronda $n · passou"; exit 0 ;;
+    back) progress "delivery · ronda $n · devolvida"; exit 1 ;;
+    *) progress "delivery · ronda $n · escalada"; progress 'delivery · parou'; exit 2 ;;
+  esac
 }
 
 cmd_status() {
   [ "$#" -eq 1 ] || die 'usage: status <name>'
   load_run "$1"
   cat "$run/status.log"
+}
+
+cmd_board() {
+  [ "$#" -eq 1 ] || die 'usage: board <name>'
+  load_run "$1"
+  board
 }
 
 # The run's history as a readable summary, without paths: what each phase did, with what, and what went wrong.
@@ -379,6 +475,7 @@ case "$sub" in
   resume) cmd_resume "$@" ;;
   deliver) cmd_deliver "$@" ;;
   status) cmd_status "$@" ;;
+  board) cmd_board "$@" ;;
   finish) cmd_finish "$@" ;;
-  *) die 'usage: research-run.sh start|resume|deliver|status|finish ...' ;;
+  *) die 'usage: research-run.sh start|resume|deliver|status|board|finish ...' ;;
 esac

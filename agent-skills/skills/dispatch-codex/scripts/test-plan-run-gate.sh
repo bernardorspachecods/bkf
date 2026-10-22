@@ -66,9 +66,21 @@ chmod +x "$work/bin/pnpm"
 # guard then fails its test instead of leaving the suite waiting for ever.
 cat >"$work/bin/plan-run-limited" <<EOF3
 #!/usr/bin/env bash
+if [ -n "\${FAKE_STATE:-}" ] && [ -d "\$FAKE_STATE" ]; then printf '%s\n' "\$\$" >>"\$FAKE_STATE/plan-pids"; fi
 exec perl -e 'alarm shift @ARGV; exec @ARGV' "\${PLAN_TEST_LIMIT:-120}" "$here/plan-run.sh" "\$@"
 EOF3
 chmod +x "$work/bin/plan-run-limited"
+cat >"$work/bin/ps" <<'EOF5'
+#!/usr/bin/env bash
+pid=
+while [ "$#" -gt 0 ]; do
+  case "$1" in -p) pid=$2; shift 2 ;; *) shift ;; esac
+done
+if [ -n "${FAKE_STATE:-}" ] && grep -qxF "$pid" "$FAKE_STATE/plan-pids" 2>/dev/null; then
+  printf 'plan-run.sh\n'
+fi
+EOF5
+chmod +x "$work/bin/ps"
 
 new_case() { # <name> <gate-block-or-empty> <impl-script>   (BRIDGE_CONFIG: the .plan-run.json of the base, or none)
   case_dir=$work/$1; mkdir -p "$case_dir/repo" "$case_dir/state" "$case_dir/plan"
@@ -361,6 +373,7 @@ base_before=$(cat $rp/S1-integration/base)
 rbi 1; rc=$?
 check "rebase 1: a file of a unit's diff edited in the checkout is refused, and the git message names it" '[ "$rc" -ne 0 ] && grep -q "f-01-unit.txt" $case_dir/cmd.txt && grep -q "Nothing was changed" $case_dir/cmd.txt && [ "$(cat $rp/S1-integration/base)" = "$base_before" ]'
 bash -c 'exec -a plan-run.sh sleep 30' & fakepid=$!
+echo "$fakepid" >>"$FAKE_STATE/plan-pids"
 echo "$fakepid" >"$rp/.lock"
 rbi 1; rc=$?
 kill "$fakepid" 2>/dev/null; rm -f "$rp/.lock"
@@ -443,6 +456,7 @@ acc 1 --why "reviewed by hand"; rc=$?
 check "accept: a unit whose diff was never applied is refused, naming it" '[ "$rc" -ne 0 ] && grep -q "diff of unit 01-unit was never applied" $case_dir/cmd.txt && [ ! -e $rp/.done-S1-integration ]'
 touch "$rp/S1-integration/.applied-01-unit"
 bash -c 'exec -a plan-run.sh sleep 30' & fakepid=$!
+echo "$fakepid" >>"$FAKE_STATE/plan-pids"
 echo "$fakepid" >"$rp/.lock"
 acc 1 --why "reviewed by hand"; rc=$?
 kill "$fakepid" 2>/dev/null; rm -f "$rp/.lock"
@@ -502,5 +516,121 @@ check "disk: after the space is back, resume runs the group" 'grep -q READY $cas
 grp_case dk-noise
 run dk-noise FAKE_DF_BEFORE=1000 FAKE_DF_AFTER=2000
 check "disk: a measure that shows no consumption (noise) never refuses, and is reported as 0 MB, not a negative number" '[ "$code" -eq 0 ] && grep -q "S1: disk: the first worktree took 0 MB; 1 more need about 0 MB" $case_dir/runs/r/status.log'
+
+# 33. Progress: a green single-unit gate reports each stage in order.
+new_case progress-green 'true' 'echo change >>a.txt'
+run progress-green
+pg_start=$(grep -nF '[plan] S1 início · unidade 01-unit' "$case_dir/out.txt" | cut -d: -f1)
+pg_impl=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · implementação' "$case_dir/out.txt" | cut -d: -f1)
+pg_gate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · gate PASS' "$case_dir/out.txt" | cut -d: -f1)
+pg_review=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · revisão' "$case_dir/out.txt" | cut -d: -f1)
+pg_pass=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · passou' "$case_dir/out.txt" | cut -d: -f1)
+pg_done=$(grep -nF '[plan] S1 concluído' "$case_dir/out.txt" | cut -d: -f1)
+pg_final_review=$(grep -nF '[plan] final · revisão' "$case_dir/out.txt" | cut -d: -f1)
+pg_final_done=$(grep -nF '[plan] final · concluído' "$case_dir/out.txt" | cut -d: -f1)
+check "progress green: all expected lines appear in order" '[ "$code" -eq 0 ] && [ "$pg_start" -lt "$pg_impl" ] && [ "$pg_impl" -lt "$pg_gate" ] && [ "$pg_gate" -lt "$pg_review" ] && [ "$pg_review" -lt "$pg_pass" ] && [ "$pg_pass" -lt "$pg_done" ] && [ "$pg_done" -lt "$pg_final_review" ] && [ "$pg_final_review" -lt "$pg_final_done" ]'
+
+# 34. Progress: a red gate reports the failure before the next implementation round.
+new_case progress-redfix 'test -f ok' 'echo change >>a.txt; [ "$FAKE_N" -ge 2 ] && touch ok; true'
+run progress-redfix
+pg_fail=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · gate FAIL' "$case_dir/out.txt" | cut -d: -f1)
+pg_retry=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · implementação' "$case_dir/out.txt" | cut -d: -f1)
+check "progress redfix: gate FAIL precedes round 2 implementation" '[ "$code" -eq 0 ] && [ "$pg_fail" -lt "$pg_retry" ]'
+
+# 35. Progress: reviewer backs are reported and the round cap escalates.
+new_case progress-backs 'true' 'echo change >>a.txt'
+FAKE_VERDICT=back run progress-backs PLAN_MAX_ROUNDS=2
+pg_back=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · devolvida' "$case_dir/out.txt" | cut -d: -f1)
+pg_escalate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · escalada' "$case_dir/out.txt" | cut -d: -f1)
+check "progress backs: the final back is followed by escalation" '[ "$code" -ne 0 ] && [ "$pg_back" -lt "$pg_escalate" ] && grep -qF "[plan] S1 parou" "$case_dir/out.txt"'
+
+# 36. Progress: a parallel step names the group and reports both units.
+grp_case progress-group
+printf '# Unit\n\n## Result\nx\n\n```gate\ntrue\n```\n' >"$case_dir/plan/unit.md"
+printf '# U2\n\n## Result\nx\n\n```gate\ntrue\n```\n' >"$case_dir/plan/unit2.md"
+FAKE_IMPL='printf "%s\n" "$PWD" > shared.txt' run progress-group
+pg_apply=$(grep -nF '[plan] S1 integração · ronda 1 · aplicar diffs' "$case_dir/out.txt" | cut -d: -f1)
+pg_integrate=$(grep -nF '[plan] S1 integração · ronda 1 · integrar' "$case_dir/out.txt" | cut -d: -f1)
+pg_gate=$(grep -nF '[plan] S1 integração · ronda 1 · gate PASS' "$case_dir/out.txt" | cut -d: -f1)
+pg_review=$(grep -nF '[plan] S1 integração · ronda 1 · revisão' "$case_dir/out.txt" | cut -d: -f1)
+pg_pass=$(grep -nF '[plan] S1 integração · ronda 1 · passou' "$case_dir/out.txt" | cut -d: -f1)
+check "progress group: names both units and reports each implementation" 'grep -qF "[plan] S1 início · paralelo · 01-unit, 02-unit2" "$case_dir/out.txt" && grep -qF "[plan] S1 unidade 01-unit · ronda 1 · implementação" "$case_dir/out.txt" && grep -qF "[plan] S1 unidade 02-unit2 · ronda 1 · implementação" "$case_dir/out.txt"'
+check "progress group: integration stages are in order" '[ "$code" -eq 0 ] && [ "$pg_apply" -lt "$pg_integrate" ] && [ "$pg_integrate" -lt "$pg_gate" ] && [ "$pg_gate" -lt "$pg_review" ] && [ "$pg_review" -lt "$pg_pass" ]'
+
+# 37. Progress: stdout keeps READY and does not receive progress lines.
+new_case progress-stdout '' 'echo change >>a.txt'
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") 2>/dev/null >"$case_dir/stdout.txt"
+stdout_code=$?
+stdout_expected=$(printf 'Run folder: %s\nREADY: %s/report.md\nSee %s/status.log' "$case_dir/runs/r" "$case_dir/runs/r" "$case_dir/runs/r")
+check "progress stdout: start keeps its exact output and progress does not leak to it" '[ "$stdout_code" -eq 0 ] && [ "$(cat "$case_dir/stdout.txt")" = "$stdout_expected" ] && ! grep -qF "[plan]" "$case_dir/stdout.txt"'
+
+# 38. Progress: a gate that reaches its cap escalates and stops the step.
+new_case progress-gate-cap 'false' 'echo change >>a.txt'
+run progress-gate-cap PLAN_MAX_GATE_ROUNDS=1
+pg_fail=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · gate FAIL' "$case_dir/out.txt" | cut -d: -f1)
+pg_escalate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 1 · escalada' "$case_dir/out.txt" | cut -d: -f1)
+check "progress gate cap: failure is followed by escalation and step stop" '[ "$code" -ne 0 ] && [ "$pg_fail" -lt "$pg_escalate" ] && grep -qF "[plan] S1 parou" "$case_dir/out.txt"'
+
+# 39. Progress: a checkpoint reports the pause after the completed step.
+new_case progress-pause '' 'echo change >>a.txt'
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" start -p each r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/out.txt" 2>&1
+pause_code=$?
+pg_done=$(grep -nF '[plan] S1 concluído' "$case_dir/out.txt" | cut -d: -f1)
+pg_pause=$(grep -nF '[plan] S1 pausa' "$case_dir/out.txt" | cut -d: -f1)
+check "progress pause: the completed step is followed by pause" '[ "$pause_code" -eq 3 ] && [ "$pg_done" -lt "$pg_pause" ]'
+
+# 40. Progress: a failed final review reports its stop.
+new_case progress-final-stop '' 'echo change >>a.txt'
+run progress-final-stop FAKE_FAIL=report
+check "progress final stop: review and stop are reported without READY" '[ "$code" -ne 0 ] && grep -qF "[plan] final · revisão" "$case_dir/out.txt" && grep -qF "[plan] final · parou" "$case_dir/out.txt" && ! grep -q "^READY:" "$case_dir/out.txt"'
+
+# 41. A finished sequential plan's board lists every unit and the final review; `board` writes to stdout.
+new_case board-sequential '' 'echo change >>a.txt'
+printf '# Unit 2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"
+printf 'unit.md\nunit2.md\n' >"$case_dir/plan/plan.txt"
+run board-sequential
+rp=$case_dir/runs/r
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" board r) >"$case_dir/board.txt" 2>"$case_dir/board.err"
+board_code=$?
+initial_board=$(grep -nF 'Plano r · 2 unidades' "$case_dir/out.txt" | head -1 | cut -d: -f1)
+first_step=$(grep -nF '[plan] S1 início · unidade 01-unit' "$case_dir/out.txt" | head -1 | cut -d: -f1)
+check "board sequential: start prints the initial board before the first step" '[ "$code" -eq 0 ] && [ -n "$initial_board" ] && [ "$initial_board" -lt "$first_step" ]'
+check "board sequential: finished units and final review are passed on stdout" '[ "$board_code" -eq 0 ] && grep -qF "✓ 01-unit" "$case_dir/board.txt" && grep -qF "passou · 1 ronda" "$case_dir/board.txt" && grep -qF "✓ 02-unit2" "$case_dir/board.txt" && grep -qF "✓ Revisão final" "$case_dir/board.txt"'
+echo 'Board sample from the finished sequential plan:'
+cat "$case_dir/board.txt"
+
+# 42. A parallel group gets a heading, both unit rows and its integration row.
+grp_case board-group
+run board-group
+rp=$case_dir/runs/r
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" board r) >"$case_dir/board.txt" 2>"$case_dir/board.err"
+board_head=$(grep -nF 'Passo 1 (paralelo)' "$case_dir/board.txt" | cut -d: -f1)
+board_unit1=$(grep -nF '01-unit' "$case_dir/board.txt" | cut -d: -f1)
+board_unit2=$(grep -nF '02-unit2' "$case_dir/board.txt" | cut -d: -f1)
+board_integration=$(grep -nF 'integração' "$case_dir/board.txt" | cut -d: -f1)
+check "board parallel: both units and integration appear under the parallel step" '[ "$code" -eq 0 ] && [ "$board_head" -lt "$board_unit1" ] && [ "$board_unit1" -lt "$board_unit2" ] && [ "$board_unit2" -lt "$board_integration" ] && grep -qF "✓ integração" "$case_dir/board.txt"'
+
+# 43. A failed gate sends the unit back; the round 2 board is captured from stderr.
+new_case board-gate-back 'test -f ok' 'echo change >>a.txt; [ "$FAKE_N" -ge 2 ] && touch ok; true'
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/stdout.txt" 2>"$case_dir/stderr.txt"
+gate_back_code=$?
+check "board gate back: round 2 shows the gate failure on stderr" '[ "$gate_back_code" -eq 0 ] && grep -qF "[plan] S1 unidade 01-unit · ronda 2 · implementação" "$case_dir/stderr.txt" && grep -qF "↩ 01-unit" "$case_dir/stderr.txt" && grep -qF "gate falhou · ronda 2 a implementar" "$case_dir/stderr.txt"'
+
+# 44. Resume keeps the same stdout contract as start while the board stays on stderr.
+new_case board-resume-stdout '' 'echo change >>a.txt'
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" start -p each r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/start.stdout" 2>"$case_dir/start.stderr"
+pause_code=$?
+start_expected=$(printf 'Run folder: %s\nPAUSED after step 1 (01-unit). Read it in %s, then: plan-run.sh resume r\nSee %s/status.log' "$case_dir/runs/r" "$case_dir/runs/r" "$case_dir/runs/r")
+(cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
+  "$work/bin/plan-run-limited" resume -p none r) >"$case_dir/resume.stdout" 2>"$case_dir/resume.stderr"
+resume_code=$?
+resume_expected=$(printf 'Run folder: %s\nREADY: %s/report.md\nSee %s/status.log' "$case_dir/runs/r" "$case_dir/runs/r" "$case_dir/runs/r")
+check "board stdout: start and resume preserve their exact stdout" '[ "$pause_code" -eq 3 ] && [ "$resume_code" -eq 0 ] && [ "$(cat "$case_dir/start.stdout")" = "$start_expected" ] && [ "$(cat "$case_dir/resume.stdout")" = "$resume_expected" ] && ! grep -qF "[plan]" "$case_dir/start.stdout" && ! grep -qF "[plan]" "$case_dir/resume.stdout"'
 
 exit "$fail"

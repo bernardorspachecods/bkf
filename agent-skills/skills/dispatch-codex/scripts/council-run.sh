@@ -6,6 +6,7 @@
 #   council-run.sh resume  [-m model] [-e effort] <name>
 #   council-run.sh check   [-m model] [-e effort] <name> <report.md>   (exit 0 pass, 1 back, 2 escalate)
 #   council-run.sh status  <name>
+#   council-run.sh board   <name>
 #   council-run.sh finish  [--discard] <name>
 # Every agent works in its own folder and writes one file: the advisors get the brief and a perspective,
 # the reviewers only the packet, and the key that maps labels to perspectives stays in 02-packet/, which no
@@ -31,8 +32,26 @@ model=gpt-6-luna effort=xhigh
 . "$here/lib-codex.sh"
 
 note() { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$run/status.log"; }
+progress() {
+  local current_board
+  current_board=$(board 2>/dev/null) || current_board=
+  printf '[council] %s\n\n%s\n' "$*" "$current_board" >&2 || true
+  return 0
+}
 
 perspectives() { printf '%s\n' contrarian first-principles expansionist outsider executor; }
+board() { # print the council's current step and agent states
+  local advisor_folders
+  advisor_folders=$(perspectives | tr '\n' ' ')
+  advisor_folders=${advisor_folders% }
+  board_title=Conselho
+  board_steps \
+    "advisors|Conselheiros|01-advisors|$advisor_folders|advice.md" \
+    'packet|Pacote anónimo|02-packet||' \
+    'review|Revisores|03-review|1 2 3 4 5|review.md' \
+    2>/dev/null || true
+  return 0
+}
 perspective_title() { # <name> -> the heading in council-advisor.md
   case $1 in
     contrarian) echo Contrarian ;;
@@ -69,6 +88,33 @@ reviewer_brief() {
 
 # ---- Phases: each returns nonzero (with $reason) when it stops ----
 
+# Run the agents that have no output yet, in parallel, and report each as it exits.
+run_council_agents() { # <phase-dir> <output-file> <stage> <folder>...
+  local pd=$1 out=$2 stage=$3 f label pids=() p code bad=""
+  shift 3
+  for f in "$@"; do
+    [ -s "$pd/$f/$out" ] && continue
+    label=$f
+    case "$stage" in
+      review) label="revisor $f" ;;
+    esac
+    (
+      codex_run "$pd/$f" "$pd/$f/brief.md" "$pd/$f/run" workspace-write
+      code=$?
+      [ "$code" -eq 0 ] || echo "exit=$code (see $pd/$f/run.stderr.log)" >"$pd/$f/failed"
+      progress "$stage · $label · concluído"
+      exit "$code"
+    ) &
+    pids+=("$!")
+  done
+  for p in "${pids[@]+"${pids[@]}"}"; do wait "$p" || true; done
+  for f in "$@"; do
+    [ -s "$pd/$f/$out" ] || bad="$bad$f: $(cat "$pd/$f/failed" 2>/dev/null || echo "wrote no $out"); "
+    rm -f "$pd/$f/failed"
+  done
+  [ -z "$bad" ] || { reason="$bad"; return 1; }
+}
+
 run_advisors() {
   local d=$run/01-advisors p
   for p in $(perspectives); do
@@ -76,7 +122,7 @@ run_advisors() {
     [ -s "$d/$p/advice.md" ] || advisor_brief "$p" >"$d/$p/brief.md"
   done
   # shellcheck disable=SC2046
-  run_agents "$d" advice.md $(perspectives)
+  run_council_agents "$d" advice.md advisors $(perspectives)
 }
 
 run_packet() {
@@ -113,7 +159,7 @@ run_review() {
     cp "$run/02-packet/packet.md" "$d/$n/packet.md"
     [ -s "$d/$n/review.md" ] || reviewer_brief >"$d/$n/brief.md"
   done
-  run_agents "$d" review.md 1 2 3 4 5
+  run_council_agents "$d" review.md review 1 2 3 4 5
 }
 
 pipeline() {
@@ -123,12 +169,15 @@ pipeline() {
     [ -e "$run/.done-$st" ] && continue
     case $st in advisors) dir=01-advisors ;; packet) dir=02-packet ;; review) dir=03-review ;; esac
     note "start $st ($model $effort)"
+    case $st in advisors|review) progress "$st · início" ;; esac
     reason=""
     if "run_$st"; then
       touch "$run/.done-$st"; note "done $st"
+      progress "$st · concluído"
     else
       note "STOPPED at $st: $reason"
       note "Read $run/$dir, fix the cause, then: council-run.sh resume $(basename "$run")"
+      progress "$st · parou"
       printf 'STOPPED at %s: %s\nSee %s/status.log\n' "$st" "$reason" "$run"
       return 1
     fi
@@ -154,6 +203,7 @@ cmd_start() {
   printf '%s %s\n' "$model" "$effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
   note "start $1 ($model $effort)"
+  board >&2 || true
   pipeline
 }
 
@@ -211,16 +261,21 @@ cmd_check() {
     } >"$rd/review-prompt.md"
     codex_run "$rd/review" "$rd/review-prompt.md" "$rd/review-run" workspace-write
     code=$?
-    [ "$code" -eq 0 ] || die "check exit=$code (see $rd/review-run.stderr.log)"
+    if [ "$code" -ne 0 ]; then progress 'check · parou'; die "check exit=$code (see $rd/review-run.stderr.log)"; fi
     if [ ! -s "$rd/review/problems.md" ]; then note "check attempt $attempt wrote no problems.md"; continue; fi
     if checked_ok "$rd/review/problems.md"; then ok=1; break; fi
   done
-  [ "$ok" -eq 1 ] || die "the check left no usable problems.md after $attempt attempts (see $rd/review-run.last-message.md)"
+  if [ "$ok" -ne 1 ]; then progress 'check · parou'; die "the check left no usable problems.md after $attempt attempts (see $rd/review-run.last-message.md)"; fi
   cp "$rd/review/problems.md" "$rd/problems.md"
-  verdict=$(read_verdict "$rd/problems.md") || die "last line of $rd/problems.md is not a valid verdict"
+  if ! verdict=$(read_verdict "$rd/problems.md"); then progress 'check · parou'; die "last line of $rd/problems.md is not a valid verdict"; fi
   if [ "$verdict" = back ] && [ "$n" -ge "$max_rounds" ]; then verdict=escalate; note "check: round cap $max_rounds reached"; fi
   echo "$verdict" >"$rd/verdict"
   note "check round $n ($model $effort): $verdict"
+  case $verdict in
+    pass) progress "check · ronda $n · passou" ;;
+    back) progress "check · ronda $n · devolvida" ;;
+    escalate) progress "check · ronda $n · escalada" ;;
+  esac
   printf 'Completeness check, round %s: %s\nProblems: %s/problems.md\n' "$n" "$verdict" "$rd"
   case $verdict in pass) exit 0 ;; back) exit 1 ;; *) exit 2 ;; esac
 }
@@ -229,6 +284,12 @@ cmd_status() {
   [ "$#" -eq 1 ] || die 'usage: status <name>'
   load_run "$1"
   cat "$run/status.log"
+}
+
+cmd_board() {
+  [ "$#" -eq 1 ] || die 'usage: board <name>'
+  load_run "$1"
+  board
 }
 
 cmd_finish() {
@@ -266,6 +327,7 @@ case "$sub" in
   resume) cmd_resume "$@" ;;
   check) cmd_check "$@" ;;
   status) cmd_status "$@" ;;
+  board) cmd_board "$@" ;;
   finish) cmd_finish "$@" ;;
-  *) die 'usage: council-run.sh start|resume|check|status|finish ...' ;;
+  *) die 'usage: council-run.sh start|resume|check|status|board|finish ...' ;;
 esac
