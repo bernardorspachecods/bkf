@@ -12,8 +12,11 @@ description: Run multi-phase workflows (plan, research, council, code review) as
 
 The stdlib gate runner lives in [harness](harness/pyproject.toml):
 [package](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py),
-[CLI](harness/harness/cli.py), [gate runner](harness/harness/gate.py), and
-[tests](harness/tests/test_gate.py).
+[CLI](harness/harness/cli.py), [gate runner](harness/harness/gate.py),
+[agent runner](harness/harness/agent.py), [rule injection](harness/harness/inject.py),
+[verdict handling](harness/harness/verdict.py), and the [tests](harness/tests/test_gate.py),
+[agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py),
+and [verdict tests](harness/tests/test_verdict.py).
 
 ## Phase runs
 
@@ -89,11 +92,16 @@ For a [code review](../../library/workflow-types/code-review/code-review.md), us
 
 ## Shared code
 
-The `harness/` project is a small Python CLI shared by the shell scripts, which call it through the `harness` function in `lib-codex.sh`. To run a gate by hand from anywhere: `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness gate run --cwd DIR --timeout SECONDS --out DIR -- COMMAND...`. It exits 0 when all commands pass, 1 when any command fails, and 2 for invalid usage or a runner error. It writes `gate.md` (command, exit code and output tail), `gate.json`, and one log per command to the output directory.
+The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), and [verdict tests](harness/tests/test_verdict.py). `bkf skills` requires links to every module and test file.
 
-[scripts/lib-codex.sh](scripts/lib-codex.sh) holds what `phase-codex.sh` and the four run scripts share: running a Codex agent, running a set of agents in parallel, reading a verdict and checking the "What I checked" section. Source it; it defines functions only.
+Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness ...`.
 
-[scripts/lib-inject.sh](scripts/lib-inject.sh), which `lib-codex.sh` sources, adds text to a brief just before `codex_run` starts the agent, so that a rule is written once and every brief that needs it carries it. A role guide asks for a file with a line of its own, `<!-- inject: ../../modules/determinism.md -->` (a Markdown file, path relative to the guide); the script finds the guides a brief names (`role guide: <absolute path>.md`), appends the body of each requested file once, under a heading that says where it came from, and records that in the brief, so the brief kept in the run is what the agent read. A missing file stops the agent from starting. Any guide can ask for any Markdown file; no script changes. [scripts/test-inject.sh](scripts/test-inject.sh) tests it with a fake `codex`, and checks that every directive in the real guides resolves.
+- `gate run --cwd DIR --timeout SECONDS --out DIR [--note TEXT]... -- COMMAND...` writes `gate.md`, `gate.json`, and `gate-N.log` files in `DIR`; it exits 0 when all commands pass, 1 when any fail, or 2 for invalid usage or a runner error.
+- `inject PROMPT_FILE` adds requested rules to the prompt file; it exits 0 on success, 1 for an invalid injection request, or 2 for an operating-system error.
+- `verdict read FILE` prints the valid verdict from the last non-empty line and exits 0, or exits 1 for a missing or invalid verdict. `verdict checked FILE --min N` exits 0 when `## What I checked` has at least `N` non-empty lines (or `N` is zero or less), otherwise 1.
+- `agent run --dir DIR --prompt FILE --out-prefix PREFIX --model MODEL --effort EFFORT [--sandbox SANDBOX] [--tier TIER] [--backend BACKEND]` writes `PREFIX.events.jsonl`, `PREFIX.stderr.log`, and `PREFIX.last-message.md`; it returns the backend's exit status, 1 for an injection error, or 2 for an unsupported backend or operating-system error. Launch goes through a backend class; only `codex` exists, so `--backend claude` exits 2 with “backend not implemented”.
+
+The `lib-codex.sh` library now provides wrappers under the former names—`codex_run`, `inject_rules`, `read_verdict`, and `checked_ok`—plus `run_agents` for parallel launches. Source it to define the functions; the separate injection library file no longer exists. A role guide requests injection with a line such as `<!-- inject: ../../modules/determinism.md -->`; the script adds the rule text to the brief under a `## Rules from <name>` heading, then adds a marker so retries inject it only once. [`scripts/test-inject.sh`](scripts/test-inject.sh) checks injection and its use by `codex_run` with a fake `codex` command.
 
 ## Safety and gotchas
 

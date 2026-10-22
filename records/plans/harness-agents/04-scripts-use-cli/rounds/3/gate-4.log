@@ -1,0 +1,19 @@
+PASS green: the run is ready
+PASS green: the command, its output and exit code 0 are recorded
+PASS green: the reviewer and the checker folders hold gate.md
+PASS green: the briefs point to gate.md
+PASS green: the report shows the gate before the first axis
+PASS green: the report says all green
+PASS red: the run still finishes
+PASS red: the exit code of the failing command is recorded
+PASS red: the report names the red command
+PASS red: a later green command is still run and recorded
+PASS none: the run is ready
+PASS none: the report says nothing was run and calls it a gap
+PASS none: the report does not say all green
+PASS cwd: the command ran in the repository
+PASS cwd: the reviewer already had gate.md when it started
+PASS hang: the run finishes quickly instead of waiting
+PASS hang: the timeout is recorded as red
+PASS resume: the gate ran once in all
+PASS resume: the report is rebuilt with the gate

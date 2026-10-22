@@ -1,8 +1,6 @@
-# Shared by phase-codex.sh and the run scripts: agent execution, verdict checks and step boards.
+# Shared shell functions for phase-codex.sh and the run scripts; harness CLI wrappers and step boards.
 # Source it; it defines functions only. The caller sets $model and $effort before codex_run and
 # $min_checked (0 turns the check off) before checked_ok, and reads $reason after run_agents fails.
-
-. "$(dirname "${BASH_SOURCE[0]}")/lib-inject.sh"
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
@@ -15,40 +13,23 @@ harness() { PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../harness" && pwd)
 # The sandbox is workspace-write unless the fourth argument names another.
 # PLAN_CODEX_TIER (for example fast) sets Codex's service tier; unset keeps the account default.
 codex_run() { # <dir> <prompt-file> <out-prefix> [sandbox]
-  inject_rules "$2" || return 1
-  codex exec \
-    ${PLAN_CODEX_TIER:+-c "service_tier=\"$PLAN_CODEX_TIER\""} \
-    --skip-git-repo-check \
-    -C "$1" \
-    -m "$model" \
-    -c "model_reasoning_effort=\"$effort\"" \
-    -s "${4:-workspace-write}" \
-    --json \
-    -o "$3.last-message.md" \
-    - <"$2" >"$3.events.jsonl" 2>"$3.stderr.log"
+  local -a args=(agent run --dir "$1" --prompt "$2" --out-prefix "$3" --model "$model" --effort "$effort" --sandbox "${4:-workspace-write}")
+  [ -z "${PLAN_CODEX_TIER:-}" ] || args+=(--tier "$PLAN_CODEX_TIER")
+  harness "${args[@]}"
 }
+
+# Kept as a named helper for scripts/test-inject.sh and maintainers.
+inject_rules() { harness inject "$1"; }
 
 # Print the verdict word from the last non-empty line of a problems file; fail if it is not exact.
 read_verdict() { # <problems-file>
-  local last
-  last=$(awk 'NF{l=$0} END{print l}' "$1" 2>/dev/null | tr -d '[:space:]')
-  case "$last" in
-    VERDICT:pass) echo pass ;;
-    VERDICT:back) echo back ;;
-    VERDICT:escalate) echo escalate ;;
-    *) return 1 ;;
-  esac
+  harness verdict read "$1"
 }
 
 # True when the file has a "## What I checked" section with at least $min_checked non-empty lines
 # (or the check is off).
 checked_ok() { # <problems-file>
-  [ "$min_checked" -gt 0 ] || return 0
-  awk -v min="$min_checked" '
-    /^## What I checked/ { on = 1; next }
-    on && /^#+ / { exit }
-    on && NF { n++ }
-    END { exit !(n >= min) }' "$1"
+  harness verdict checked "$1" --min "$min_checked"
 }
 
 # Run the agents that have no output yet, in parallel, each in its own folder.

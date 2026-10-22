@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests lib-inject.sh (the text a role guide asks the script to add to a brief) and its use by codex_run, with a fake
+# Tests harness injection (the text a role guide asks the script to add to a brief) and its use by codex_run, with a fake
 # `codex`, in a throwaway folder: no model is called.
 # Usage: test-inject.sh        (exit 0 when every case passes)
 set -uo pipefail

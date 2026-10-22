@@ -1,0 +1,23 @@
+PASS finished: all steps and agents are checked
+PASS board command: the board is printed on stdout
+PASS start stdout: READY output is unchanged
+PASS check stdout: verdict output is unchanged
+Sample council board from the finished run:
+Conselho finished · início 23:54 → agora 23:54
+
+✓ Conselheiros
+    ✓ contrarian
+    ✓ first-principles
+    ✓ expansionist
+    ✓ outsider
+    ✓ executor
+✓ Pacote anónimo
+✓ Revisores
+    ✓ 1
+    ✓ 2
+    ✓ 3
+    ✓ 4
+    ✓ 5
+PASS stopped review: the stderr board marks Revisores with ✗
+PASS resume stdout: READY output is unchanged
+PASS running: stderr shows an in-progress step

@@ -1,0 +1,365 @@
+diff --git a/agent-skills/skills/dispatch-codex/SKILL.md b/agent-skills/skills/dispatch-codex/SKILL.md
+index 290cf54..a7ed42c 100644
+--- a/agent-skills/skills/dispatch-codex/SKILL.md
++++ b/agent-skills/skills/dispatch-codex/SKILL.md
+@@ -96,7 +96,7 @@ The `harness/` project is a small Python CLI shared by the shell scripts, which
+ 
+ [scripts/lib-codex.sh](scripts/lib-codex.sh) holds what `phase-codex.sh` and the four run scripts share: running a Codex agent, running a set of agents in parallel, reading a verdict and checking the "What I checked" section. Source it; it defines functions only.
+ 
+-[scripts/lib-inject.sh](scripts/lib-inject.sh), which `lib-codex.sh` sources, adds text to a brief just before `codex_run` starts the agent, so that a rule is written once and every brief that needs it carries it. A role guide asks for a file with a line of its own, `<!-- inject: ../../modules/determinism.md -->` (a Markdown file, path relative to the guide); the script finds the guides a brief names (`role guide: <absolute path>.md`), appends the body of each requested file once, under a heading that says where it came from, and records that in the brief, so the brief kept in the run is what the agent read. A missing file stops the agent from starting. Any guide can ask for any Markdown file; no script changes. [scripts/test-inject.sh](scripts/test-inject.sh) tests it with a fake `codex`, and checks that every directive in the real guides resolves.
++[harness inject](harness/harness/inject.py), which `lib-codex.sh` calls, adds text to a brief just before `codex_run` starts the agent, so that a rule is written once and every brief that needs it carries it. A role guide asks for a file with a line of its own, `<!-- inject: ../../modules/determinism.md -->` (a Markdown file, path relative to the guide); the script finds the guides a brief names (`role guide: <absolute path>.md`), appends the body of each requested file once, under a heading that says where it came from, and records that in the brief, so the brief kept in the run is what the agent read. A missing file stops the agent from starting. Any guide can ask for any Markdown file; no script changes. [scripts/test-inject.sh](scripts/test-inject.sh) tests it with a fake `codex`, and checks that every directive in the real guides resolves.
+ 
+ ## Safety and gotchas
+ 
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py b/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py
+index 214777e..b16edc3 100644
+--- a/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py
+@@ -9,7 +9,6 @@ import unittest
+ 
+ 
+ HARNESS_DIR = pathlib.Path(__file__).resolve().parents[1]
+-SKILL_DIR = HARNESS_DIR.parent
+ 
+ 
+ class AgentCliTests(unittest.TestCase):
+@@ -201,49 +200,5 @@ class AgentCliTests(unittest.TestCase):
+         self.assertIn(b"backend not implemented: claude", result.stderr)
+         self.assertFalse(self.arg_log.exists())
+ 
+-    def test_shell_argument_parity(self):
+-        # The next unit removes this parity check when codex_run is replaced.
+-        for tier in (None, "fast"):
+-            with self.subTest(tier=tier):
+-                shell_prompt = self.root / "shell-prompt.md"
+-                shell_prompt.write_bytes(self.prompt.read_bytes())
+-                shell_prefix = self.prefix
+-                environment = self.env.copy()
+-                if tier is None:
+-                    environment.pop("PLAN_CODEX_TIER", None)
+-                else:
+-                    environment["PLAN_CODEX_TIER"] = tier
+-                command = (
+-                    '. "$1"; model="$2"; effort="$3"; '
+-                    'codex_run "$4" "$5" "$6"'
+-                )
+-                shell_result = subprocess.run(
+-                    [
+-                        "bash",
+-                        "-c",
+-                        command,
+-                        "bash",
+-                        str(SKILL_DIR / "scripts" / "lib-codex.sh"),
+-                        "gpt-test",
+-                        "high",
+-                        str(self.root),
+-                        str(shell_prompt),
+-                        str(shell_prefix),
+-                    ],
+-                    cwd=str(SKILL_DIR),
+-                    env=environment,
+-                    stdout=subprocess.PIPE,
+-                    stderr=subprocess.PIPE,
+-                )
+-                self.assertEqual(shell_result.returncode, 0, shell_result.stderr)
+-                shell_arguments = self.recorded_arguments()
+-
+-                python_result = self.run_agent(
+-                    *( ["--tier", tier] if tier is not None else [])
+-                )
+-                self.assertEqual(python_result.returncode, 0, python_result.stderr)
+-                self.assertEqual(self.recorded_arguments(), shell_arguments)
+-
+-
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_inject.py b/agent-skills/skills/dispatch-codex/harness/tests/test_inject.py
+index 7eaba4a..49184ce 100644
+--- a/agent-skills/skills/dispatch-codex/harness/tests/test_inject.py
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_inject.py
+@@ -9,9 +9,6 @@ from harness.inject import inject_rules
+ 
+ 
+ HARNESS_DIR = pathlib.Path(__file__).resolve().parents[1]
+-SKILL_DIR = HARNESS_DIR.parent
+-REPO_ROOT = SKILL_DIR.parents[2]
+-LIB_INJECT = SKILL_DIR / "scripts" / "lib-inject.sh"
+ 
+ 
+ class InjectRulesTests(unittest.TestCase):
+@@ -97,28 +94,17 @@ class InjectRulesTests(unittest.TestCase):
+         self.assertEqual(prompt.read_bytes(), original)
+ 
+     def test_absolute_directive_path_stays_under_guide_directory(self):
+-        # The shell expands this as guide_dir//absolute/path, rather than resetting to /.
++        # A leading slash remains relative to the guide directory, as in the shell implementation.
+         target = self.root / "absolute-rule.md"
+         target.write_bytes(b"# Absolute rule\n")
+         guide = self.guide("absolute.md", "<!-- inject: {0} -->\n".format(target))
+         prompt_py = self.prompt([guide])
+-        prompt_sh = self.root / "brief-shell.md"
+-        prompt_sh.write_bytes(prompt_py.read_bytes())
+         original = prompt_py.read_bytes()
+ 
+         with self.assertRaises(Exception) as raised:
+             inject_rules(prompt_py)
+         self.assertIn("does not exist", str(raised.exception))
+-        command = '. "$1"; inject_rules "$2"'
+-        result = subprocess.run(
+-            ["bash", "-c", command, "bash", str(LIB_INJECT), str(prompt_sh)],
+-            cwd=SKILL_DIR,
+-            stdout=subprocess.PIPE,
+-            stderr=subprocess.PIPE,
+-        )
+-        self.assertEqual(result.returncode, 1)
+         self.assertEqual(prompt_py.read_bytes(), original)
+-        self.assertEqual(prompt_sh.read_bytes(), original)
+ 
+     def test_non_markdown_file_fails_without_changing_prompt(self):
+         (self.modules / "rule.md.sh").touch()
+@@ -153,35 +139,6 @@ class InjectRulesTests(unittest.TestCase):
+             inject_rules(prompt)
+         self.assertEqual(prompt.read_bytes(), original)
+ 
+-    def test_bash_parity_for_real_guides(self):
+-        # A later unit deletes these parity tests together with lib-inject.sh.
+-        library = REPO_ROOT / "agent-skills" / "library" / "workflow-types"
+-        relative_guides = (
+-            "plan/plan-implementation.md",
+-            "plan/plan-review.md",
+-            "code-review/code-review-axis.md",
+-        )
+-        with tempfile.TemporaryDirectory() as directory:
+-            root = pathlib.Path(directory)
+-            prompt_py = root / "python.md"
+-            prompt_sh = root / "bash.md"
+-            source = "# Brief\n\n## Role\n"
+-            for relative in relative_guides:
+-                source += "Open and follow the role guide: {0} (read-only).\n".format(
+-                    library / relative
+-                )
+-            prompt_py.write_text(source, encoding="utf-8")
+-            prompt_sh.write_bytes(prompt_py.read_bytes())
+-            inject_rules(prompt_py)
+-            command = '. "$1"; inject_rules "$2"'
+-            subprocess.run(
+-                ["bash", "-c", command, "bash", str(LIB_INJECT), str(prompt_sh)],
+-                cwd=SKILL_DIR,
+-                check=True,
+-            )
+-            self.assertEqual(prompt_py.read_bytes(), prompt_sh.read_bytes())
+-
+-
+ class InjectCliTests(unittest.TestCase):
+     def run_cli(self, *arguments):
+         environment = os.environ.copy()
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_verdict.py b/agent-skills/skills/dispatch-codex/harness/tests/test_verdict.py
+index a502f35..bf4b4f3 100644
+--- a/agent-skills/skills/dispatch-codex/harness/tests/test_verdict.py
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_verdict.py
+@@ -10,7 +10,6 @@ from harness.verdict import checked_ok, read_verdict
+ 
+ 
+ HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+-LIB_CODEX = os.path.abspath(os.path.join(HARNESS_DIR, "..", "scripts", "lib-codex.sh"))
+ 
+ 
+ class VerdictTests(unittest.TestCase):
+@@ -36,30 +35,6 @@ class VerdictTests(unittest.TestCase):
+             text=True,
+         )
+ 
+-    def bash_read(self, path):
+-        return subprocess.run(
+-            ["bash", "-c", '. "$1"; read_verdict "$2"', "_", LIB_CODEX, path],
+-            stdout=subprocess.PIPE,
+-            stderr=subprocess.PIPE,
+-            text=True,
+-        )
+-
+-    def bash_checked(self, path, minimum):
+-        return subprocess.run(
+-            [
+-                "bash",
+-                "-c",
+-                '. "$1"; min_checked="$2"; checked_ok "$3"',
+-                "_",
+-                LIB_CODEX,
+-                str(minimum),
+-                path,
+-            ],
+-            stdout=subprocess.PIPE,
+-            stderr=subprocess.PIPE,
+-            text=True,
+-        )
+-
+     def test_each_valid_verdict(self):
+         for word in ("pass", "back", "escalate"):
+             with self.subTest(word=word):
+@@ -128,51 +103,5 @@ class VerdictTests(unittest.TestCase):
+         self.assertEqual(result, 0)
+         checked.assert_called_once_with(self.path, 1)
+ 
+-    # A later unit removes this temporary bash parity test once the port is established.
+-    def test_python_matches_bash_functions(self):
+-        cases = (
+-            ("VERDICT:pass\n", 1),
+-            ("VERDICT:back\n", 1),
+-            ("VERDICT:escalate\n", 1),
+-            ("VERDICT:pass\nnot last\n", 1),
+-            ("VERDICT:pass\n\n  \t\n", 1),
+-            ("VERDICT:pass\n\r\n", 1),
+-            ("VERDICT: pass\n", 1),
+-            ("VERDICT:other\n", 1),
+-            ("## What I checked\none\n### Nested\ntwo\n", 2),
+-            ("## What I checked\none\ntwo\n", 2),
+-            ("## What I checked\n\r\n", 1),
+-            ("\n\t\n", 1),
+-        )
+-        for content, minimum in cases:
+-            with self.subTest(content=content, minimum=minimum):
+-                path = self.write(content)
+-                py_verdict = read_verdict(path)
+-                bash_verdict = self.bash_read(path)
+-                py_read = self.run_cli("read", path)
+-                self.assertEqual(bash_verdict.returncode == 0, py_verdict is not None)
+-                self.assertEqual(bash_verdict.stdout, (py_verdict + "\n") if py_verdict else "")
+-                self.assertEqual(py_read.returncode, bash_verdict.returncode)
+-                self.assertEqual(py_read.stdout, bash_verdict.stdout)
+-
+-                py_checked = checked_ok(path, minimum)
+-                bash_checked = self.bash_checked(path, minimum)
+-                self.assertEqual(bash_checked.returncode == 0, py_checked)
+-                py_cli = self.run_cli("checked", path, "--min", str(minimum))
+-                self.assertEqual(py_cli.returncode, 0 if py_checked else 1)
+-                self.assertEqual(py_cli.stdout, bash_checked.stdout)
+-
+-        missing = os.path.join(self.temp_dir.name, "missing")
+-        bash_read = self.bash_read(missing)
+-        py_read = self.run_cli("read", missing)
+-        self.assertEqual(bash_read.returncode == 0, read_verdict(missing) is not None)
+-        self.assertEqual((py_read.returncode, py_read.stdout), (bash_read.returncode, bash_read.stdout))
+-        bash_checked = self.bash_checked(missing, 1)
+-        py_checked = self.run_cli("checked", missing, "--min", "1")
+-        self.assertEqual(bash_checked.returncode == 0, checked_ok(missing, 1))
+-        self.assertEqual(py_checked.returncode == 0, bash_checked.returncode == 0)
+-        self.assertEqual(py_checked.stdout, bash_checked.stdout)
+-
+-
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/agent-skills/skills/dispatch-codex/scripts/lib-codex.sh b/agent-skills/skills/dispatch-codex/scripts/lib-codex.sh
+index f567961..90eb20e 100755
+--- a/agent-skills/skills/dispatch-codex/scripts/lib-codex.sh
++++ b/agent-skills/skills/dispatch-codex/scripts/lib-codex.sh
+@@ -1,9 +1,7 @@
+-# Shared by phase-codex.sh and the run scripts: agent execution, verdict checks and step boards.
++# Shared shell functions for phase-codex.sh and the run scripts; harness CLI wrappers and step boards.
+ # Source it; it defines functions only. The caller sets $model and $effort before codex_run and
+ # $min_checked (0 turns the check off) before checked_ok, and reads $reason after run_agents fails.
+ 
+-. "$(dirname "${BASH_SOURCE[0]}")/lib-inject.sh"
+-
+ die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+ 
+ valid_name() { [[ $1 =~ ^[A-Za-z0-9._-]+$ && $1 != . && $1 != .. ]]; }
+@@ -15,40 +13,23 @@ harness() { PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../harness" && pwd)
+ # The sandbox is workspace-write unless the fourth argument names another.
+ # PLAN_CODEX_TIER (for example fast) sets Codex's service tier; unset keeps the account default.
+ codex_run() { # <dir> <prompt-file> <out-prefix> [sandbox]
+-  inject_rules "$2" || return 1
+-  codex exec \
+-    ${PLAN_CODEX_TIER:+-c "service_tier=\"$PLAN_CODEX_TIER\""} \
+-    --skip-git-repo-check \
+-    -C "$1" \
+-    -m "$model" \
+-    -c "model_reasoning_effort=\"$effort\"" \
+-    -s "${4:-workspace-write}" \
+-    --json \
+-    -o "$3.last-message.md" \
+-    - <"$2" >"$3.events.jsonl" 2>"$3.stderr.log"
++  local -a args=(agent run --dir "$1" --prompt "$2" --out-prefix "$3" --model "$model" --effort "$effort" --sandbox "${4:-workspace-write}")
++  [ -z "${PLAN_CODEX_TIER:-}" ] || args+=(--tier "$PLAN_CODEX_TIER")
++  harness "${args[@]}"
+ }
+ 
++# Kept as a named helper for scripts/test-inject.sh and maintainers.
++inject_rules() { harness inject "$1"; }
++
+ # Print the verdict word from the last non-empty line of a problems file; fail if it is not exact.
+ read_verdict() { # <problems-file>
+-  local last
+-  last=$(awk 'NF{l=$0} END{print l}' "$1" 2>/dev/null | tr -d '[:space:]')
+-  case "$last" in
+-    VERDICT:pass) echo pass ;;
+-    VERDICT:back) echo back ;;
+-    VERDICT:escalate) echo escalate ;;
+-    *) return 1 ;;
+-  esac
++  harness verdict read "$1"
+ }
+ 
+ # True when the file has a "## What I checked" section with at least $min_checked non-empty lines
+ # (or the check is off).
+ checked_ok() { # <problems-file>
+-  [ "$min_checked" -gt 0 ] || return 0
+-  awk -v min="$min_checked" '
+-    /^## What I checked/ { on = 1; next }
+-    on && /^#+ / { exit }
+-    on && NF { n++ }
+-    END { exit !(n >= min) }' "$1"
++  harness verdict checked "$1" --min "$min_checked"
+ }
+ 
+ # Run the agents that have no output yet, in parallel, each in its own folder.
+diff --git a/agent-skills/skills/dispatch-codex/scripts/lib-inject.sh b/agent-skills/skills/dispatch-codex/scripts/lib-inject.sh
+deleted file mode 100644
+index f800422..0000000
+--- a/agent-skills/skills/dispatch-codex/scripts/lib-inject.sh
++++ /dev/null
+@@ -1,34 +0,0 @@
+-# Shared through lib-codex.sh: add to a brief the text of the files that its role guides ask for.
+-# Source it; it defines functions only.
+-#
+-# A role guide asks for a file with a line of its own: <!-- inject: ../../modules/determinism.md -->
+-# The path is relative to the guide's folder and names a Markdown file. The brief names its guides as
+-# "role guide: <absolute path>.md" (a path with a space in it is not found).
+-
+-# Append to <prompt-file> the body (frontmatter left out) of every file its role guides ask for, once each, under a
+-# heading that says where it came from. Fails, leaving the prompt as it was, when a named file is not a Markdown file
+-# or does not exist. Running it again on the same prompt changes nothing.
+-inject_rules() { # <prompt-file>
+-  local prompt=$1 marker='<!-- rules injected by the script -->' guide dir rel file key seen="" add=""
+-  grep -qF "$marker" "$prompt" && return 0
+-  while IFS= read -r guide; do
+-    [ -f "$guide" ] || continue
+-    dir=$(dirname "$guide")
+-    while IFS= read -r rel; do
+-      file=$dir/$rel
+-      case $rel in
+-        *.md) ;;
+-        *) printf 'Error: %s asks to inject %s, which is not a Markdown file\n' "$guide" "$rel" >&2; return 1 ;;
+-      esac
+-      [ -f "$file" ] || { printf 'Error: %s asks to inject %s, which does not exist\n' "$guide" "$file" >&2; return 1; }
+-      key=$(cd "$(dirname "$file")" && pwd)/$(basename "$file")
+-      case "$seen" in *"|$key|"*) continue ;; esac
+-      seen="$seen|$key|"
+-      add+=$(printf '\n\n---\n## Rules from %s\nThe script added this text from %s, as the role guide asked.\n\n' "$(basename "$file" .md)" "$rel")
+-      add+=$'\n'
+-      add+=$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$file")
+-    done < <(sed -n 's/^<!-- inject: \(.*\) -->$/\1/p' "$guide")
+-  done < <(sed -n 's/.*role guide: \(\/[^ ]*\.md\).*/\1/p' "$prompt" | awk '!s[$0]++')
+-  [ -n "$add" ] || return 0
+-  printf '%s\n\n%s\n' "$add" "$marker" >>"$prompt"
+-}
+diff --git a/agent-skills/skills/dispatch-codex/scripts/test-inject.sh b/agent-skills/skills/dispatch-codex/scripts/test-inject.sh
+index 900a115..3b5f792 100644
+--- a/agent-skills/skills/dispatch-codex/scripts/test-inject.sh
++++ b/agent-skills/skills/dispatch-codex/scripts/test-inject.sh
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# Tests lib-inject.sh (the text a role guide asks the script to add to a brief) and its use by codex_run, with a fake
++# Tests harness injection (the text a role guide asks the script to add to a brief) and its use by codex_run, with a fake
+ # `codex`, in a throwaway folder: no model is called.
+ # Usage: test-inject.sh        (exit 0 when every case passes)
+ set -uo pipefail
