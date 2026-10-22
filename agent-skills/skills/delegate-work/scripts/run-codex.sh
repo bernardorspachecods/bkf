@@ -18,6 +18,8 @@ worktree="$(dirname "$repo")/${repo_name}-codex/${name}"
 branch="codex/${name}"
 runs="${CODEX_RUNS_DIR:-$HOME/.codex-runs}/${repo_name}/${name}"
 
+progress() { printf '[delegate] %s · %s\n' "$name" "$*" >&2 || true; }
+
 if [[ -e "$runs/status" && -z "${CODEX_RERUN:-}" ]]; then
   printf 'Error: run folder already exists: %s\nSet CODEX_RERUN=1 to relaunch it.\n' "$runs" >&2
   exit 1
@@ -39,6 +41,12 @@ fi
 echo "$worktree" >"$runs/worktree"
 echo "running" >"$runs/status"
 
+if [ -n "${CODEX_IN_PLACE:-}" ]; then
+  progress "a correr (no lugar)"
+else
+  progress "a correr (em worktree)"
+fi
+
 set +e
 codex exec \
   -C "$worktree" \
@@ -59,6 +67,21 @@ else
   git -C "$worktree" add -N . >/dev/null 2>&1 || true
   git -C "$worktree" diff --stat "$base" >"$runs/diffstat.txt" 2>&1 || true
 fi
+
+if [ "$code" -eq 0 ]; then
+  if [ -n "${CODEX_IN_PLACE:-}" ]; then
+    changed=$( {
+      git -C "$worktree" diff --name-only -z "$base" || true
+      git -C "$worktree" ls-files --others --exclude-standard -z || true
+    } | tr -cd '\000' | wc -c | tr -d '[:space:]') || changed=0
+  else
+    changed=$(git -C "$worktree" diff --name-only -z "$base" | tr -cd '\000' | wc -c | tr -d '[:space:]') || changed=0
+  fi
+  progress "concluído · $changed ficheiros"
+else
+  progress "falhou · exit=$code"
+fi
+
 echo "exit=$code" >"$runs/status"
 echo "$runs"
 exit "$code"
