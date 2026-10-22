@@ -57,12 +57,13 @@ looks fine.
 Propose a fix only for what is clearly wrong against the brief. Taste and style
 that the brief did not ask for are not problems.
 
-**A check written by a model can be empty.** The gate passing says the checks ran
-and passed, not that they could have failed. For each test, script or check the
-diff adds, find the case in it that makes it fail (the wrong input it rejects, the
-behaviour it would catch) and say where. A check you cannot make fail, for example
-because the build never includes it or it asserts what it just set up, is a problem
-of its own, even though the gate is green.
+<!-- inject: ../../modules/determinism.md -->
+**A check written by a model can be empty.** The rules of `determinism` end your
+brief. The gate passing says the checks ran and passed, not that they could have
+failed. For each test, script or check the diff adds, find the case in it that makes
+it fail (the wrong input it rejects, the behaviour it would catch) and say where. A
+check you cannot make fail, for example because the build never includes it or it
+asserts what it just set up, is a problem of its own, even though the gate is green.
 
 **A problem comes with a reproduction when it can.** If you find a case the gate
 does not cover, show it as a command or test that fails, and say it belongs in the

@@ -28,9 +28,9 @@ what the reasons protect.
 
 ## Verify before you hand over
 
-Run the checks the criteria name, and any others that tell you the unit works.
-Report what you ran and what came out, including failures. A unit that is not
-verified is not done, and a reviewer cannot tell it from one that is.
+<!-- inject: ../../modules/determinism.md -->
+The rules of `determinism` end your brief and apply to every check below. Run the
+checks the criteria name, and any others that tell you the unit works.
 
 When the brief has a `gate`, the script runs those commands itself after you finish
 and sends the work back, with their output and no review, if one fails. Run them
@@ -39,12 +39,9 @@ work (a database that is out of reach, say) is named in the handoff, not skipped
 If the brief or the run gives you a way to run a command your sandbox cannot (a
 database that is out of reach, say), use it only for what it allows. If a command is
 refused, do not look for a way around it: say in the handoff what you needed.
-Do not weaken a test or a check that already exists to make the gate pass.
 
-**Show every new check failing once.** A test or script you write can pass without
-checking anything. Run it against a wrong input, or a throwaway copy of the code with
-the defect put back, and see it fail; then say in the handoff which check you broke,
-how, and what failed. A check that has never failed is not yet evidence.
+**Say in the handoff how each new check was shown to fail:** which check you broke,
+how, and what failed.
 
 ## When to stop midway
 

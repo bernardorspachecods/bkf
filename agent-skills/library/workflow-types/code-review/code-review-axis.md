@@ -17,11 +17,17 @@ what the reasons protect.
 
 ## The gate results
 
-The coordinator ran the repository's checks before you started and gave you the
-commands and their results. Take them as given. Do not re-judge what they prove: do
-not read the code to check that a green test tests what it says, and do not argue
-again the behavior they cover. Spend your reading on what running a check cannot
-show: intent, the fit with the spec, and what only a reader can judge.
+<!-- inject: ../../modules/determinism.md -->
+The rules of `determinism` end your brief. The coordinator ran the repository's
+checks before you started and gave you the commands and their results. Take them as
+given: do not run them again and do not argue again the behavior they cover. Spend
+your reading on what running a check cannot show: intent, the fit with the spec, and
+what only a reader can judge.
+
+A green result says the checks ran, not that a check the diff adds could have failed.
+For each test or check the diff adds, find the case in it that makes it fail and say
+where. One you cannot make fail is a finding of your axis when it breaks one of your
+criteria, even though the result is green.
 
 A finding that a test could prove comes with that test, named by path. If no such
 test exists, name the missing test instead of only arguing the point.

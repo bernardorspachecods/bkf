@@ -2,6 +2,8 @@
 # Source it; it defines functions only. The caller sets $model and $effort before codex_run and
 # $min_checked (0 turns the check off) before checked_ok, and reads $reason after run_agents fails.
 
+. "$(dirname "${BASH_SOURCE[0]}")/lib-inject.sh"
+
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 valid_name() { [[ $1 =~ ^[A-Za-z0-9._-]+$ && $1 != . && $1 != .. ]]; }
@@ -10,6 +12,7 @@ valid_name() { [[ $1 =~ ^[A-Za-z0-9._-]+$ && $1 != . && $1 != .. ]]; }
 # The sandbox is workspace-write unless the fourth argument names another.
 # PLAN_CODEX_TIER (for example fast) sets Codex's service tier; unset keeps the account default.
 codex_run() { # <dir> <prompt-file> <out-prefix> [sandbox]
+  inject_rules "$2" || return 1
   codex exec \
     ${PLAN_CODEX_TIER:+-c "service_tier=\"$PLAN_CODEX_TIER\""} \
     --skip-git-repo-check \
