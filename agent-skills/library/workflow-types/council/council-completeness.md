@@ -36,7 +36,7 @@ Something that matters to the question and is missing without a word is.
 
 ## Show what you checked
 
-Show what you checked as the `review-work` module requires. Here the list has one
+Show what you checked. Write the list before any problem, never "looks fine": a pass is the same list with no problems under it, and if you did not open part of the input, say which part. Here the list has one
 line for every response and every review you went through: the point, and where
 it is in the report (front, dropped with a reason, or not found).
 

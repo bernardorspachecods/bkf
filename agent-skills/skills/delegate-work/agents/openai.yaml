@@ -1,0 +1,3 @@
+interface:
+  display_name: "Delegate Work"
+  short_description: "Hand a short, objective task to a Claude subagent or a Codex run"

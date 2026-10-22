@@ -3,7 +3,7 @@
 # a checker per axis confirms each finding, and the script writes the report. The coordinator names the
 # target and the criteria and adds the one-line summary.
 # Usage (run start, resume and finish inside the repository under review):
-#   review-run.sh start   [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... <name> <target>
+#   review-run.sh start   [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>
 #   review-run.sh resume  [-m model] [-e effort] <name>
 #   review-run.sh status  <name>
 #   review-run.sh finish  [--discard] <name>
@@ -12,6 +12,12 @@
 # -s gives the spec and each -d a file of documented coding standards. An axis with no criteria is not
 # run and the report says so; with neither, there is nothing to review. -2 adds a second independent
 # reviewer per axis, with the findings merged before the check.
+# Each -g gives a command that verifies the change (tests, type check, lint). The script runs them itself, in
+# the repository and outside any agent, before the agents start, and records command, output and exit code in
+# gate.md, which the agents receive and the report shows. A red command does not stop the review but
+# stands in the report. With no -g the report says the repository's checks were not run: a gap, not a pass.
+# REVIEW_GATE_TIMEOUT (default 900 seconds) limits each command; a command that hits it is red. A run on a
+# revision range runs the commands in the current checkout, which may not be the target; the file says so.
 # Every agent works in its own folder and writes one file. The sandbox confines writes, not reads, so the
 # briefs tell each agent to open only its own folder and the repository; that is an instruction, not a
 # barrier. `resume` redoes only the agents without output.
@@ -23,6 +29,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=${REVIEW_RUNS_DIR:-$HOME/.review-runs}
 guides=${REVIEW_GUIDES:-$(git -C "$here" rev-parse --show-toplevel 2>/dev/null)/agent-skills/library/workflow-types/code-review}
 min_checked=0
+gate_timeout=${REVIEW_GATE_TIMEOUT:-900}
 model=gpt-6-luna effort=xhigh
 
 # shellcheck source=lib-codex.sh
@@ -54,6 +61,7 @@ axis_brief() { # <axis>
   printf '# Brief: %s review\n\n## What to review\nThe diff is `diff.patch` in the current directory (read-only)' "$(axis_title "$a")"
   [ -s "$run/00-input/commits.txt" ] && printf ', and the commits in `commits.txt`'
   printf '.\n'
+  printf '\n## Gate\nThe script ran the repository'"'"'s own checks before you started: their commands, output and exit codes are in `gate.md` here (read-only). Take them as given.\n'
   case $a in
     standards) printf '\n## Criteria\nThe documented standards are the files in `standards/` here (read-only).\n' ;;
     spec) printf '\n## Criteria\nThe originating spec is `spec.md` here (read-only).\n' ;;
@@ -70,10 +78,51 @@ check_brief() { # <axis>
     standards) printf -- '- standards/: the documented standards\n' ;;
     spec) printf -- '- spec.md: the originating spec\n' ;;
   esac
+  printf -- '- gate.md: the repository'"'"'s own checks, run by the script before the review\n'
   printf -- '- reports/: the findings of the reviewer(s) of this axis\n'
   printf '\n## The repository\nIt is at %s. Open it read-only to see the code around a hunk. Change nothing in it.\n' "$repo"
   printf '\n## Role\nOpen and follow the role guide: %s/code-review-check.md (read-only). You are not the author of the findings.\n' "$guides"
   printf '\n## Rules\n- Write your result to checked.md in the current directory. Write nothing else.\n- Open only files in the current directory, the repository and the role guide.\n- Do not run git commands that change state.\n'
+}
+
+# ---- Gate: the script runs the repository's checks itself, so no agent's reading stands in for them ----
+
+# Run one command with a time limit, in its own process group so a timeout also stops its children.
+# Prints nothing; the exit code is the command's, or 124 when the limit was hit.
+run_limited() { # <seconds> <command>
+  perl -e 'setpgrp(0,0); $SIG{ALRM}=sub{ $SIG{TERM}="IGNORE"; kill("TERM",-$$); exit 124 }; alarm shift;
+    my $p=fork; if(!$p){ exec @ARGV or exit 127 } waitpid($p,0); exit($? >> 8)' "$1" bash -c "$2"
+}
+
+run_gates() { # <command>...   writes $run/00-input/gate.md
+  local out=$run/00-input/gate.md n=$# red=0 c code tmp head target
+  target=$(cat "$run/00-input/target")
+  head=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  tmp=$(mktemp)
+  for c in "$@"; do
+    local log; log=$(mktemp)
+    (cd "$repo" && run_limited "$gate_timeout" "$c") >"$log" 2>&1
+    code=$?
+    {
+      printf '### `%s`\n\n' "$c"
+      if [ "$code" -eq 124 ]; then printf 'exit code: 124 (timed out after %s seconds)\n\n' "$gate_timeout"; else printf 'exit code: %s\n\n' "$code"; fi
+      printf '~~~~\n'; tail -n 100 "$log"; printf '~~~~\n\n'
+    } >>"$tmp"
+    [ "$code" -eq 0 ] || red=$((red + 1))
+    rm -f "$log"
+  done
+  {
+    printf '# Gate\n\n'
+    if [ "$n" -eq 0 ]; then
+      printf 'No gate commands were given (-g), so the repository'"'"'s checks were not run. This is a gap, not a pass.\n'
+    else
+      printf 'The script ran these commands in %s (HEAD %s) before any agent started, outside the agents.\n' "$repo" "$head"
+      [ "$target" = working-tree ] || printf 'The target is a revision range, so the commands ran in the current checkout, which may not be the target.\n'
+      if [ "$red" -eq 0 ]; then printf '\nResult: all green (%s commands).\n\n' "$n"; else printf '\nResult: RED, %s of %s commands failed. A reviewer cannot override a red result.\n\n' "$red" "$n"; fi
+      cat "$tmp"
+    fi
+  } >"$out"
+  rm -f "$tmp"
 }
 
 # ---- Phases: each returns nonzero (with $reason) when it stops ----
@@ -85,6 +134,7 @@ run_review() {
     for f in "$a" $([ "$second" -eq 1 ] && echo "$a-2"); do
       mkdir -p "$d/$f"
       cp "$run/00-input/diff.patch" "$d/$f/diff.patch"
+      cp "$run/00-input/gate.md" "$d/$f/gate.md"
       [ -s "$run/00-input/commits.txt" ] && cp "$run/00-input/commits.txt" "$d/$f/commits.txt"
       case $a in
         standards) rm -rf "$d/$f/standards"; cp -R "$run/00-input/standards" "$d/$f/standards" ;;
@@ -102,6 +152,7 @@ run_check() {
   for a in $(axes); do
     mkdir -p "$d/$a/reports"
     cp "$run/00-input/diff.patch" "$d/$a/diff.patch"
+    cp "$run/00-input/gate.md" "$d/$a/gate.md"
     case $a in
       standards) rm -rf "$d/$a/standards"; cp -R "$run/00-input/standards" "$d/$a/standards" ;;
       spec) cp "$run/00-input/spec.md" "$d/$a/spec.md" ;;
@@ -119,6 +170,9 @@ write_report() {
   {
     printf '# Code review\n\nTarget: %s\n\n' "$(cat "$run/00-input/target")"
     printf '> The checkers confirm the findings below against the diff. They do not show what the reviewers missed: a clean axis is not a clean diff.\n\n'
+    printf '## Gate\n\n'
+    sed -e '1,2d' -e 's/^### /#### /' "$run/00-input/gate.md"
+    printf '\n'
     for a in standards spec; do
       printf '## %s\n\n' "$(axis_title "$a")"
       if [ -s "$run/02-check/$a/checked.md" ]; then
@@ -157,12 +211,12 @@ pipeline() {
 # ---- Commands ----
 
 cmd_start() {
-  local spec="" stds=() second=0
-  while getopts 'm:e:2s:d:' o; do
-    case $o in m) model=$OPTARG ;; e) effort=$OPTARG ;; 2) second=1 ;; s) spec=$OPTARG ;; d) stds+=("$OPTARG") ;; *) exit 1 ;; esac
+  local spec="" stds=() second=0 gates=()
+  while getopts 'm:e:2s:d:g:' o; do
+    case $o in m) model=$OPTARG ;; e) effort=$OPTARG ;; 2) second=1 ;; s) spec=$OPTARG ;; d) stds+=("$OPTARG") ;; g) gates+=("$OPTARG") ;; *) exit 1 ;; esac
   done
   shift $((OPTIND - 1))
-  [ "$#" -eq 2 ] || die 'usage: start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... <name> <target>'
+  [ "$#" -eq 2 ] || die 'usage: start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>'
   valid_name "$1" || die "bad run name: $1"
   local name=$1 target=$2 f
   [ -z "$spec" ] || [ -s "$spec" ] || die "missing or empty spec: $spec"
@@ -203,6 +257,8 @@ cmd_start() {
   printf '%s %s\n' "$model" "$effort" >"$run/settings"
   printf 'time\tevent\n' >"$run/status.log"
   note "start $name ($model $effort, target $target, second reviewer $second)"
+  note "gate: ${#gates[@]} commands"
+  run_gates "${gates[@]+"${gates[@]}"}"
   pipeline
 }
 

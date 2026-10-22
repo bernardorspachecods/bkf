@@ -51,7 +51,7 @@ redo the grouping.
 
 ## Show what you checked
 
-Show what you checked as the `review-work` module requires. Here the list has one
+Show what you checked. Write the list before any problem, never "looks fine": a pass is the same list with no problems under it, and if you did not open part of the input, say which part. Here the list has one
 line for every finding in the collected sources that answers the objective, and
 for each divergence, each small group and each source not consulted: the item,
 and where it is in the digest (view, annex or not found).

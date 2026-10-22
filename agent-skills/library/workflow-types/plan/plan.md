@@ -29,7 +29,14 @@ goal is agreed, hold a discussion first.
 that it can be implemented, reviewed and read on its own. The plan is the
 ordered list of units and what connects them.
 
+**The format is the user's choice.** Do not choose it for them: ask whether they
+want a plan kept in the conversation or a plan that runs on a script with units,
+and explain the difference neutrally. A plan kept in the conversation stays there;
+the rest of this guide is for the plan that runs.
+
 ## How to read this
+
+You are the coordinator, so also read the `coordinate-a-run` module before you start: it holds the rules every run shares.
 
 These are principles with reasons, not a procedure. You can judge; what goes
 wrong in long work is losing the thread, not deciding. Adapt to the task, and
@@ -118,6 +125,14 @@ and ask the user, when you agree the split, who the pauses are for: only for you
 reporting unless a fundamental decision changes), or also for the user to read
 it. Write the answer in the plan and follow it. Step numbers count the lines of
 `plan.txt`; when you add or move a unit, recompute them before you resume.
+
+**Agree the plan before anything runs.** Present the finished plan: the split with
+the reason for each cut, the order, the pauses and the model. You suggest the pauses
+and say what each costs; the user decides the pauses and the model. Wait for their
+agreement on scope, outputs, sequence and settings before the first unit starts. That
+agreement authorizes the units in scope but does not waive a checkpoint the user
+asked for. If a later request conflicts with the settings, stop and reconcile the
+plan first.
 
 **The plan can change, with a reason on record.** A unit that shows the split
 was wrong is a reason to revise the units with the user, not to stretch the unit.

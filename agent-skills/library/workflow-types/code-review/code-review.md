@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: Guides a code review of a branch, pull request, range or working tree, for the coordinator who works with the user. Covers when to review, how to set up the target, how the two axes and their checkers run apart, and what the user receives.
+description: Guides a code review of a branch, pull request, range or working tree, for the coordinator who works with the user. Covers when to review, how to set up the target and run its gate, how the two axes and their checkers run apart, and what the user receives.
 tags: [review, code]
 ---
 
@@ -15,6 +15,8 @@ working tree reviewed. The review has two axes and reports them side by side:
 review finds is a separate task; nothing is sent back from here.
 
 ## How to read this
+
+You are the coordinator, so also read the `coordinate-a-run` module before you start: it holds the rules every run shares.
 
 These are principles with reasons, not a procedure. Adapt to the task, and keep
 what the reasons protect.
@@ -44,19 +46,35 @@ Before anything runs, settle with the user:
 An axis with no criteria is not run. Fewer than two axes is a smaller review, not
 a different workflow, and the report names what was skipped.
 
-## 2. The roles
+## 2. Gate
+
+Before the axis reviewers start, the repository's own deterministic checks run on
+the target: its tests, type check, lint and any other gate the repository defines.
+You find the commands in the repository's documents or scripts, such as the README,
+the package scripts or the CI configuration, and pass each to the script with `-g`.
+The script runs them itself, outside the agents, records each command and its result
+in `00-input`, and gives them to both reviewers as evidence. Reviewers are
+models and can be wrong in either direction, so the deterministic checks are the
+evidence that does not depend on a reviewer's judgment.
+
+- **A red result is a finding.** Say so to the user at once. The review goes on, but
+  no reviewer can override a red result: it stands in the report as a finding of its own.
+- **No check is a gap.** If the repository has no check for the changed behavior,
+  report that absence as a gap. Do not read it as a pass.
+
+## 3. The roles
 
 A script builds the briefs from fixed templates, pins the diff, runs the agents and
 builds the report. You write only the target and name the criteria.
 
 | Role | Does | Receives |
 | --- | --- | --- |
-| [Axis reviewer](/code-review-axis.md) (Standards, Spec) | Finds where the diff breaks its criteria | The diff, the commit list and its own criteria |
-| [Checker](/code-review-check.md) (one per axis) | Confirms each finding against the diff | The diff, the criteria of that axis and its reviewers' findings |
+| [Axis reviewer](/code-review-axis.md) (Standards, Spec) | Finds where the diff breaks its criteria | The diff, the commit list, the gate results and its own criteria |
+| [Checker](/code-review-check.md) (one per axis) | Confirms each finding against the diff | The diff, the gate results, the criteria of that axis and its reviewers' findings |
 
 ```
-Setup ─► Standards reviewer ─► Standards checker ─┐
-         Spec reviewer      ─► Spec checker      ─┴─► Report ─► You add the summary ─► User
+Setup ─► Gate ─► Standards reviewer ─► Standards checker ─┐
+                         Spec reviewer      ─► Spec checker      ─┴─► Report ─► You add the summary ─► User
 ```
 
 Rules that hold whatever the models:
@@ -70,18 +88,20 @@ Rules that hold whatever the models:
   independent reviewer per axis is the only remedy for misses, and the findings are
   merged before the check.
 
-## 3. What the user receives
+## 4. What the user receives
 
 The script writes the report, with the two axes under their own headings and each
-finding marked confirmed or unconfirmed. You add one line at the top: the number of
-findings per axis and the worst one in each. Do not restate the findings.
+finding marked confirmed or unconfirmed. You add at the top: the gate results
+(each command and its result), the number of findings per axis and the worst one in
+each. Do not restate the findings.
 
 State in the report, plainly, that a clean axis is not a clean diff: the checkers
-confirm what was found, not what was missed.
+confirm what was found, not what was missed. Also state what the review could not
+verify by code, such as how a change looks on screen or matters of opinion.
 
-## 4. Where the work lives
+## 5. Where the work lives
 
 One review is one folder in `~/.review-runs/<name>/`: `00-input` (the pinned diff,
-the commits, the criteria), `01-review`, `02-check` and `report.md` at the top. A
-review is usually read and dropped. When it is done, the user chooses: keep the
+the commits, the criteria, the gate results), `01-review`, `02-check` and
+`report.md` at the top. A review is usually read and dropped. When it is done, the user chooses: keep the
 record, copied into `records/reviews/` in the repository, or delete the run.
