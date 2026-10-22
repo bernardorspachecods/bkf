@@ -76,7 +76,7 @@ worth no more than the brief it is checked against.
 
 ## Show what you checked
 
-Show what you checked as the `review-work` module requires. Here the list has one
+Show what you checked. Write the list before any problem, never "looks fine": a pass is the same list with no problems under it, and if you did not open part of the input, say which part. Here the list has one
 line for each of the four questions, with what you compared and where it sits
 (file and line, or the command you ran and its result).
 

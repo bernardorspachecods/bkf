@@ -42,7 +42,7 @@ the front or dropped altogether.
 
 ## Show what you checked
 
-Show what you checked as the `review-work` module requires. Here the list has one
+Show what you checked. Write the list before any problem, never "looks fine": a pass is the same list with no problems under it, and if you did not open part of the input, say which part. Here the list has one
 line for every part of the digest you went through (a finding, a divergence, a
 weak point, a source not consulted): the part, and where it is in the delivery
 (front, annex or not found), including that its source link and location are

@@ -22,9 +22,18 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Conversation Transcript
   - `short_description`: Clean exported session transcripts
 
+## delegate-work
+
+- Description: Hand one short, objective task to another agent, either a Claude subagent or a Codex CLI run, and check what comes back. Use when the user asks to delegate, or when a self-contained task suits a cheaper or parallel agent; do not use for work with several stages, a plan or a branch review (use work-in-stages), or to continue in a new chat (use handoff).
+- Package: [`agent-skills/skills/delegate-work`](skills/delegate-work/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Delegate Work
+  - `short_description`: Hand a short, objective task to a Claude subagent or a Codex run
+
 ## dispatch-codex
 
-- Description: Run work as Codex CLI tasks in the current checkout or separate git worktrees, using a script that records run results. Use when Codex should execute a brief instead of pasting prompts into a Codex window.
+- Description: Run multi-phase workflows (plan, research, council, code review) as Codex CLI scripts that chain agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
 - Package: [`agent-skills/skills/dispatch-codex`](skills/dispatch-codex/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
@@ -50,15 +59,6 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Git Worktree Cleanup
   - `short_description`: Commit relevant worktree changes
 - Runtime policy: `explicit invocation required`
-
-## grill-stuck
-
-- Description: Re-ground unreliable work and recover from failed approaches.
-- Package: [`agent-skills/skills/grill-stuck`](skills/grill-stuck/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Grill Stuck
-  - `short_description`: Recover from a stuck approach
 
 ## handoff
 

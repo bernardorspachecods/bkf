@@ -1,30 +1,16 @@
 ---
 name: dispatch-codex
-description: Run work as Codex CLI tasks in the current checkout or separate git worktrees, using a script that records run results. Use when Codex should execute a brief instead of pasting prompts into a Codex window.
+description: Run multi-phase workflows (plan, research, council, code review) as Codex CLI scripts that chain agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
 ---
 
 ## Use
 
-- Prepare briefs by [brief-another-agent](../../library/modules/brief-another-agent.md), assign work and check handoffs by [delegate-work](../../library/modules/delegate-work.md), and review runs by [review-work](../../library/modules/review-work.md).
+- Briefs are written and handoffs checked by the rules of the `delegate-work` skill.
 - For a whole plan, use [Plan runs](#plan-runs).
-- Show the brief to the user before launching only when they ask to see it or the task was not previously defined. If the task was already defined, launch without showing the brief unless requested.
-
-## Launch
-
-Run [scripts/run-codex.sh](scripts/run-codex.sh) once per brief: `[CODEX_IN_PLACE=1] scripts/run-codex.sh <name> <brief-file> [base-ref] [model] [effort]`.
-
-- Write the brief to the scratchpad. `base-ref` applies in worktree mode and defaults to `HEAD`; for a sequential step, use the prior task's branch.
-- Default to the user's checkout with `CODEX_IN_PLACE=1`, one task at a time. Use worktree mode only for parallel tasks, each on branch `codex/<name>`; a plan's parallel group is handled by [Plan runs](#plan-runs). Never run two tasks in one checkout.
-- In place, the script snapshots tracked files in `base`; review with `git diff $(cat <run-folder>/base)` and compare `status-before.txt` with `status-after.txt` for new files. The brief must forbid git commands that change state.
-- Worktree mode uses a sibling folder `<repo>-codex/<name>`.
-- Defaults: model `gpt-6-luna`, effort `xhigh`; never `gpt-6.1-sol`; override only when the plan names another setting.
-- `gpt-6-luna` is weak on long work, and research across many sources tends to come back shallow. When it runs a brief, split the work into more and smaller briefs than you would for a stronger model; judge how far to split from the task.
-- If the run folder already has a `status` file, the script stops. Set `CODEX_RERUN=1` to deliberately rerun it with the existing behavior.
-- Start each run with Bash `run_in_background: true`. The script prints the run folder when done.
 
 ## Phase runs
 
-For a phase where agents work in parallel and each is reviewed by another agent (research collection, digest, and similar), use [scripts/phase-codex.sh](scripts/phase-codex.sh), not `run-codex.sh`: no git, no branches, no diff. One agent is a phase with one pair.
+For a phase where agents work in parallel and each is reviewed by another agent (research collection, digest, and similar), use [scripts/phase-codex.sh](scripts/phase-codex.sh): no git, no branches, no diff. One agent is a phase with one pair.
 
 - `phase-codex.sh start [-m model] [-e effort] [-f file] <run> <name> <agent-brief> <review-brief> [<name> <agent-brief> <review-brief>]...` creates one plain folder per agent under `~/.phase-runs/<run>/` (or `$PHASE_RUNS_DIR`), runs every agent in parallel, then its reviewer, and repeats by verdict until `pass`, `escalate` or a failure. Each agent writes one file, `output.md` unless `-f` names another. Run it with `run_in_background: true`; it prints each agent's final status. Defaults: `gpt-6-luna`, `xhigh`.
 - The coordinator writes both briefs first. The script only appends the output file name, the reviewer's input and the verdict line format; everything about the phase belongs in the briefs.
@@ -89,24 +75,14 @@ For a [council](../../library/workflow-types/council/council.md), use [scripts/c
 
 ## Review runs
 
-For a [code review](../../library/workflow-types/code-review/code-review.md), use [scripts/review-run.sh](scripts/review-run.sh): `start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... <name> <target>`, where the target is `working-tree` or a revision range such as `main...feature`. A Standards and a Spec agent review the pinned diff apart, a checker per axis confirms each finding, and the script writes `report.md`; `-2` adds a second reviewer per axis. State is in `~/.review-runs/<name>/`, and `finish` keeps the record in `records/reviews/<name>/`.
+For a [code review](../../library/workflow-types/code-review/code-review.md), use [scripts/review-run.sh](scripts/review-run.sh): `start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>`, where the target is `working-tree` or a revision range such as `main...feature`. Each `-g` is a command that verifies the change (tests, type check, lint): the script runs them itself in the repository before any agent starts, records command, output and exit code in `gate.md`, hands the file to every agent and shows it at the top of the report; a red command does not stop the review but stands in the report, and with no `-g` the report says the checks were not run. `REVIEW_GATE_TIMEOUT` (default 900 seconds) limits each command. [scripts/test-review-run-gate.sh](scripts/test-review-run-gate.sh) tests this with a fake `codex`. A Standards and a Spec agent review the pinned diff apart, a checker per axis confirms each finding, and the script writes `report.md`; `-2` adds a second reviewer per axis. State is in `~/.review-runs/<name>/`, and `finish` keeps the record in `records/reviews/<name>/`.
 
 ## Shared code
 
 [scripts/lib-codex.sh](scripts/lib-codex.sh) holds what `phase-codex.sh` and the four run scripts share: running a Codex agent, running a set of agents in parallel, reading a verdict and checking the "What I checked" section. Source it; it defines functions only.
 
-## Read a run
-
-Run folders are `~/.codex-runs/<repo>/<name>/`, or under `$CODEX_RUNS_DIR` when set. Read `status` (`exit=0` means finished; otherwise read `stderr.log`), `last-message.md` (Codex's report), `diffstat.txt`, `worktree` (checkout path), and `base` (diff base). Read the actual diff; do not read `events.jsonl` unless the diff and report disagree.
-
-## Correct a run
-
-Send a correction with `codex exec resume` in the same checkout, or write a new brief. Do not edit Codex's work unless the user asks.
-
 ## Safety and gotchas
 
-- Do not commit or merge unless the user says so.
-- Remove stale worktrees with `git worktree remove` before reusing them.
 - Runs use the `workspace-write` sandbox. It confines writes to the agent's folder, but an agent can still read files outside the checkout, such as the login sessions of CLI tools in the home folder, and reach HTTPS, so it can use any session left open. The repository's own rules say what to keep logged out.
 
 ## Runtime metadata
