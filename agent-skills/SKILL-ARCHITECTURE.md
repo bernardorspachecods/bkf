@@ -4,6 +4,15 @@
 This document is generated from the non-empty packages under `agent-skills/skills/`.
 It contains only package metadata and supported runtime metadata derived from the repository.
 
+## align-intent
+
+- Description: Use at the start of any task that is more than a small change: settle with the user what is wanted and why, and when it is done, before working. Do not use inside a plan, a delegated task or a review: the brief already carries the intent.
+- Package: [`agent-skills/skills/align-intent`](skills/align-intent/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Align intent
+  - `short_description`: Settle what is wanted and why before working, so the agent can work alone
+
 ## brainstorm
 
 - Description: Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions.
@@ -90,12 +99,12 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## repo-library
 
-- Description: Use at the start of any task in a repository, and whenever a repo-specific procedure or rule may apply, to find the repository's own procedures and modules in its repo-library.
+- Description: Use when adding or reviewing an entry of a repository's repo-library: a procedure or rule set that the repository applies repeatedly.
 - Package: [`agent-skills/skills/repo-library`](skills/repo-library/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Repo library
-  - `short_description`: Find and follow a repository's own procedures and modules
+  - `short_description`: Add or review an entry of a repository's repo-library, and make it reachable
 
 ## repo-maintenance
 
