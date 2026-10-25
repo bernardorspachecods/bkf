@@ -1,0 +1,666 @@
+diff --git a/agent-skills/skills/dispatch-codex/SKILL.md b/agent-skills/skills/dispatch-codex/SKILL.md
+index be5e125..34de68a 100644
+--- a/agent-skills/skills/dispatch-codex/SKILL.md
++++ b/agent-skills/skills/dispatch-codex/SKILL.md
+@@ -92,7 +92,7 @@ For a [code review](../../library/workflow-types/code-review/code-review.md), us
+ 
+ ## Shared code
+ 
+-The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), [review module](harness/harness/engine/review.py), [unit loop module](harness/harness/engine/loop.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), [agent step tests](harness/tests/test_engine_agentstep.py), [review tests](harness/tests/test_engine_review.py), and [unit loop tests](harness/tests/test_engine_loop.py). `bkf skills` requires links to every module and test file.
++The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [workflow contract module](harness/harness/engine/workflow.py), [workflow pipeline module](harness/harness/engine/pipeline.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), [review module](harness/harness/engine/review.py), [unit loop module](harness/harness/engine/loop.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [workflow pipeline tests](harness/tests/test_engine_pipeline.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), [agent step tests](harness/tests/test_engine_agentstep.py), [review tests](harness/tests/test_engine_review.py), and [unit loop tests](harness/tests/test_engine_loop.py). `bkf skills` requires links to every module and test file.
+ 
+ Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness ...`.
+ 
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/cli.py b/agent-skills/skills/dispatch-codex/harness/harness/cli.py
+index 1d5e198..eab1e68 100644
+--- a/agent-skills/skills/dispatch-codex/harness/harness/cli.py
++++ b/agent-skills/skills/dispatch-codex/harness/harness/cli.py
+@@ -6,6 +6,7 @@ from .agent import run_agent
+ from .gate import run_gate
+ from .inject import InjectionError, inject_rules
+ from .verdict import checked_ok, read_verdict
++from .engine.pipeline import main as run_workflow
+ 
+ 
+ def _parser():
+@@ -39,12 +40,17 @@ def _parser():
+     agent_run_parser.add_argument("--sandbox", default="workspace-write")
+     agent_run_parser.add_argument("--tier")
+     agent_run_parser.add_argument("--backend", default="codex")
++    run_parser = subparsers.add_parser("run")
++    run_parser.add_argument("definition_path")
++    run_parser.add_argument("arguments", nargs=argparse.REMAINDER)
+     return parser
+ 
+ 
+ def main(argv=None):
+     parser = _parser()
+     args = parser.parse_args(argv)
++    if args.area == "run":
++        return run_workflow(args.definition_path, args.arguments)
+     if args.area == "agent":
+         return run_agent(
+             args.dir,
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/agentstep.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/agentstep.py
+index bd386f8..a42b567 100644
+--- a/agent-skills/skills/dispatch-codex/harness/harness/engine/agentstep.py
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/agentstep.py
+@@ -15,9 +15,9 @@ class StepResult(NamedTuple):
+ 
+ def tier_from_environment(environ=None):
+     environment = os.environ if environ is None else environ
+-    if "PLAN_CODEX_TIER" not in environment:
++    if "HARNESS_CODEX_TIER" not in environment:
+         return "fast"
+-    return environment["PLAN_CODEX_TIER"] or None
++    return environment["HARNESS_CODEX_TIER"] or None
+ 
+ 
+ def run_agent_step(
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/diffbase.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/diffbase.py
+index a90afb2..51c48ed 100644
+--- a/agent-skills/skills/dispatch-codex/harness/harness/engine/diffbase.py
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/diffbase.py
+@@ -1,4 +1,4 @@
+-"""Checkout tree snapshots and patches for plan runs."""
++"""Checkout tree snapshots and patches for workflow runs."""
+ import os
+ import subprocess
+ import tempfile
+@@ -36,7 +36,7 @@ def snapshot_tree(checkout):
+         pass
+     try:
+         descriptor, index_path = tempfile.mkstemp(
+-            prefix="plan-run-index.", dir=str(temporary_directory)
++            prefix="harness-run-index.", dir=str(temporary_directory)
+         )
+     except OSError as error:
+         raise RunError("cannot snapshot the checkout {0}".format(checkout)) from error
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/loop.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/loop.py
+index 3d6c02f..a6a914d 100644
+--- a/agent-skills/skills/dispatch-codex/harness/harness/engine/loop.py
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/loop.py
+@@ -1,4 +1,4 @@
+-"""Run the implementation, gate, and review loop for one plan unit."""
++"""Run the implementation, gate, and review loop for one workflow unit."""
+ import os
+ import shutil
+ import time
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/metrics.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/metrics.py
+index a7874b2..0e52796 100644
+--- a/agent-skills/skills/dispatch-codex/harness/harness/engine/metrics.py
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/metrics.py
+@@ -1,4 +1,4 @@
+-"""Implementation round metrics recorded by plan runs."""
++"""Implementation round metrics recorded by workflow runs."""
+ import re
+ import time
+ from pathlib import Path
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/pipeline.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/pipeline.py
+new file mode 100644
+index 0000000..d7ed57e
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/pipeline.py
+@@ -0,0 +1,229 @@
++"""Run a workflow definition using persisted run state."""
++
++import importlib.util
++import os
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++from .lock import acquire, is_active
++from .run import RunDir, RunError, Settings, valid_name, valid_pause
++from .workflow import Context, Stop
++
++
++def _load_workflow(definition_path):
++    definition = os.path.abspath(os.fspath(definition_path))
++    directory = os.path.dirname(definition)
++    if directory not in sys.path:
++        sys.path.insert(0, directory)
++    spec = importlib.util.spec_from_file_location("harness_workflow_definition", definition)
++    if spec is None or spec.loader is None:
++        raise RunError("cannot load workflow definition: {0}".format(definition_path))
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    workflow = getattr(module, "WORKFLOW", None)
++    from .workflow import Workflow
++    if not isinstance(workflow, Workflow):
++        raise RunError("workflow definition must define WORKFLOW as a Workflow")
++    return workflow
++
++
++def _root(workflow):
++    env_name = "{0}_RUNS_DIR".format(workflow.name.upper().replace("-", "_"))
++    root = os.environ.get("HARNESS_RUNS_DIR") or os.environ.get(env_name)
++    return Path(root) if root else Path.home() / ".{0}-runs".format(workflow.name)
++
++
++def _repo():
++    try:
++        result = subprocess.run(
++            ["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE,
++            stderr=subprocess.DEVNULL, text=True, check=False,
++        )
++    except OSError:
++        return None
++    return result.stdout.rstrip("\n") if result.returncode == 0 else None
++
++
++def _pipeline(ctx, workflow):
++    run = ctx.run
++    print("Run folder: {0}".format(run.path))
++    steps = workflow.steps(ctx)
++    for step in steps:
++        key = step.number
++        marker = "S{0}".format(key)
++        if run.is_done(marker):
++            continue
++        ctx.note("start step {0}: {1} ({2} {3})".format(
++            key, step.label, run.settings.model, run.settings.effort
++        ))
++        ctx.progress("{0} {1}".format(marker, step.label))
++        try:
++            step.run(ctx)
++        except Stop as stopped:
++            ctx.note("STOPPED at step {0}: {1}".format(key, stopped.reason))
++            ctx.note(workflow.fix_hint(ctx))
++            ctx.progress("{0} parou".format(marker))
++            print("STOPPED at step {0} ({1}): {2}\nSee {3}/status.log".format(
++                key, step.label, stopped.reason, run.path
++            ))
++            return 1
++        run.mark_done(marker)
++        ctx.note("done step {0}".format(key))
++        ctx.progress("{0} concluído".format(marker))
++        workflow.after_step(ctx, step)
++        if run.pause_here(key):
++            run.mark_paused(key)
++            ctx.note("PAUSED after step {0}: read {1}, then: {2} resume {3}".format(
++                key, run.path, workflow.command, run.name
++            ))
++            ctx.progress("{0} pausa".format(marker))
++            print("PAUSED after step {0} ({1}). Read it in {2}, then: {3} resume {4}\nSee {2}/status.log".format(
++                key, step.label, run.path, workflow.command, run.name
++            ))
++            return 3
++
++    final_step = workflow.final_step(ctx) if not run.is_done("report") else None
++    if final_step is not None:
++        ctx.note("start final review ({0} {1})".format(run.settings.model, run.settings.effort))
++        ctx.progress("final · revisão")
++        try:
++            final_step.run(ctx)
++        except Stop as stopped:
++            ctx.note("STOPPED at the final review: {0}".format(stopped.reason))
++            ctx.progress("final · parou")
++            print("STOPPED at the final review: {0}\nSee {1}/status.log".format(stopped.reason, run.path))
++            return 1
++        run.mark_done("report")
++        ctx.note("done final review")
++        ctx.progress("final · concluído")
++    ready = workflow.ready_path(ctx)
++    ctx.note("READY: report at {0}".format(ready))
++    print("READY: {0}\nSee {1}/status.log".format(ready, run.path))
++    return 0
++
++
++def _options(args, defaults=None):
++    values = dict(defaults or {})
++    index = 0
++    while index < len(args) and args[index].startswith("-"):
++        option = args[index]
++        if option in ("-m", "-e", "-r", "-p") and index + 1 < len(args):
++            key = {"-m": "model", "-e": "effort", "-r": "review_effort", "-p": "pause"}[option]
++            values[key] = args[index + 1]
++            index += 2
++        else:
++            break
++    return values, args[index:]
++
++
++def _check_pause(text):
++    if text and not valid_pause(text):
++        raise RunError("bad checkpoints: {0} (use each, none, or step numbers like 2,4)".format(text))
++
++
++def _start(workflow, args):
++    options, rest = _options(args, {"model": "gpt-6-luna", "effort": "xhigh", "review_effort": "", "pause": ""})
++    if len(rest) < 1:
++        raise RunError(workflow.usage_start)
++    name, workflow_args = rest[0], rest[1:]
++    if not valid_name(name):
++        raise RunError("bad run name: {0}".format(name))
++    _check_pause(options["pause"])
++    workflow.validate_start(workflow_args)
++    repo = _repo()
++    if repo is None:
++        raise RunError(workflow.repo_hint)
++    path = _root(workflow) / name
++    if path.exists():
++        raise RunError("run already exists: {0} (finish it, or resume it)".format(path))
++    run = RunDir.create(_root(workflow), name, repo, Settings(
++        options["model"], options["effort"], options["review_effort"]
++    ), options["pause"])
++    with acquire(run.path, "harness"):
++        ctx = Context(run, workflow)
++        workflow.start(ctx, workflow_args)
++        board = workflow.board(ctx)
++        if board:
++            print(board, end="" if board.endswith("\n") else "\n", file=sys.stderr)
++        return _pipeline(ctx, workflow)
++
++
++def _resume(workflow, args):
++    options, rest = _options(args)
++    if len(rest) != 1:
++        raise RunError("usage: resume [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name>")
++    run = RunDir.load(_root(workflow), rest[0])
++    with acquire(run.path, "harness"):
++        if "pause" in options:
++            _check_pause(options["pause"])
++            run.set_pause(options["pause"])
++        current = run.settings or Settings("gpt-6-luna", "xhigh", "")
++        settings = Settings(
++            options.get("model", current.model), options.get("effort", current.effort),
++            options.get("review_effort", current.review_effort),
++        )
++        if _repo() != run.repo:
++            raise RunError("run resume inside the {0}'s repository: {1}".format(workflow.name, run.repo))
++        run.save_settings(settings)
++        ctx = Context(run, workflow)
++        ctx.note("resume")
++        return _pipeline(ctx, workflow)
++
++
++def _finish(workflow, args):
++    discard = bool(args and args[0] == "--discard")
++    rest = args[1:] if discard else args
++    if len(rest) != 1:
++        raise RunError("usage: finish [--discard] <name>")
++    run = RunDir.load(_root(workflow), rest[0])
++    if is_active(run.path, "harness"):
++        pid = (run.path / ".lock").read_text(encoding="ascii").rstrip("\n")
++        raise RunError("run {0} is being worked on by pid {1}: finish it when it stops".format(rest[0], pid))
++    if discard:
++        shutil.rmtree(run.path)
++        print("Removed {0}".format(run.path))
++        return 0
++    ctx = Context(run, workflow)
++    if not Path(workflow.ready_path(ctx)).is_file():
++        raise RunError("there is no final review in this run: nothing to keep")
++    if _repo() != run.repo:
++        raise RunError("run finish inside the {0}'s repository: {1}".format(workflow.name, run.repo))
++    workflow.finish(ctx)
++    return 0
++
++
++def main(definition_path, argv):
++    try:
++        workflow = _load_workflow(definition_path)
++        if not argv:
++            raise RunError("usage: {0} start|resume|status|board|finish ...".format(workflow.command))
++        command, args = argv[0], argv[1:]
++        if command == "start":
++            return _start(workflow, args)
++        if command == "resume":
++            return _resume(workflow, args)
++        if command == "status":
++            if len(args) != 1:
++                raise RunError("usage: status <name>")
++            run = RunDir.load(_root(workflow), args[0])
++            sys.stdout.write((run.path / "status.log").read_text(encoding="utf-8"))
++            return 0
++        if command == "board":
++            if len(args) != 1:
++                raise RunError("usage: board <name>")
++            run = RunDir.load(_root(workflow), args[0])
++            board = workflow.board(Context(run, workflow))
++            if board:
++                sys.stdout.write(board)
++            return 0
++        if command == "finish":
++            return _finish(workflow, args)
++        extra = workflow.commands().get(command)
++        if extra is not None:
++            return extra(args)
++        raise RunError("usage: {0} start|resume|status|board|finish ...".format(workflow.command))
++    except RunError as error:
++        print("Error: {0}".format(error), file=sys.stderr)
++        return 1
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/run.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/run.py
+index 41199b2..cf67e0b 100644
+--- a/agent-skills/skills/dispatch-codex/harness/harness/engine/run.py
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/run.py
+@@ -37,7 +37,7 @@ def _read_settings(path):
+ 
+ 
+ class RunDir:
+-    """The persisted state of one plan run."""
++    """The persisted state of one workflow run."""
+ 
+     def __init__(self, path, repo, settings, pause):
+         self.path = Path(path)
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/workflow.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/workflow.py
+new file mode 100644
+index 0000000..b9550d6
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/workflow.py
+@@ -0,0 +1,85 @@
++"""Interfaces implemented by workflow definitions."""
++
++import sys
++
++
++class Stop(Exception):
++    """A workflow step stopped and can be resumed after its cause is fixed."""
++
++    def __init__(self, reason):
++        super().__init__(reason)
++        self.reason = reason
++
++
++class Step:
++    """One numbered step or the workflow's final review."""
++
++    def __init__(self, number, label, runner=None):
++        self.number = number
++        self.label = label
++        self._runner = runner
++
++    def run(self, ctx):
++        if self._runner is None:
++            raise NotImplementedError
++        return self._runner(ctx)
++
++
++class Context:
++    """The run state and output helpers exposed to a workflow."""
++
++    def __init__(self, run, workflow):
++        self.run = run
++        self.settings = run.settings
++        self.repo = run.repo
++        self.workflow = workflow
++
++    def progress(self, text):
++        print("[{0}] {1}\n".format(self.workflow.name, text), file=sys.stderr)
++        board = self.workflow.board(self)
++        if board:
++            print(board, end="" if board.endswith("\n") else "\n", file=sys.stderr)
++
++    def note(self, text):
++        self.run.note(text)
++
++
++class Workflow:
++    """Base contract for a workflow definition."""
++
++    name = None
++    command = None
++    usage_start = None
++    repo_hint = None
++
++    def validate_start(self, args):
++        raise NotImplementedError
++
++    def start(self, ctx, args):
++        raise NotImplementedError
++
++    def steps(self, ctx):
++        raise NotImplementedError
++
++    def final_step(self, ctx):
++        raise NotImplementedError
++
++    def after_step(self, ctx, step):
++        return None
++
++    def board(self, ctx):
++        return ""
++
++    def fix_hint(self, ctx):
++        return "Read the rounds in {0}, then: {1} resume {2}".format(
++            ctx.run.path, self.command, ctx.run.name
++        )
++
++    def ready_path(self, ctx):
++        raise NotImplementedError
++
++    def finish(self, ctx):
++        raise NotImplementedError
++
++    def commands(self):
++        return {}
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_engine_agentstep.py b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_agentstep.py
+index f817093..46fd569 100644
+--- a/agent-skills/skills/dispatch-codex/harness/tests/test_engine_agentstep.py
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_agentstep.py
+@@ -17,8 +17,8 @@ class AgentStepTests(unittest.TestCase):
+ 
+     def test_tier_from_environment_distinguishes_unset_empty_and_value(self):
+         self.assertEqual(agentstep.tier_from_environment({}), "fast")
+-        self.assertIsNone(agentstep.tier_from_environment({"PLAN_CODEX_TIER": ""}))
+-        self.assertEqual(agentstep.tier_from_environment({"PLAN_CODEX_TIER": "priority"}), "priority")
++        self.assertIsNone(agentstep.tier_from_environment({"HARNESS_CODEX_TIER": ""}))
++        self.assertEqual(agentstep.tier_from_environment({"HARNESS_CODEX_TIER": "priority"}), "priority")
+ 
+     def test_run_agent_step_reports_quota_and_records_note(self):
+         events = self.root / "run.events.jsonl"
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_engine_diffbase.py b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_diffbase.py
+index 77c8417..a05d187 100644
+--- a/agent-skills/skills/dispatch-codex/harness/tests/test_engine_diffbase.py
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_diffbase.py
+@@ -129,16 +129,16 @@ class DiffBaseTests(unittest.TestCase):
+         self.assertEqual(output.read_text(), "")
+ 
+     def test_snapshot_index_is_removed(self):
+-        before = set(Path(tempfile.gettempdir()).glob("plan-run-index.*"))
++        before = set(Path(tempfile.gettempdir()).glob("harness-run-index.*"))
+         snapshot_tree(self.checkout)
+-        after = set(Path(tempfile.gettempdir()).glob("plan-run-index.*"))
++        after = set(Path(tempfile.gettempdir()).glob("harness-run-index.*"))
+         self.assertEqual(after, before)
+ 
+     def test_snapshot_index_is_removed_when_snapshot_fails(self):
+-        before = set(Path(tempfile.gettempdir()).glob("plan-run-index.*"))
++        before = set(Path(tempfile.gettempdir()).glob("harness-run-index.*"))
+         with self.assertRaises(RunError):
+             snapshot_tree(self.root / "missing")
+-        after = set(Path(tempfile.gettempdir()).glob("plan-run-index.*"))
++        after = set(Path(tempfile.gettempdir()).glob("harness-run-index.*"))
+         self.assertEqual(after, before)
+ 
+     def test_snapshot_base_reports_checkout_on_snapshot_failure(self):
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_engine_pipeline.py b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_pipeline.py
+new file mode 100644
+index 0000000..e84b14f
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_pipeline.py
+@@ -0,0 +1,183 @@
++import contextlib
++import io
++import os
++import subprocess
++import sys
++import tempfile
++import textwrap
++import unittest
++from unittest.mock import patch
++from pathlib import Path
++
++from harness.cli import main as cli_main
++from harness.engine.pipeline import main
++
++
++class PipelineTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = Path(self.temp.name)
++        self.repo = self.root / "repo"
++        self.repo.mkdir()
++        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
++        self.runs = self.root / "runs"
++        self.definition = self.root / "workflow.py"
++        self.definition.write_text(textwrap.dedent("""
++            from pathlib import Path
++            from harness.engine.agentstep import run_agent_step
++            from harness.gate import run_gate
++            from harness.engine.workflow import Step, Stop, Workflow
++
++            class Work(Workflow):
++                name = "tiny"
++                command = "tiny-run.sh"
++                usage_start = "usage: start [-p checkpoints] <name>"
++                repo_hint = "run start inside a repository"
++                def validate_start(self, args):
++                    if args and args[0] == "bad":
++                        from harness.engine.run import RunError
++                        raise RunError("bad argument")
++                def start(self, ctx, args):
++                    (ctx.run.path / "input").write_text("\\n".join(args) + "\\n")
++                    if args == ["stop"]:
++                        (ctx.run.path / "stop").touch()
++                    ctx.note("start " + ctx.run.name)
++                def steps(self, ctx):
++                    def first(ctx):
++                        prompt = ctx.run.path / "agent-prompt.md"
++                        prompt.write_text("do the step\\n")
++                        result = run_agent_step(
++                            ctx.run, "agent step", ctx.repo, str(prompt),
++                            str(ctx.run.path / "agent"), ctx.settings.model,
++                            ctx.settings.effort, "workspace-write", None,
++                            "agent failed with exit=<exit>",
++                        )
++                        if not result.ok:
++                            raise Stop(result.reason)
++                    def second(ctx):
++                        if (ctx.run.path / "stop").exists():
++                            raise Stop("cause remains")
++                        result = run_gate(ctx.repo, 10, ctx.run.path / "gate", ["test -d .git"])
++                        if result["red"]:
++                            raise Stop("gate failed")
++                        (ctx.run.path / "second").write_text("ok\\n")
++                    return [Step(1, "agent step", first), Step(2, "gate step", second)]
++                def final_step(self, ctx):
++                    def finish(ctx):
++                        (ctx.run.path / "report.md").write_text("ready\\n")
++                    return Step("final", "review", finish)
++                def board(self, ctx):
++                    return "BOARD\\n"
++                def ready_path(self, ctx):
++                    return str(ctx.run.path / "report.md")
++                def finish(self, ctx):
++                    return None
++
++            WORKFLOW = Work()
++        """), encoding="utf-8")
++        self.env = {"HARNESS_RUNS_DIR": str(self.runs)}
++        self.bin_dir = self.root / "bin"
++        self.bin_dir.mkdir()
++        codex = self.bin_dir / "codex"
++        codex.write_text(
++            "#!/usr/bin/env python3\n"
++            "import pathlib, sys\n"
++            "out = pathlib.Path(sys.argv[sys.argv.index('-o') + 1])\n"
++            "out.write_text('agent completed\\n')\n",
++            encoding="utf-8",
++        )
++        codex.chmod(0o755)
++        self.env["PATH"] = str(self.bin_dir) + os.pathsep + os.environ.get("PATH", "")
++
++    def tearDown(self):
++        self.temp.cleanup()
++
++    def call(self, *args, cwd=None):
++        stdout, stderr = io.StringIO(), io.StringIO()
++        previous = os.getcwd()
++        os.chdir(cwd or self.repo)
++        try:
++            with patch.dict(os.environ, self.env), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
++                code = main(str(self.definition), list(args))
++        finally:
++            os.chdir(previous)
++        return code, stdout.getvalue(), stderr.getvalue()
++
++    def test_full_run_and_status_board_finish(self):
++        code, out, err = self.call("start", "sample", "input")
++        run = self.runs / "sample"
++        self.assertEqual(code, 0)
++        self.assertEqual(out, "Run folder: {0}\nREADY: {0}/report.md\nSee {0}/status.log\n".format(run))
++        self.assertIn("BOARD\n", err)
++        self.assertTrue((run / ".done-S1").is_file())
++        self.assertTrue((run / ".done-S2").is_file())
++        self.assertTrue((run / ".done-report").is_file())
++        self.assertFalse((run / ".lock").exists())
++        self.assertIn("start step 1: agent step (gpt-6-luna xhigh)", (run / "status.log").read_text())
++        self.assertIn("READY: report at {0}/report.md".format(run), (run / "status.log").read_text())
++        self.assertEqual(self.call("status", "sample")[1], (run / "status.log").read_text())
++        self.assertEqual(self.call("board", "sample")[1], "BOARD\n")
++        self.assertEqual(self.call("finish", "--discard", "sample")[1], "Removed {0}\n".format(run))
++
++    def test_pause_resume_and_stopped_resume(self):
++        code, out, _ = self.call("start", "-p", "each", "paused")
++        self.assertEqual(code, 3)
++        self.assertIn("PAUSED after step 1 (agent step).", out)
++        self.assertEqual(self.call("resume", "-p", "none", "paused")[0], 0)
++        code, out, _ = self.call("start", "stopped", "stop")
++        self.assertEqual(code, 1)
++        self.assertIn("STOPPED at step 2 (gate step): cause remains", out)
++        (self.runs / "stopped" / "stop").unlink()
++        code, _, _ = self.call("resume", "stopped")
++        self.assertEqual(code, 0)
++        self.assertTrue((self.runs / "stopped" / ".done-S2").is_file())
++        self.assertTrue((self.runs / "stopped" / "second").is_file())
++
++    def test_finish_requires_ready_file(self):
++        self.call("start", "unfinished", "stop")
++        code, _, err = self.call("finish", "unfinished")
++        self.assertEqual(code, 1)
++        self.assertIn("there is no final review in this run: nothing to keep", err)
++
++    def test_existing_run_refused_and_bad_usage(self):
++        self.call("start", "dup")
++        code, _, err = self.call("start", "dup")
++        self.assertEqual(code, 1)
++        self.assertIn("run already exists:", err)
++        code, _, err = self.call("unknown")
++        self.assertEqual(code, 1)
++        self.assertIn("usage: tiny-run.sh start|resume|status|board|finish ...", err)
++
++    def test_resume_lock_and_finish_lock(self):
++        run = self.runs / "locked"
++        self.call("start", "locked")
++        (run / ".lock").write_text(str(os.getpid()) + "\n", encoding="ascii")
++        active_process = subprocess.CompletedProcess([], 0, stdout="harness\n")
++        with patch("harness.engine.lock.subprocess.run", return_value=active_process):
++            code, _, err = self.call("finish", "locked")
++            self.assertEqual(code, 1)
++            self.assertIn("finish it when it stops", err)
++            code, _, err = self.call("resume", "locked")
++            self.assertEqual(code, 1)
++            self.assertIn("already being worked on", err)
++        (run / ".lock").unlink()
++
++    def test_step_stop_is_not_marked_done(self):
++        self.call("start", "stopped", "stop")
++        self.assertFalse((self.runs / "stopped" / ".done-S2").exists())
++
++    def test_cli_run_dispatches_to_definition(self):
++        stdout, stderr = io.StringIO(), io.StringIO()
++        previous = os.getcwd()
++        os.chdir(self.repo)
++        try:
++            with patch.dict(os.environ, self.env), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
++                code = cli_main(["run", str(self.definition), "start", "cli"])
++        finally:
++            os.chdir(previous)
++        self.assertEqual(code, 0)
++        self.assertIn("READY:", stdout.getvalue())
++
++
++if __name__ == "__main__":
++    unittest.main()

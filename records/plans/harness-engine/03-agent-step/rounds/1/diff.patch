@@ -1,0 +1,383 @@
+diff --git a/agent-skills/skills/dispatch-codex/SKILL.md b/agent-skills/skills/dispatch-codex/SKILL.md
+index 025482b..7c36987 100644
+--- a/agent-skills/skills/dispatch-codex/SKILL.md
++++ b/agent-skills/skills/dispatch-codex/SKILL.md
+@@ -92,7 +92,7 @@ For a [code review](../../library/workflow-types/code-review/code-review.md), us
+ 
+ ## Shared code
+ 
+-The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [diff base tests](harness/tests/test_engine_diffbase.py), and [round metrics tests](harness/tests/test_engine_metrics.py). `bkf skills` requires links to every module and test file.
++The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), and [agent step tests](harness/tests/test_engine_agentstep.py). `bkf skills` requires links to every module and test file.
+ 
+ Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness ...`.
+ 
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/agent.py b/agent-skills/skills/dispatch-codex/harness/harness/agent.py
+index b80fdab..26cf4b2 100644
+--- a/agent-skills/skills/dispatch-codex/harness/harness/agent.py
++++ b/agent-skills/skills/dispatch-codex/harness/harness/agent.py
+@@ -2,6 +2,7 @@
+ 
+ import subprocess
+ import sys
++from typing import Optional
+ 
+ from .inject import InjectionError, inject_rules
+ 
+@@ -14,6 +15,9 @@ class Backend:
+     def arguments(self, directory, model, effort, sandbox, tier, last_message):
+         raise NotImplementedError
+ 
++    def quota_text(self, events_path) -> Optional[str]:
++        return None
++
+ 
+ class CodexBackend(Backend):
+     """Build the Codex CLI arguments used by scripts/lib-codex.sh."""
+@@ -43,10 +47,31 @@ class CodexBackend(Backend):
+         )
+         return command
+ 
++    def quota_text(self, events_path) -> Optional[str]:
++        try:
++            with open(events_path, "r", encoding="utf-8") as events:
++                for line in events:
++                    if "hit your usage limit" not in line:
++                        continue
++                    marker = "try again at "
++                    if marker in line:
++                        text = line.rsplit(marker, 1)[1]
++                    else:
++                        marker = '"message":"'
++                        text = line.rsplit(marker, 1)[1] if marker in line else line
++                    return text.rsplit('"', 1)[0]
++        except (OSError, UnicodeError):
++            return None
++        return None
++
+ 
+ BACKENDS = {"codex": CodexBackend}
+ 
+ 
++def get_backend(name):
++    return BACKENDS.get(name)
++
++
+ def run_agent(
+     directory,
+     prompt_file,
+@@ -58,7 +83,7 @@ def run_agent(
+     backend="codex",
+ ):
+     """Inject prompt rules, run a backend in the foreground, and return its status."""
+-    backend_class = BACKENDS.get(backend)
++    backend_class = get_backend(backend)
+     if backend_class is None:
+         print("backend not implemented: {0}".format(backend), file=sys.stderr)
+         return 2
+diff --git a/agent-skills/skills/dispatch-codex/harness/harness/engine/agentstep.py b/agent-skills/skills/dispatch-codex/harness/harness/engine/agentstep.py
+new file mode 100644
+index 0000000..8b96fce
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/harness/engine/agentstep.py
+@@ -0,0 +1,109 @@
++"""Run one agent step or a parallel group of agents."""
++
++import os
++from concurrent.futures import ThreadPoolExecutor
++from typing import NamedTuple, Optional
++
++from .. import agent
++
++
++class StepResult(NamedTuple):
++    ok: bool
++    reason: str
++    quota: Optional[str]
++
++
++def tier_from_environment(environ=None):
++    environment = os.environ if environ is None else environ
++    if "PLAN_CODEX_TIER" not in environment:
++        return "fast"
++    return environment["PLAN_CODEX_TIER"] or None
++
++
++def run_agent_step(
++    run,
++    label,
++    directory,
++    prompt_file,
++    out_prefix,
++    model,
++    effort,
++    sandbox,
++    tier,
++    reason_when_not_quota,
++    backend="codex",
++):
++    status = agent.run_agent(
++        directory, prompt_file, out_prefix, model, effort, sandbox, tier, backend
++    )
++    if status == 0:
++        return StepResult(True, "", None)
++
++    backend_class = agent.get_backend(backend)
++    events_path = out_prefix + ".events.jsonl"
++    quota = backend_class().quota_text(events_path) if backend_class is not None else None
++    if quota is not None:
++        run.note("QUOTA: {0}".format(quota))
++        return StepResult(
++            False,
++            "{0}: usage limit reached. QUOTA: {1} (see {2})".format(
++                label, quota, events_path
++            ),
++            quota,
++        )
++    return StepResult(False, reason_when_not_quota, None)
++
++
++def run_agents(phase_dir, output_file, folders, model, effort, tier, backend="codex"):
++    phase_path = os.fspath(phase_dir)
++    pending = [
++        folder
++        for folder in folders
++        if not os.path.isfile(os.path.join(phase_path, folder, output_file))
++        or os.path.getsize(os.path.join(phase_path, folder, output_file)) == 0
++    ]
++
++    def run_folder(folder):
++        directory = os.path.join(phase_path, folder)
++        out_prefix = os.path.join(directory, "run")
++        status = agent.run_agent(
++            directory,
++            os.path.join(directory, "brief.md"),
++            out_prefix,
++            model,
++            effort,
++            "workspace-write",
++            tier,
++            backend,
++        )
++        if status != 0:
++            failed_path = os.path.join(directory, "failed")
++            with open(failed_path, "w", encoding="utf-8", newline="") as failed:
++                failed.write(
++                    "exit={0} (see {1})".format(
++                        status, os.path.join(directory, "run.stderr.log")
++                    )
++                    + "\n"
++                )
++
++    with ThreadPoolExecutor(max_workers=max(1, len(pending))) as executor:
++        futures = [executor.submit(run_folder, folder) for folder in pending]
++        for future in futures:
++            future.result()
++
++    bad = []
++    for folder in folders:
++        directory = os.path.join(phase_path, folder)
++        output_path = os.path.join(directory, output_file)
++        if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
++            failed_path = os.path.join(directory, "failed")
++            if os.path.isfile(failed_path):
++                with open(failed_path, "r", encoding="utf-8") as failed:
++                    failure = failed.read().rstrip("\n")
++            else:
++                failure = "wrote no {0}".format(output_file)
++            bad.append("{0}: {1}; ".format(folder, failure))
++        failed_path = os.path.join(directory, "failed")
++        if os.path.exists(failed_path):
++            os.remove(failed_path)
++    return StepResult(not bad, "".join(bad), None)
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py b/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py
+index b16edc3..c08fc51 100644
+--- a/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_agent.py
+@@ -7,6 +7,7 @@ import sys
+ import tempfile
+ import unittest
+ 
++from harness import agent
+ 
+ HARNESS_DIR = pathlib.Path(__file__).resolve().parents[1]
+ 
+@@ -200,5 +201,37 @@ class AgentCliTests(unittest.TestCase):
+         self.assertIn(b"backend not implemented: claude", result.stderr)
+         self.assertFalse(self.arg_log.exists())
+ 
++    def test_backend_quota_text_matches_bash_extraction(self):
++        backend = agent.CodexBackend()
++        events = self.root / "quota.events.jsonl"
++        cases = (
++            ('{"message":"You\'ve hit your usage limit. try again at 2026-10-23 10:00 UTC"}\n',
++             "2026-10-23 10:00 UTC"),
++            ('{"message":"You’ve hit your usage limit. try again at tomorrow \\"later\\""}\n',
++             'tomorrow \\"later\\"'),
++            ('{"message":"You’ve hit your usage limit. Please wait"}\n',
++             "You’ve hit your usage limit. Please wait"),
++        )
++        for content, expected in cases:
++            with self.subTest(content=content):
++                events.write_text(content, encoding="utf-8")
++                self.assertEqual(backend.quota_text(str(events)), expected)
++
++    def test_backend_quota_text_uses_first_matching_line_and_returns_none_without_match(self):
++        backend = agent.CodexBackend()
++        events = self.root / "quota.events.jsonl"
++        events.write_text(
++            '{"message":"hit your usage limit; try again at first"}\n'
++            '{"message":"hit your usage limit; try again at second"}\n',
++            encoding="utf-8",
++        )
++        self.assertEqual(backend.quota_text(str(events)), "first")
++        events.write_text('{"message":"other event"}\n', encoding="utf-8")
++        self.assertIsNone(backend.quota_text(str(events)))
++
++    def test_get_backend_returns_registered_class_or_none(self):
++        self.assertIs(agent.get_backend("codex"), agent.CodexBackend)
++        self.assertIsNone(agent.get_backend("unknown"))
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_engine_agentstep.py b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_agentstep.py
+new file mode 100644
+index 0000000..de33aea
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_engine_agentstep.py
+@@ -0,0 +1,136 @@
++import os
++import pathlib
++import tempfile
++import unittest
++from unittest import mock
++
++from harness.engine import agentstep
++
++
++class AgentStepTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = pathlib.Path(self.temp.name)
++
++    def tearDown(self):
++        self.temp.cleanup()
++
++    def test_tier_from_environment_distinguishes_unset_empty_and_value(self):
++        self.assertEqual(agentstep.tier_from_environment({}), "fast")
++        self.assertIsNone(agentstep.tier_from_environment({"PLAN_CODEX_TIER": ""}))
++        self.assertEqual(agentstep.tier_from_environment({"PLAN_CODEX_TIER": "priority"}), "priority")
++
++    def test_run_agent_step_reports_quota_and_records_note(self):
++        events = self.root / "run.events.jsonl"
++        events.write_text("quota event\n", encoding="utf-8")
++        run = mock.Mock()
++        with mock.patch("harness.engine.agentstep.agent.run_agent", return_value=42), mock.patch(
++            "harness.agent.CodexBackend.quota_text", return_value="retry tomorrow"
++        ) as quota_text:
++            result = agentstep.run_agent_step(
++                run, "review", str(self.root), "brief.md", str(self.root / "run"),
++                "model", "high", "workspace-write", "fast", "ordinary failure",
++            )
++        self.assertEqual(
++            result,
++            agentstep.StepResult(
++                False,
++                "review: usage limit reached. QUOTA: retry tomorrow (see {0})".format(events),
++                "retry tomorrow",
++            ),
++        )
++        quota_text.assert_called_once_with(str(events))
++        run.note.assert_called_once_with("QUOTA: retry tomorrow")
++
++    def test_run_agent_step_keeps_non_quota_reason_and_success(self):
++        run = mock.Mock()
++        with mock.patch("harness.engine.agentstep.agent.run_agent", return_value=9), mock.patch(
++            "harness.agent.CodexBackend.quota_text", return_value=None
++        ):
++            result = agentstep.run_agent_step(
++                run, "implement", str(self.root), "brief.md", str(self.root / "run"),
++                "model", "high", "workspace-write", "fast", "given reason",
++            )
++        self.assertEqual(result, agentstep.StepResult(False, "given reason", None))
++        run.note.assert_not_called()
++        with mock.patch("harness.engine.agentstep.agent.run_agent", return_value=0):
++            result = agentstep.run_agent_step(
++                run, "implement", str(self.root), "brief.md", str(self.root / "run"),
++                "model", "high", "workspace-write", "fast", "given reason",
++            )
++        self.assertEqual(result, agentstep.StepResult(True, "", None))
++
++    def make_fake_codex(self, code="0", overlap=False):
++        bin_dir = self.root / "bin"
++        bin_dir.mkdir(exist_ok=True)
++        executable = bin_dir / "codex"
++        executable.write_text(
++            "#!/usr/bin/env python3\n"
++            "import os, pathlib, sys, time\n"
++            "cwd = pathlib.Path(sys.argv[sys.argv.index('-C') + 1])\n"
++            "if os.environ.get('OVERLAP') == '1':\n"
++            "    marker = pathlib.Path(os.environ['MARKERS']) / (cwd.name + '.started')\n"
++            "    marker.touch()\n"
++            "    other = pathlib.Path(os.environ['MARKERS']) / (('one' if cwd.name == 'two' else 'two') + '.started')\n"
++            "    deadline = time.time() + 8\n"
++            "    while not other.exists() and time.time() < deadline: time.sleep(0.02)\n"
++            "    if not other.exists(): sys.exit(99)\n"
++            "code = int(os.environ.get('FAKE_CODE', '" + code + "'))\n"
++            "if code == 0: (cwd / os.environ.get('OUTPUT_FILE', 'output.md')).write_text('done')\n"
++            "sys.exit(code)\n",
++            encoding="utf-8",
++        )
++        executable.chmod(0o755)
++        return bin_dir
++
++    def prepare_folder(self, phase_dir, name):
++        folder = phase_dir / name
++        folder.mkdir(parents=True)
++        (folder / "brief.md").write_text("brief", encoding="utf-8")
++        return folder
++
++    def test_run_agents_overlaps_and_skips_existing_output(self):
++        phase = self.root / "phase"
++        phase.mkdir()
++        one = self.prepare_folder(phase, "one")
++        two = self.prepare_folder(phase, "two")
++        bin_dir = self.make_fake_codex(overlap=True)
++        with mock.patch.dict(os.environ, {
++            "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
++            "OVERLAP": "1", "MARKERS": str(self.root), "OUTPUT_FILE": "output.md",
++        }):
++            result = agentstep.run_agents(str(phase), "output.md", ["one", "two"], "model", "high", "fast")
++        self.assertTrue(result.ok, result.reason)
++        self.assertTrue((self.root / "one.started").exists())
++        self.assertTrue((self.root / "two.started").exists())
++        (one / "output.md").write_text("already done", encoding="utf-8")
++        one_events = one / "run.events.jsonl"
++        one_events.write_text("must stay untouched", encoding="utf-8")
++        (two / "output.md").unlink()
++        with mock.patch.dict(os.environ, {
++            "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
++            "OUTPUT_FILE": "output.md",
++        }, clear=False):
++            os.environ.pop("OVERLAP", None)
++            result = agentstep.run_agents(str(phase), "output.md", ["one", "two"], "model", "high", "fast")
++        self.assertTrue(result.ok, result.reason)
++        self.assertEqual(one_events.read_text(), "must stay untouched")
++        self.assertEqual((two / "output.md").read_text(), "done")
++
++    def test_run_agents_failure_reason_contains_failed_file_text_and_removes_marker(self):
++        phase = self.root / "phase"
++        phase.mkdir()
++        folder = self.prepare_folder(phase, "broken")
++        bin_dir = self.make_fake_codex(code="7")
++        with mock.patch.dict(os.environ, {
++            "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
++            "FAKE_CODE": "7", "OUTPUT_FILE": "output.md",
++        }):
++            result = agentstep.run_agents(str(phase), "output.md", ["broken"], "model", "high", None)
++        self.assertFalse(result.ok)
++        self.assertEqual(result.reason, "broken: exit=7 (see {0}/run.stderr.log); ".format(folder))
++        self.assertFalse((folder / "failed").exists())
++
++
++if __name__ == "__main__":
++    unittest.main()

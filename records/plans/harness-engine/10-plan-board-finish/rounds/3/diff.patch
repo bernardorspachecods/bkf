@@ -1,0 +1,558 @@
+diff --git a/agent-skills/skills/dispatch-codex/SKILL.md b/agent-skills/skills/dispatch-codex/SKILL.md
+index b98e3aa..f83afca 100644
+--- a/agent-skills/skills/dispatch-codex/SKILL.md
++++ b/agent-skills/skills/dispatch-codex/SKILL.md
+@@ -92,7 +92,7 @@ For a [code review](../../library/workflow-types/code-review/code-review.md), us
+ 
+ ## Shared code
+ 
+-The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [workflow contract module](harness/harness/engine/workflow.py), [workflow pipeline module](harness/harness/engine/pipeline.py), [plan input workflow module](workflows/plan_inputs.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), [review module](harness/harness/engine/review.py), [unit loop module](harness/harness/engine/loop.py), [plan workflow module](workflows/plan.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [workflow pipeline tests](harness/tests/test_engine_pipeline.py), [plan input tests](harness/tests/test_workflow_plan_inputs.py), [plan workflow tests](harness/tests/test_workflow_plan.py), [plan test support](harness/tests/plan_test_support.py), [engine robustness tests](harness/tests/test_engine_robustness.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), [agent step tests](harness/tests/test_engine_agentstep.py), [review tests](harness/tests/test_engine_review.py), and [unit loop tests](harness/tests/test_engine_loop.py). `bkf skills` requires links to every module and test file.
++The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [workflow contract module](harness/harness/engine/workflow.py), [workflow pipeline module](harness/harness/engine/pipeline.py), [plan input workflow module](workflows/plan_inputs.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), [review module](harness/harness/engine/review.py), [unit loop module](harness/harness/engine/loop.py), [plan workflow module](workflows/plan.py), [plan board and record module](workflows/plan_board.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [workflow pipeline tests](harness/tests/test_engine_pipeline.py), [plan input tests](harness/tests/test_workflow_plan_inputs.py), [plan workflow tests](harness/tests/test_workflow_plan.py), [plan board and record tests](harness/tests/test_workflow_plan_board.py), [plan test support](harness/tests/plan_test_support.py), [engine robustness tests](harness/tests/test_engine_robustness.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), [agent step tests](harness/tests/test_engine_agentstep.py), [review tests](harness/tests/test_engine_review.py), and [unit loop tests](harness/tests/test_engine_loop.py). `bkf skills` requires links to every module and test file.
+ 
+ Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness ...`.
+ 
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_workflow_plan_board.py b/agent-skills/skills/dispatch-codex/harness/tests/test_workflow_plan_board.py
+new file mode 100644
+index 0000000..4151ea5
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_workflow_plan_board.py
+@@ -0,0 +1,227 @@
++"""Board and record behavior for sequential plan runs."""
++import contextlib
++import io
++import unittest
++from unittest.mock import patch
++
++from harness.engine.run import RunDir, Settings, RunError
++from harness.engine.pipeline import _load_workflow
++from plan_test_support import PlanRunFixture, _WORKFLOW
++
++
++WORKFLOW = _load_workflow(_WORKFLOW)
++
++
++class PlanBoardTests(unittest.TestCase):
++    def setUp(self):
++        self.fixture = PlanRunFixture(self)
++        self.run_path = self.fixture.runs / "board"
++        self.run_path.mkdir(parents=True)
++        (self.run_path / "00-input" / "units").mkdir(parents=True)
++        (self.run_path / "00-input" / "order").write_text("01-alpha\n02-beta\n", encoding="utf-8")
++        self.run = RunDir(self.run_path, str(self.fixture.repo.resolve()), Settings("m", "e", ""), "")
++        (self.run_path / "status.log").write_text(
++            "time\tevent\n2026-10-23T09:10:00\tstart board (m e)\n", encoding="utf-8"
++        )
++
++    def tearDown(self):
++        self.fixture.close()
++
++    def ctx(self):
++        from harness.engine.workflow import Context
++        return Context(self.run, WORKFLOW)
++
++    def unit(self, unit, status="implementing round 1", rounds=1, verdict=None, gate=None):
++        directory = self.run_path / unit
++        round_path = directory / "rounds" / str(rounds)
++        round_path.mkdir(parents=True, exist_ok=True)
++        (directory / "status").write_text(status + "\n", encoding="utf-8")
++        if verdict:
++            (round_path / "verdict").write_text(verdict + "\n", encoding="utf-8")
++        if gate:
++            (round_path / "gate.md").write_text(gate, encoding="utf-8")
++
++    def board(self):
++        with patch("plan_board._now_time", return_value="10:11"):
++            return WORKFLOW.board(self.ctx())
++
++    def assert_board(self, alpha, beta, final="  ○ Revisão final  pendente\n"):
++        expected = (
++            "Plano board · 2 unidades · início 09:10 → agora 10:11\n\n"
++            "Passo 1\n" + alpha + "\n"
++            "Passo 2\n" + beta + "\n"
++            + final
++        )
++        self.assertEqual(self.board(), expected)
++
++    def test_board_pending_rows_and_padding(self):
++        expected = (
++            "Plano board · 2 unidades · início 09:10 → agora 10:11\n\n"
++            "Passo 1\n  ○ 01-alpha       pendente\n\n"
++            "Passo 2\n  ○ 02-beta        pendente\n\n"
++            "  ○ Revisão final  pendente\n"
++        )
++        self.assertEqual(self.board(), expected)
++
++    def test_board_implementation_review_red_gate_pass_and_escalated(self):
++        self.unit("01-alpha", "reviewing round 1")
++        self.assert_board(
++            "  ◐ 01-alpha       revisão · ronda 1\n",
++            "  ○ 02-beta        pendente\n",
++        )
++        self.unit("02-beta", "implementing round 2", rounds=2, verdict="back",
++                  gate="Result: RED\n")
++        (self.run_path / ".done-S1").touch()
++        self.assert_board(
++            "  ✓ 01-alpha       passou · 1 ronda\n",
++            "  ↩ 02-beta        gate falhou · ronda 3 a implementar\n",
++        )
++        (self.run_path / "02-beta/status").write_text("escalated\n", encoding="utf-8")
++        self.assert_board(
++            "  ✓ 01-alpha       passou · 1 ronda\n",
++            "  ✗ 02-beta        escalada\n",
++        )
++
++    def test_board_red_gate_return_and_final_review_states(self):
++        self.unit("01-alpha", "implementing round 2", rounds=2)
++        (self.run_path / "01-alpha/rounds/1").mkdir(parents=True)
++        (self.run_path / "01-alpha/rounds/1/verdict").write_text("back\n", encoding="utf-8")
++        (self.run_path / "01-alpha/rounds/1/gate.md").write_text("Result: RED\n", encoding="utf-8")
++        self.unit("02-beta", "reviewing round 1")
++        self.run.note("STOPPED at the final review: pending")
++        self.assert_board(
++            "  ↩ 01-alpha       gate falhou · ronda 2 a implementar\n",
++            "  ◐ 02-beta        revisão · ronda 1\n",
++            "  ✗ Revisão final  parou\n",
++        )
++
++    def test_board_other_unit_and_final_states(self):
++        self.unit("01-alpha", "implementing round 1")
++        self.unit("02-beta", "gate round 1")
++        self.assert_board(
++            "  ◐ 01-alpha       implementação · ronda 1\n",
++            "  ◐ 02-beta        gate · ronda 1\n",
++        )
++
++        self.unit("02-beta", "reviewing round 1")
++        self.assert_board(
++            "  ◐ 01-alpha       implementação · ronda 1\n",
++            "  ◐ 02-beta        revisão · ronda 1\n",
++        )
++
++        (self.run_path / "01-alpha/rounds/1/verdict").write_text("back\n", encoding="utf-8")
++        (self.run_path / "01-alpha/rounds/1/gate.md").write_text("green\n", encoding="utf-8")
++        self.unit("01-alpha", "implementing round 2", rounds=2)
++        self.assert_board(
++            "  ↩ 01-alpha       devolvida · ronda 2 a implementar\n",
++            "  ◐ 02-beta        revisão · ronda 1\n",
++        )
++
++        self.unit("02-beta", "passed", verdict="pass")
++        self.assert_board(
++            "  ↩ 01-alpha       devolvida · ronda 2 a implementar\n",
++            "  ✓ 02-beta        passou · 1 ronda\n",
++        )
++        (self.run_path / "01-alpha/rounds/3").mkdir()
++        self.unit("01-alpha", "implementing round 3", rounds=3)
++        self.run.note("STOPPED at step 1: held")
++        self.assert_board(
++            "  ✗ 01-alpha       parou · ronda 3\n",
++            "  ✓ 02-beta        passou · 1 ronda\n",
++        )
++
++        self.run.note("start final review (m e)")
++        self.assert_board(
++            "  ✗ 01-alpha       parou · ronda 3\n",
++            "  ✓ 02-beta        passou · 1 ronda\n",
++            "  ◐ Revisão final  revisão\n",
++        )
++        (self.run_path / "report.md").write_text("done\n", encoding="utf-8")
++        self.assert_board(
++            "  ✗ 01-alpha       parou · ronda 3\n",
++            "  ✓ 02-beta        passou · 1 ronda\n",
++            "  ✓ Revisão final  passou\n",
++        )
++
++    def test_real_run_progress_and_board_command_show_the_board(self):
++        self.fixture.add_brief("unit")
++        plan = self.fixture.write_plan("unit.md")
++        output, errors = io.StringIO(), io.StringIO()
++        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
++            code = self.fixture.call("start", "live-board", str(self.fixture.goal), str(plan))
++        self.assertEqual(code, 0)
++        self.assertIn("Plano live-board · 1 unidades · início ", errors.getvalue())
++        self.assertIn("Passo 1\n  ◐ 01-unit", errors.getvalue())
++        board_output, board_errors = io.StringIO(), io.StringIO()
++        with contextlib.redirect_stdout(board_output), contextlib.redirect_stderr(board_errors):
++            code = self.fixture.call("board", "live-board")
++        self.assertEqual(code, 0)
++        self.assertIn("Revisão final", board_output.getvalue())
++        self.assertEqual(board_errors.getvalue(), "")
++
++    def test_finish_copies_filtered_record_writes_summary_and_removes_run(self):
++        (self.run_path / "report.md").write_text("review\n", encoding="utf-8")
++        (self.run_path / "00-input" / "goal.md").write_text("goal\n", encoding="utf-8")
++        rounds = self.run_path / "01-alpha" / "rounds" / "1"
++        rounds.mkdir(parents=True)
++        (rounds / "verdict").write_text("pass\n", encoding="utf-8")
++        (self.run_path / "02-beta" / "rounds" / "1").mkdir(parents=True)
++        (self.run_path / "02-beta" / "rounds" / "1" / "verdict").write_text("back\n", encoding="utf-8")
++        (self.run_path / "metrics.tsv").write_text("01-alpha\t1\t2\t3\t4\t1500\n", encoding="utf-8")
++        for name in ("raw.events.jsonl", "raw.stderr.log", "x.last-message.md", ".hidden", "a.attempt-1",
++                     "untracked-x.txt", "base", "plan-base", "x.worktree.log", "repo", "pause", "settings",
++                     "status", "status.log"):
++            (self.run_path / name).write_text("excluded\n", encoding="utf-8")
++        (self.fixture.repo / "AGENTS.md").write_text("Repository instructions.\n", encoding="utf-8")
++        output, errors = io.StringIO(), io.StringIO()
++        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors), patch(
++            "plan_board._repo_root", return_value=str(self.fixture.repo.resolve())
++        ):
++            WORKFLOW.finish(self.ctx())
++        destination = self.fixture.repo.resolve() / "records" / "plans" / "board"
++        self.assertFalse(self.run_path.exists())
++        self.assertTrue((destination / "report.md").is_file())
++        self.assertTrue((destination / "metrics.tsv").is_file())
++        self.assertFalse(any((destination / name).exists() for name in (
++            "raw.events.jsonl", "raw.stderr.log", "x.last-message.md", ".hidden", "a.attempt-1",
++            "untracked-x.txt", "base", "plan-base", "x.worktree.log", "repo", "pause", "settings",
++            "status", "status.log",
++        )))
++        summary = (destination / "status.md").read_text(encoding="utf-8")
++        self.assertEqual(summary, (
++            "# Plan summary\n\nRun: board\n\n| Step | Unit | Rounds | Last verdict |\n|---|---|---|---|\n"
++            "| 1 | 01-alpha | 1 | pass |\n| 2 | 02-beta | 1 | back |\n"
++            "\n## Implementation rounds\n\n| Unit | Round | Minutes | Steps | Files | Input tokens (k) |\n"
++            "|---|---|---|---|---|---|\n| 01-alpha | 1 | 2 | 3 | 4 | 1 |\n"
++            "\nThe final review is in report.md.\n"
++        ))
++        self.assertTrue(output.getvalue().startswith("Kept in "))
++        self.assertIn("Note: {0}/AGENTS.md does not mention records/.".format(self.fixture.repo.resolve()), output.getvalue())
++
++    def test_finish_refuses_existing_destination(self):
++        (self.run_path / "report.md").write_text("review\n", encoding="utf-8")
++        destination = self.fixture.repo.resolve() / "records" / "plans" / "board"
++        destination.mkdir(parents=True)
++        with patch("plan_board._repo_root", return_value=str(self.fixture.repo.resolve())):
++            with self.assertRaisesRegex(RunError, "already exists: {0}".format(destination)):
++                WORKFLOW.finish(self.ctx())
++        self.assertTrue(self.run_path.exists())
++
++    def test_finish_refuses_run_without_final_review(self):
++        destination = self.fixture.repo.resolve() / "records" / "plans" / "board"
++        with patch("plan_board._repo_root", return_value=str(self.fixture.repo.resolve())):
++            with self.assertRaisesRegex(RunError, "there is no final review in this run: nothing to keep"):
++                WORKFLOW.finish(self.ctx())
++        self.assertTrue(self.run_path.exists())
++        self.assertFalse(destination.exists())
++
++        (self.run_path / "report.md").write_text("", encoding="utf-8")
++        with patch("plan_board._repo_root", return_value=str(self.fixture.repo.resolve())):
++            with self.assertRaisesRegex(RunError, "there is no final review in this run: nothing to keep"):
++                WORKFLOW.finish(self.ctx())
++        self.assertTrue(self.run_path.exists())
++        self.assertFalse(destination.exists())
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/agent-skills/skills/dispatch-codex/workflows/plan.py b/agent-skills/skills/dispatch-codex/workflows/plan.py
+index aaf2a34..65bb3a7 100644
+--- a/agent-skills/skills/dispatch-codex/workflows/plan.py
++++ b/agent-skills/skills/dispatch-codex/workflows/plan.py
+@@ -11,6 +11,7 @@ from harness.engine.workflow import Step, Stop, Workflow
+ from harness.engine.run import RunError
+ 
+ import plan_inputs
++import plan_board
+ 
+ 
+ class _Limits(NamedTuple):
+@@ -194,10 +195,10 @@ class PlanWorkflow(Workflow):
+         )
+ 
+     def board(self, ctx):
+-        return ""
++        return plan_board.board(ctx.run)
+ 
+     def finish(self, ctx):
+-        raise NotImplementedError("plan finish is the next unit")
++        return plan_board.finish(ctx)
+ 
+     def commands(self):
+         return {"gates": plan_inputs.gates_command}
+diff --git a/agent-skills/skills/dispatch-codex/workflows/plan_board.py b/agent-skills/skills/dispatch-codex/workflows/plan_board.py
+new file mode 100644
+index 0000000..1cdf816
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/workflows/plan_board.py
+@@ -0,0 +1,281 @@
++"""Board, summary and record helpers for sequential plan runs."""
++import fnmatch
++import os
++import re
++import shutil
++import subprocess
++from datetime import datetime
++from pathlib import Path
++
++
++_EXCLUDES = (
++    "*.events.jsonl", "*.stderr.log", "*.last-message.md", ".*", "*.attempt-*",
++    "untracked-*.txt", "base", "plan-base", "*.worktree.log", "repo", "pause",
++    "settings", "status", "status.log",
++)
++
++
++def _read(path, default=""):
++    try:
++        return Path(path).read_text(encoding="utf-8")
++    except (OSError, UnicodeError):
++        return default
++
++
++def _now_time():
++    return datetime.now().strftime("%H:%M")
++
++
++def _emit(icon, label, state, width):
++    return "  {0} {1}{2}  {3}\n".format(icon, label, " " * max(0, width - len(label)), state)
++
++
++def _round_count(directory):
++    rounds = Path(directory) / "rounds"
++    try:
++        return sum(1 for path in rounds.glob("[0-9]*") if path.is_dir())
++    except OSError:
++        return 0
++
++
++def _state_row(run_path, unit, step, step_done, step_stopped, width):
++    directory = Path(run_path) / unit
++    status = _read(directory / "status").rstrip("\r\n")
++    rounds = _round_count(directory)
++    icon, state = "○", "pendente"
++    match = re.fullmatch(r"(implementing|gate|reviewing|integrating) round ([0-9]+)", status)
++    if step_done or status == "passed":
++        icon, state = "✓", "passou"
++        if rounds == 1:
++            state += " · 1 ronda"
++        elif rounds > 1:
++            state += " · {0} rondas".format(rounds)
++    elif status == "escalated":
++        icon, state = "✗", "escalada"
++    elif match:
++        phase, round_text = match.groups()
++        round_number = int(round_text)
++        current = _read(directory / "rounds" / round_text / "verdict").rstrip("\r\n")
++        previous = _read(directory / "rounds" / str(round_number - 1) / "verdict").rstrip("\r\n") if round_number > 1 else ""
++        back_round = round_number if current == "back" else (round_number - 1 if previous == "back" else None)
++        if back_round is not None:
++            gate = _read(directory / "rounds" / str(back_round) / "gate.md")
++            icon = "↩"
++            if re.search(r"^Result: RED", gate, re.MULTILINE):
++                state = "gate falhou · ronda {0} a implementar".format(back_round + 1)
++            else:
++                state = "devolvida · ronda {0} a implementar".format(back_round + 1)
++        elif current == "pass":
++            icon, state = "✓", "passou"
++            if rounds == 1:
++                state += " · 1 ronda"
++            elif rounds > 1:
++                state += " · {0} rondas".format(rounds)
++        elif current == "escalate":
++            icon, state = "✗", "escalada"
++        elif step_stopped:
++            icon, state = "✗", "parou · ronda {0}".format(round_number)
++        else:
++            icon = "◐"
++            state = {
++                "implementing": "implementação",
++                "gate": "gate",
++                "reviewing": "revisão",
++                "integrating": "integrar",
++            }[phase] + " · ronda {0}".format(round_number)
++    return _emit(icon, unit, state, width)
++
++
++def _step_stopped(events, step):
++    stopped = False
++    prefix = "STOPPED at step {0}".format(step)
++    for event in events:
++        if event == "resume":
++            stopped = False
++        elif event.startswith(prefix + ":") or event.startswith(prefix + " "):
++            stopped = True
++    return stopped
++
++
++def board(run):
++    """Return the sequential plan board using only files in the run directory."""
++    run_path = Path(run.path)
++    order_path = run_path / "00-input" / "order"
++    order_text = _read(order_path)
++    lines = [line.split() for line in order_text.splitlines() if line.split()]
++    units = [unit for line in lines for unit in line]
++    width = max([13] + [len(unit) for unit in units])
++    events = [line.split("\t", 1)[1] for line in _read(run_path / "status.log").splitlines()[1:] if "\t" in line]
++    status_lines = _read(run_path / "status.log").splitlines()
++    stamp = status_lines[1].split("\t", 1)[0] if len(status_lines) > 1 and "\t" in status_lines[1] else ""
++    start_time = stamp.partition("T")[2][:5] or "--:--"
++    result = "Plano {0} · {1} unidades · início {2} → agora {3}\n\n".format(
++        run_path.name, len(units), start_time, _now_time()
++    )
++    for step, line in enumerate(lines, 1):
++        result += "Passo {0}\n".format(step)
++        step_done = (run_path / ".done-S{0}".format(step)).exists()
++        stopped = _step_stopped(events, step)
++        for unit in line:
++            result += _state_row(run_path, unit, step, step_done, stopped, width)
++        result += "\n"
++    final_state = 0
++    for event in events:
++        if event.startswith("start final review"):
++            final_state = 1
++        elif event.startswith("STOPPED at the final review:"):
++            final_state = 2
++        elif event == "resume" and final_state == 2:
++            final_state = 1
++    if (run_path / "report.md").exists():
++        final_icon, final_status = "✓", "passou"
++    elif final_state == 2:
++        final_icon, final_status = "✗", "parou"
++    elif final_state == 1:
++        final_icon, final_status = "◐", "revisão"
++    else:
++        final_icon, final_status = "○", "pendente"
++    return result + _emit(final_icon, "Revisão final", final_status, width)
++
++
++def _summary_rounds(directory):
++    rounds_path = Path(directory) / "rounds"
++    try:
++        names = sorted(path.name for path in rounds_path.iterdir() if not path.name.startswith("."))
++    except OSError:
++        names = []
++    # ls | sort -n orders numbered directories numerically and picks the last entry.
++    names.sort(key=lambda value: (int(value) if value.isdigit() else 0, value))
++    last = names[-1] if names else ""
++    verdict = _read(rounds_path / last / "verdict").rstrip("\r\n") if last else "-"
++    return len(names), verdict or "-"
++
++
++def write_summary(run):
++    run_path = Path(run.path)
++    output = [
++        "# Plan summary\n\nRun: {0}\n\n| Step | Unit | Rounds | Last verdict |\n|---|---|---|---|\n".format(run_path.name)
++    ]
++    order = _read(run_path / "00-input" / "order").splitlines()
++    for index, line in enumerate(order, 1):
++        for unit in line.split():
++            count, verdict = _summary_rounds(run_path / unit)
++            output.append("| {0} | {1} | {2} | {3} |\n".format(index, unit, count, verdict))
++    metrics = run_path / "metrics.tsv"
++    if metrics.is_file() and metrics.stat().st_size:
++        output.append("\n## Implementation rounds\n\n| Unit | Round | Minutes | Steps | Files | Input tokens (k) |\n|---|---|---|---|---|---|\n")
++        for line in _read(metrics).splitlines():
++            fields = line.split("\t")
++            fields += [""] * (6 - len(fields))
++            try:
++                tokens = int(float(fields[5])) // 1000
++            except ValueError:
++                tokens = 0
++            output.append("| {0} | {1} | {2} | {3} | {4} | {5} |\n".format(*(fields[:5] + [tokens])))
++    output.append("\nThe final review is in report.md.\n")
++    with (run_path / "status.md").open("w", encoding="utf-8", newline="") as status:
++        status.write("".join(output))
++
++
++def _excluded(relative):
++    return any(fnmatch.fnmatch(part, pattern) for part in relative.parts for pattern in _EXCLUDES)
++
++
++def _copy_record(source, destination):
++    for base, dirs, files in os.walk(str(source), topdown=True, followlinks=False):
++        base_path = Path(base)
++        relative_base = base_path.relative_to(source)
++        kept_dirs = []
++        for name in dirs:
++            relative = relative_base / name
++            if not _excluded(relative):
++                kept_dirs.append(name)
++                target = destination / relative
++                if (base_path / name).is_symlink():
++                    target.parent.mkdir(parents=True, exist_ok=True)
++                    target.symlink_to(os.readlink(str(base_path / name)))
++                else:
++                    target.mkdir(parents=True, exist_ok=True)
++        dirs[:] = kept_dirs
++        for name in files:
++            relative = relative_base / name
++            if _excluded(relative):
++                continue
++            origin, target = source / relative, destination / relative
++            target.parent.mkdir(parents=True, exist_ok=True)
++            if origin.is_symlink():
++                target.symlink_to(os.readlink(str(origin)))
++            else:
++                shutil.copy2(str(origin), str(target))
++
++
++def _repo_root():
++    try:
++        result = subprocess.run(
++            ["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE,
++            stderr=subprocess.DEVNULL, universal_newlines=True, check=False,
++        )
++    except OSError:
++        return None
++    return result.stdout.rstrip("\n") if result.returncode == 0 else None
++
++
++def _record_matches(source, destination):
++    def kept(root):
++        result = set()
++        for base, dirs, files in os.walk(str(root), topdown=True, followlinks=False):
++            relative_base = Path(base).relative_to(root)
++            dirs[:] = [name for name in dirs if not _excluded(relative_base / name)]
++            for name in dirs + files:
++                relative = relative_base / name
++                if not _excluded(relative):
++                    result.add(relative)
++        return result
++
++    source_paths, destination_paths = kept(source), kept(destination)
++    if source_paths != destination_paths:
++        return False
++    for relative in source_paths:
++        left, right = source / relative, destination / relative
++        if left.is_symlink() or right.is_symlink():
++            if not (left.is_symlink() and right.is_symlink() and os.readlink(str(left)) == os.readlink(str(right))):
++                return False
++        elif left.is_file() and right.is_file():
++            if left.read_bytes() != right.read_bytes():
++                return False
++    return True
++
++
++def finish(ctx):
++    run = ctx.run
++    run_path = run.path
++    report = run_path / "report.md"
++    if not report.is_file() or report.stat().st_size == 0:
++        from harness.engine.run import RunError
++        raise RunError("there is no final review in this run: nothing to keep")
++    repo = Path(run.repo).resolve()
++    current_repo = _repo_root()
++    if current_repo is None or Path(current_repo).resolve() != repo:
++        from harness.engine.run import RunError
++        raise RunError("run finish inside the plan's repository: {0}".format(repo))
++    destination = repo / "records" / "plans" / run.name
++    if destination.exists():
++        from harness.engine.run import RunError
++        raise RunError("already exists: {0}".format(destination))
++    destination.mkdir(parents=True)
++    write_summary(run)
++    try:
++        _copy_record(run_path, destination)
++        if not _record_matches(run_path, destination):
++            from harness.engine.run import RunError
++            raise RunError("copy to {0} does not match; nothing deleted".format(destination))
++    except OSError:
++        from harness.engine.run import RunError
++        raise RunError("copy to {0} failed; nothing deleted".format(destination))
++    shutil.rmtree(run_path)
++    print("Kept in {0}; removed {1}".format(destination, run_path))
++    agents = repo / "AGENTS.md"
++    if "records/" not in _read(agents):
++        print(
++            "Note: {0}/AGENTS.md does not mention records/. Add a line saying records/ holds the history of past runs, not rules, to be opened only when asked.".format(repo)
++        )

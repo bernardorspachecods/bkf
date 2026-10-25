@@ -6,6 +6,7 @@ from .agent import run_agent
 from .gate import run_gate
 from .inject import InjectionError, inject_rules
 from .verdict import checked_ok, read_verdict
+from .engine.pipeline import main as run_workflow
 
 
 def _parser():
@@ -39,12 +40,17 @@ def _parser():
     agent_run_parser.add_argument("--sandbox", default="workspace-write")
     agent_run_parser.add_argument("--tier")
     agent_run_parser.add_argument("--backend", default="codex")
+    run_parser = subparsers.add_parser("run")
+    run_parser.add_argument("definition_path")
+    run_parser.add_argument("arguments", nargs=argparse.REMAINDER)
     return parser
 
 
 def main(argv=None):
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.area == "run":
+        return run_workflow(args.definition_path, args.arguments)
     if args.area == "agent":
         return run_agent(
             args.dir,

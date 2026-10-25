@@ -1,0 +1,51 @@
+diff --git a/agent-skills/skills/dispatch-codex/SKILL.md b/agent-skills/skills/dispatch-codex/SKILL.md
+index 704ec4e..42e3a15 100644
+--- a/agent-skills/skills/dispatch-codex/SKILL.md
++++ b/agent-skills/skills/dispatch-codex/SKILL.md
+@@ -96,6 +96,8 @@ The `harness/` project is a standard-library Python CLI called by the scripts th
+ 
+ Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness ...`.
+ 
++The shared engine and its first workflow are described in [The engine](#the-engine).
++
+ - `gate run --cwd DIR --timeout SECONDS --out DIR [--note TEXT]... -- COMMAND...` writes `gate.md`, `gate.json`, and `gate-N.log` files in `DIR`; it exits 0 when all commands pass, 1 when any fail, or 2 for invalid usage or a runner error.
+ - `inject PROMPT_FILE` adds requested rules to the prompt file; it exits 0 on success, 1 for an invalid injection request, or 2 for an operating-system error.
+ - `verdict read FILE` prints the valid verdict from the last non-empty line and exits 0, or exits 1 for a missing or invalid verdict. `verdict checked FILE --min N` exits 0 when `## What I checked` has at least `N` non-empty lines (or `N` is zero or less), otherwise 1.
+@@ -103,6 +105,37 @@ Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-cod
+ 
+ The `lib-codex.sh` library now provides wrappers under the former names—`codex_run`, `inject_rules`, `read_verdict`, and `checked_ok`—plus `run_agents` for parallel launches. Source it to define the functions; the separate injection library file no longer exists. A role guide requests injection with a line such as `<!-- inject: ../../modules/core-code-principles.md -->`; the script adds the rule text to the brief under a `## Rules from <name>` heading, then adds a marker so retries inject it only once. [`scripts/test-inject.sh`](scripts/test-inject.sh) checks injection and its use by `codex_run` with a fake `codex` command.
+ 
++## The engine
++
++The engine is the common loop that runs a workflow definition. It loads the definition from a path, calls its `Workflow` methods, and knows no workflow by name. A workflow contributes the ordered steps and small functions for its inputs, board, final review and finish behavior. The plan workflow supplies briefs and role guides for its prompts.
++
++Each run has a folder under `~/.<workflow-name>-runs/<name>` by default. `HARNESS_RUNS_DIR` or `<WORKFLOW_NAME>_RUNS_DIR` can set the root; for plan these are `HARNESS_RUNS_DIR` and `PLAN_RUNS_DIR`, with `HARNESS_RUNS_DIR` taking precedence. The folder holds `status.log`, which starts with `time<TAB>event` and records timestamped events such as `start step`, `done step`, `PAUSED`, `STOPPED`, `QUOTA`, `INTERRUPTED`, `CRASHED` and `READY`. A `.lock` file prevents two live harness runs from working on the same run; stale locks are replaced. The workflow's `board` method renders progress from the run state. `finish` calls the workflow's `finish` method; for plan, it keeps the record and removes the run folder. `finish --discard <name>` removes the run without keeping a record.
++
++Use the general command form `harness run <definition-path> start|resume|status|board|finish ...`. The plan wrapper, [`scripts/plan-run-engine.sh`](scripts/plan-run-engine.sh), supplies the definition path for [`workflows/plan.py`](workflows/plan.py). `start` accepts `-m model`, `-e effort`, `-r review-effort` and `-p checkpoints`; for plan it then takes `<name> <goal.md> <plan.txt>`. `resume` accepts the same options followed by `<name>`. `-p` accepts `each`, `none`, or step numbers such as `2,4`; a checkpoint pauses after that numbered step. `status <name>` prints `status.log`, and `board <name>` prints the workflow's board. Plan adds `gates <plan.txt|name>`, which prints the gate commands and exits 1 if a unit has no gate. The engine also accepts `finish [--discard] <name>`.
++
++The engine returns 0 when the run reaches `READY` or a command succeeds, 1 for a run stop, invalid run command or other reported error (including a usage-limit stop), and 3 when a checkpoint pauses the run. A detected usage limit adds `QUOTA: <text>` to `status.log` and stops the current step. If the process receives `SIGTERM`, `SIGINT` or `SIGHUP`, it records `INTERRUPTED by signal <SIGNAL> during <stage>`, terminates child agents, and returns `128+signal-number` (the usual shell signal status).
++
++`Workflow` is the definition contract:
++
++| Method | Purpose |
++| --- | --- |
++| `validate_start(args)` | Check the workflow-specific arguments before creating a run. |
++| `start(ctx, args)` | Save workflow inputs and initialize run state. |
++| `steps(ctx)` | Return the ordered numbered `Step` objects. |
++| `final_step(ctx)` | Return the final review `Step`, or `None` when there is no final review. |
++| `after_step(ctx, step)` | Save workflow state after a numbered step completes. |
++| `board(ctx)` | Render progress for the run. |
++| `fix_hint(ctx)` | Give a command hint when a step stops; the default points to `resume`. |
++| `ready_path(ctx)` | Identify the output that proves the run is ready to finish. |
++| `finish(ctx)` | Keep the workflow's completed record. |
++| `commands()` | Map workflow-specific command names to handlers. |
++
++In the plan workflow, each numbered `Step` is one unit. Its unit loop runs implementation, the brief's gate and review of the unit diff in rounds: a red gate sends the unit back to implementation without review, a reviewer can pass, send it back or escalate, and the workflow marks the step done only when the unit loop passes. After all numbered steps pass, the engine runs the fourth kind of work, the final review of the whole plan, as `final_step`; it records `READY` when the report exists. Unit reviews are capped by `PLAN_MAX_ROUNDS` (default 3); gate failures are capped by `PLAN_MAX_GATE_ROUNDS` (default 5). `PLAN_GATE_TIMEOUT` defaults to 900 seconds per gate command.
++
++The sequential plan was the first workflow. The engine plan runner is [`scripts/plan-run-engine.sh`](scripts/plan-run-engine.sh). The Bash [`scripts/plan-run.sh`](scripts/plan-run.sh) remains the runner that supports parallel groups, worktrees, integrations and the `.plan-porteiro/ponte` bridge; the engine workflow currently requires one brief per plan line. Run [`scripts/test-plan-run-gate.sh`](scripts/test-plan-run-gate.sh) with `PLAN_RUN_UNDER_TEST=plan-run-engine.sh PLAN_RUN_SCOPE=sequential` to see the current `ENGINE GAP` list; it is kept in the test output rather than duplicated here.
++
++If a run is killed without a handled signal, it may have no terminal event in `status.log`. On the next `resume`, the engine appends `resume: the previous attempt ended without a STOPPED, PAUSED, READY, INTERRUPTED or CRASHED line: it was killed or crashed. Steps not marked done run again.` A handled signal instead leaves its `INTERRUPTED` event. Read `status.log`, fix the cause or decide to continue, then run `harness run <definition-path> resume <name>`; completed steps are skipped and unfinished steps run again.
++
+ ## Safety and gotchas
+ 
+ - Runs use the `workspace-write` sandbox. It confines writes to the agent's folder, but an agent can still read files outside the checkout, such as the login sessions of CLI tools in the home folder, and reach HTTPS, so it can use any session left open. The repository's own rules say what to keep logged out.
