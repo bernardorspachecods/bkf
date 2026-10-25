@@ -7,7 +7,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=/dev/null
-. "$here/../../dispatch-codex/scripts/lib-codex.sh"
+. "$here/../../dispatch-agents/scripts/lib-codex.sh"
 
 name=${1:?task name}
 brief=${2:?brief file}
