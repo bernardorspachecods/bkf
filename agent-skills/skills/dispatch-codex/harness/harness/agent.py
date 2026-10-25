@@ -1,6 +1,7 @@
 """Run an agent backend with a prepared prompt and captured output files."""
 
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -51,6 +52,9 @@ class Backend:
 
     def quota_text(self, events_path) -> Optional[str]:
         return None
+
+    def finish(self, events_path, last_message_path):
+        """Called after the agent exits; a backend that does not write the last message itself does it here."""
 
 
 def _is_error_event(line):
@@ -112,11 +116,90 @@ class CodexBackend(Backend):
         return None
 
 
-BACKENDS = {"codex": CodexBackend}
+_CLAUDE_SANDBOX = json.dumps(
+    {"sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False}}
+)
+
+
+class ClaudeBackend(Backend):
+    """Run `claude -p` with the prompt on stdin and the stream of events on stdout.
+
+    The Codex sandbox names map to permissions: `workspace-write` allows Write and Edit only under the
+    working directory (path rules) and Bash inside Claude's sandbox, which confines its writes to the
+    working directory and the temporary folders (checked with a Haiku model outside /tmp: a redirect
+    to ../ was refused); any other sandbox, `read-only` included, allows only Read, Glob and Grep.
+    A tool outside the list is denied, never asked (`dontAsk`), so a run never waits for an answer.
+    """
+
+    executable = "claude"
+
+    def arguments(self, directory, model, effort, sandbox, tier, last_message):
+        command = [
+            "-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence",
+            "--model", model, "--effort", effort, "--permission-mode", "dontAsk",
+        ]
+        if sandbox == "workspace-write":
+            command.extend(["--settings", _CLAUDE_SANDBOX])
+            command.extend(["--allowedTools", "Read,Glob,Grep,Write(./**),Edit(./**),Bash"])
+        else:
+            command.extend(["--allowedTools", "Read,Glob,Grep"])
+        return command
+
+    def finish(self, events_path, last_message_path):
+        """Write the text of the final `result` event as the last message."""
+        text = None
+        try:
+            with open(events_path, "r", encoding="utf-8") as events:
+                for line in events:
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(event, dict) and event.get("type") == "result" and isinstance(event.get("result"), str):
+                        text = event["result"]
+            if text is not None:
+                with open(last_message_path, "w", encoding="utf-8", newline="") as message:
+                    message.write(text)
+        except (OSError, UnicodeError):
+            return
+
+    def quota_text(self, events_path) -> Optional[str]:
+        """The reset time of a `rate_limit_event` that is not `allowed`, or the text of a limit error."""
+        try:
+            with open(events_path, "r", encoding="utf-8") as events:
+                for line in events:
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(event, dict):
+                        continue
+                    if event.get("type") == "rate_limit_event":
+                        info = event.get("rate_limit_info")
+                        if isinstance(info, dict) and info.get("status") not in (None, "allowed", "allowed_warning"):
+                            reset = info.get("resetsAt")
+                            if isinstance(reset, (int, float)):
+                                moment = time.localtime(reset)
+                                return "resets at {0}".format(time.strftime("%Y-%m-%d %H:%M", moment))
+                            return "the limit is reached ({0})".format(info.get("status"))
+                    if event.get("type") == "result" and event.get("is_error") and isinstance(event.get("result"), str):
+                        if "limit" in event["result"].lower():
+                            return event["result"].strip()
+        except (OSError, UnicodeError):
+            return None
+        return None
+
+
+BACKENDS = {"codex": CodexBackend, "claude": ClaudeBackend}
+
+
+def resolve_backend(name):
+    """The backend named, else HARNESS_BACKEND, else codex."""
+    return name or os.environ.get("HARNESS_BACKEND") or "codex"
 
 
 def get_backend(name):
-    return BACKENDS.get(name)
+    return BACKENDS.get(resolve_backend(name))
 
 
 def _spawn(command, directory, stdin, stdout, stderr):
@@ -158,12 +241,12 @@ def run_agent(
     effort,
     sandbox="workspace-write",
     tier=None,
-    backend="codex",
+    backend=None,
 ):
     """Inject prompt rules, run a backend in the foreground, and return its status."""
     backend_class = get_backend(backend)
     if backend_class is None:
-        print("backend not implemented: {0}".format(backend), file=sys.stderr)
+        print("backend not implemented: {0}".format(resolve_backend(backend)), file=sys.stderr)
         return 2
 
     try:
@@ -193,6 +276,7 @@ def run_agent(
     except OSError as error:
         print("harness: {0}".format(error), file=sys.stderr)
         return 2
+    backend_class().finish(events_path, last_message_path)
     if status < 0:
         return 128 + -status
     return status

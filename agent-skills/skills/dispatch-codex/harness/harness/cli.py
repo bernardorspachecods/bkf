@@ -39,7 +39,7 @@ def _parser():
     agent_run_parser.add_argument("--effort", required=True)
     agent_run_parser.add_argument("--sandbox", default="workspace-write")
     agent_run_parser.add_argument("--tier")
-    agent_run_parser.add_argument("--backend", default="codex")
+    agent_run_parser.add_argument("--backend")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("definition_path")
     run_parser.add_argument("arguments", nargs=argparse.REMAINDER)

@@ -258,7 +258,7 @@ class ReviewWorkflow(Workflow):
                 output = run / "01-review" / name / "report.md"
                 if not output.is_file() or not output.stat().st_size:
                     (run / "01-review" / name / "failed").write_text(result.reason + "\n", encoding="utf-8")
-            backend = agent.get_backend("codex")
+            backend = agent.get_backend(None)
             if backend is not None:
                 for name in names:
                     events = run / "01-review" / name / "run.events.jsonl"
