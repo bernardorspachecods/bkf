@@ -8,6 +8,20 @@ tags: [harness, plan]
 
 Update this document in the same change that finishes, drops or adds a piece of the plan below.
 
+## Navigation map
+
+| What you need | Where |
+| --- | --- |
+| What the harness is for | [Intent](#intent) |
+| The three layers and the four step kinds | [Layers](#layers) |
+| What was decided and must not be reopened | [Decisions taken](#decisions-taken) |
+| What is done, running and missing | [State](#state) |
+| Where each branch and worktree stands | [Where the work is](#where-the-work-is) |
+| The order of what remains | [Next, in order](#next-in-order) |
+| Questions still open with the user | [Open threads with the user](#open-threads-with-the-user) |
+| Small defects not yet scheduled | [Not scheduled yet](#not-scheduled-yet) |
+| Picking the work up after a pause: limits, worktrees, the running plan, the remaining blocks, the design of workflows as skills | [How to continue](#how-to-continue-written-on-2026-10-25-for-whoever-picks-the-work-up) |
+
 ## Intent
 
 Agentic work should run on one common, tested harness: launching agents, checking them, keeping a run's state and resuming it. Each workflow (plan, research, council, review) defines only what is its own. The user briefs a run once, with the what and the why in enough detail that agents work on their own, and judges the result at the end; between checkpoints nobody asks small questions or sends status.
