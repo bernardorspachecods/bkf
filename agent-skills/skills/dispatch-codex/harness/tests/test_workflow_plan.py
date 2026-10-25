@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from harness.engine.run import RunError
@@ -45,6 +46,7 @@ class PlanWorkflowTests(unittest.TestCase):
         self.assertEqual(status_events, [
             "start sample (gpt-6-luna xhigh, review xhigh, max 3 rounds, 1 step(s), 1 unit(s), repo {0})".format(self.fixture.repo.resolve()),
             "unit 01-unit has no gate: only a reviewer checks it",
+            "no .plan-run.json at HEAD: the bridge will run only gate commands unless an untracked copy is in the checkout; commit it so changes to it are reviewed like code",
             "start step 1: 01-unit (gpt-6-luna xhigh)",
             "01-unit round 1: implement",
             "01-unit round 1: review",
@@ -115,14 +117,51 @@ class PlanWorkflowTests(unittest.TestCase):
         self.assertFalse((run / "report.md").exists())
         self.assertEqual((self.fixture.state / "reviews").read_text(), "1")
 
-    def test_several_briefs_on_one_line_are_refused(self):
+    def test_several_briefs_on_one_line_run_through_group_integration(self):
         self.fixture.add_brief("one")
         self.fixture.add_brief("two")
         plan = self.fixture.write_plan("one.md two.md")
-        code, _, errors = self.call("start", "group", str(self.fixture.goal), str(plan))
-        self.assertEqual(code, 1)
-        self.assertIn("step 1 has several briefs; this engine runs one unit per step", errors)
-        self.assertFalse(self.fixture.runs.exists())
+        code, out, _ = self.call("start", "group", str(self.fixture.goal), str(plan))
+        run = self.fixture.runs / "group"
+        self.assertEqual(code, 0)
+        self.assertIn("READY:", out)
+        self.assertEqual((run / "00-input/order").read_text(), "01-one 02-two\n")
+        self.assertTrue((run / ".group-ready-S1").exists())
+        self.assertTrue((run / ".done-01-one").exists())
+        self.assertTrue((run / ".done-02-two").exists())
+        self.assertTrue((run / ".done-S1-integration").exists())
+        self.assertFalse((run / "worktrees").exists())
+
+    def test_group_resume_preserves_unit_diff_base(self):
+        self.fixture.add_brief("one")
+        self.fixture.add_brief("two")
+        plan = self.fixture.write_plan("one.md two.md")
+        bases = []
+        attempts = {}
+
+        def run_unit_loop(_run, unit, checkout, **kwargs):
+            if unit == "01-one":
+                base = kwargs["base_from"].read_text(encoding="utf-8")
+                bases.append(base)
+                attempts[unit] = attempts.get(unit, 0) + 1
+                if attempts[unit] == 1:
+                    (checkout / "failed-attempt.txt").write_text("keep in diff\n", encoding="utf-8")
+                    return SimpleNamespace(ok=False, reason="first attempt failed")
+            return SimpleNamespace(ok=True, reason="")
+
+        from harness.engine import pipeline
+        workflow = pipeline._load_workflow(_WORKFLOW)
+        with patch.dict(workflow.steps.__func__.__globals__, {"run_unit_loop": run_unit_loop}), \
+                patch("harness.engine.pipeline._load_workflow", return_value=workflow):
+            code, out, _ = self.call("start", "group-resume", str(self.fixture.goal), str(plan))
+            self.assertEqual(code, 1)
+            self.assertIn("first attempt failed", out)
+            code, out, _ = self.call("resume", "group-resume")
+
+        self.assertEqual(code, 0)
+        self.assertIn("READY:", out)
+        self.assertEqual(len(bases), 2)
+        self.assertEqual(bases[0], bases[1])
 
     def test_validate_start_messages(self):
         self.fixture.add_brief("unit")

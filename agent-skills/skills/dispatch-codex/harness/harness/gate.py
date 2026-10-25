@@ -27,7 +27,10 @@ def _stop_group(process, process_group):
         pass
 
     deadline = time.monotonic() + _TERM_GRACE_SECONDS
-    while _group_exists(process_group) and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        process.poll()
+        if not _group_exists(process_group):
+            break
         time.sleep(_POLL_SECONDS)
 
     if _group_exists(process_group):

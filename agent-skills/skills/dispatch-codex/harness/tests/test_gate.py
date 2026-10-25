@@ -205,6 +205,17 @@ class GateCliTests(unittest.TestCase):
         self.assertEqual(data["commands"][0]["exit_code"], 124)
         self.assertTrue(data["commands"][0]["timed_out"])
 
+    def test_timeout_reaps_shell_without_waiting_for_the_full_grace_period(self):
+        out = self.root / "timeout-reaps-shell"
+        result = self.run_cli(out, "sleep 30", timeout="1")
+
+        self.assertEqual(result.returncode, 1)
+        data = json.loads((out / "gate.json").read_text())
+        entry = data["commands"][0]
+        self.assertEqual(entry["exit_code"], 124)
+        self.assertTrue(entry["timed_out"])
+        self.assertLess(entry["seconds"] - 1.0, 1.5)
+
     def test_timeout_kills_child_that_ignores_term_after_escalation(self):
         out = self.root / "term-ignoring-child"
         child_pid_file = self.root / "term-ignoring-child.pid"

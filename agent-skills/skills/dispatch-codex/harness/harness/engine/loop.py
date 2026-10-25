@@ -60,6 +60,53 @@ def _gate_problems(round_dir):
     )
 
 
+def run_gate_round(run, label, checkout, round_dir, commands, hooks, limits,
+                   gate_fails, progress_prefix):
+    """Run one shared gate stage and return (passed, failures, reason)."""
+    _write(os.path.join(os.path.dirname(os.path.dirname(round_dir)), "status"),
+           "gate round {0}\n".format(os.path.basename(round_dir)))
+    run.note("{0} round {1}: gate".format(label, os.path.basename(round_dir)))
+    result = run_gate(checkout, limits.gate_timeout, round_dir, commands)
+    gate_file = os.path.join(round_dir, "gate.md")
+    if result["red"] == 0:
+        hooks.progress("{0} · gate PASS".format(progress_prefix))
+        run.note("{0} round {1}: gate passed".format(label, os.path.basename(round_dir)))
+        return True, gate_fails, ""
+    _write(os.path.join(round_dir, "problems.md"), _gate_problems(round_dir))
+    _write(os.path.join(round_dir, "verdict"), "back\n")
+    hooks.progress("{0} · gate FAIL".format(progress_prefix))
+    gate_fails += 1
+    run.note("{0}: round {1}: gate failed (see {2})".format(label, os.path.basename(round_dir), gate_file))
+    if gate_fails >= limits.max_gate_rounds:
+        _write(os.path.join(os.path.dirname(os.path.dirname(round_dir)), "status"), "escalated\n")
+        hooks.progress("{0} · escalada".format(progress_prefix))
+        return False, gate_fails, "{0}: the gate still fails after {1} rounds (see {2})".format(label, gate_fails, gate_file)
+    return False, gate_fails, ""
+
+
+def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
+                     limits, previous_problems, gate_file, progress_prefix):
+    """Run one shared review stage and return its validated verdict and reason."""
+    _write(os.path.join(os.path.dirname(os.path.dirname(round_dir)), "status"),
+           "reviewing round {0}\n".format(os.path.basename(round_dir)))
+    hooks.progress("{0} · revisão".format(progress_prefix))
+    run.note("{0} round {1}: review".format(label, os.path.basename(round_dir)))
+
+    def build_prompt(attempt):
+        return hooks.review_prompt(
+            os.path.join(os.path.dirname(os.path.dirname(round_dir)), "brief.md"),
+            os.path.join(round_dir, "diff.patch"), previous_problems, attempt,
+            gate_file if gate_file and os.path.getsize(gate_file) else "",
+        )
+
+    result = run_review(
+        run, label, checkout, round_dir, build_prompt, settings.model,
+        settings.review_effort, tier, limits.min_checked,
+        previous_problems or None,
+    )
+    return result.verdict, result.reason
+
+
 def run_unit_loop(
     run,
     unit,
@@ -146,48 +193,26 @@ def run_unit_loop(
 
         gate_file = ""
         if commands:
-            _write(os.path.join(directory, "status"), "gate round {0}\n".format(round_count))
-            run.note("{0} round {1}: gate".format(unit, round_count))
-            gate_result = run_gate(checkout, limits.gate_timeout, round_dir, commands)
             gate_file = os.path.join(round_dir, "gate.md")
-            if gate_result["red"] == 0:
-                hooks.progress("{0} unidade {1} · ronda {2} · gate PASS".format(step_prefix, unit, round_count))
-                run.note("{0} round {1}: gate passed".format(unit, round_count))
-            else:
-                _write(os.path.join(round_dir, "problems.md"), _gate_problems(round_dir))
-                _write(os.path.join(round_dir, "verdict"), "back\n")
-                hooks.progress("{0} unidade {1} · ronda {2} · gate FAIL".format(step_prefix, unit, round_count))
-                gate_fails += 1
-                run.note("{0}: round {1}: gate failed (see {2})".format(unit, round_count, gate_file))
-                if gate_fails >= limits.max_gate_rounds:
-                    _write(os.path.join(directory, "status"), "escalated\n")
-                    hooks.progress("{0} unidade {1} · ronda {2} · escalada".format(step_prefix, unit, round_count))
-                    return LoopResult(
-                        False,
-                        "{0}: the gate still fails after {1} rounds (see {2})".format(unit, gate_fails, gate_file),
-                    )
+            passed, gate_fails, reason = run_gate_round(
+                run, unit, checkout, round_dir, commands, hooks, limits,
+                gate_fails, "{0} unidade {1} · ronda {2}".format(step_prefix, unit, round_count),
+            )
+            if not passed:
+                if reason:
+                    return LoopResult(False, reason)
                 previous_problems = os.path.join(round_dir, "problems.md")
                 previous_handoff = round_handoff
                 continue
 
         reviews += 1
-        _write(os.path.join(directory, "status"), "reviewing round {0}\n".format(round_count))
-        hooks.progress("{0} unidade {1} · ronda {2} · revisão".format(step_prefix, unit, round_count))
-        run.note("{0} round {1}: review".format(unit, round_count))
-
-        def build_prompt(attempt):
-            return hooks.review_prompt(
-                brief_path, diff_path, previous_problems, attempt,
-                gate_file if gate_file and os.path.getsize(gate_file) else "",
-            )
-
-        review_result = run_review(
-            run, unit, checkout, round_dir, build_prompt, settings.model,
-            settings.review_effort, tier, limits.min_checked, previous_problems or None,
+        verdict, review_reason = run_review_round(
+            run, unit, checkout, round_dir, hooks, settings, tier, limits,
+            previous_problems, gate_file,
+            "{0} unidade {1} · ronda {2}".format(step_prefix, unit, round_count),
         )
-        if review_result.verdict is None:
-            return LoopResult(False, review_result.reason)
-        verdict = review_result.verdict
+        if verdict is None:
+            return LoopResult(False, review_reason)
         if verdict == "pass":
             _write(os.path.join(directory, "status"), "passed\n")
             hooks.progress("{0} unidade {1} · ronda {2} · passou".format(step_prefix, unit, round_count))

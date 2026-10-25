@@ -251,9 +251,7 @@ def _start(workflow, args):
 
     def start(ctx):
         workflow.start(ctx, workflow_args)
-        board = workflow.board(ctx)
-        if board:
-            print(board, end="" if board.endswith("\n") else "\n", file=sys.stderr)
+        ctx.print_board(sys.stderr)
         return _pipeline(ctx, workflow)
     return _run_locked(run, workflow, start)
 
@@ -325,9 +323,7 @@ def main(definition_path, argv):
             if len(args) != 1:
                 raise RunError("usage: board <name>")
             run = RunDir.load(_root(workflow), args[0])
-            board = workflow.board(Context(run, workflow))
-            if board:
-                sys.stdout.write(board)
+            Context(run, workflow).print_board(sys.stdout)
             return 0
         if command == "finish":
             return _finish(workflow, args)
