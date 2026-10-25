@@ -52,6 +52,7 @@ def _prompt_kind(prompt: object) -> str | None:
 def _probe(event: str) -> None:
     if event == "guard":
         importlib.import_module("read_guard")
+        importlib.import_module("launch_guard")
     elif event == "log":
         importlib.import_module("log_entry")
     elif event == "audit":
@@ -451,9 +452,10 @@ def main(argv: list[str]) -> int:
         elif event == "stop":
             output = stop(data)
         elif event == "guard":
+            from launch_guard import check
             from read_guard import guard
 
-            output = guard(data)
+            output = guard(data) or check(data)
     except Exception as exc:
         if event == "stop":
             exc = RuntimeError(f"validation did not run: {exc}")
