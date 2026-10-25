@@ -320,4 +320,4 @@ def guides_path(environ, here):
         universal_newlines=True,
         check=True,
     )
-    return str(Path(result.stdout.rstrip("\n")) / "agent-skills" / "library" / "workflow-types" / "plan")
+    return str(Path(result.stdout.rstrip("\n")) / "agent-skills" / "skills" / "plan" / "roles")

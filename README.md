@@ -5,10 +5,10 @@ BKF organizes a repository's knowledge so agents can find the current guidance a
 ## What's in it
 
 - **Format** ([`bkf/`](bkf/MAP.md)): defines a valid document, map, and bundle. The `bkf` command validates bundles, keeps map inventories current, orients an agent at session start, and searches documents. Optional hooks add talk and work modes, session-start orientation and personal rules, stop-time validation, and idea and feedback logging.
-- **Library** ([`agent-skills/library/`](agent-skills/library/MAP.md)): rule modules and workflow types, each written once and selected per task.
-- **Entry skills** ([`agent-skills/skills/`](agent-skills/MAP.md)): thin triggers, one per situation, each listing the library modules that apply.
-- **Repo library**: a `repo-library/` folder in your own repository holds its local procedures and modules. They add to the shared library and never restate it.
-- **Workflows** ([`agent-skills/library/workflow-types/`](agent-skills/library/MAP.md)): for complex tasks, a coordinator guide and role guides, with agents in separate roles, each reviewed by another, and the user steering at the start and judging at the end.
+- **Modules** ([`agent-skills/modules/`](agent-skills/modules/MAP.md)): rule modules, each written once; skills inject the text they share.
+- **Skills** ([`agent-skills/skills/`](agent-skills/MAP.md)): one per situation, each carrying its orders and the text of the modules it shares.
+- **Repo library**: a `repo-library/` folder in your own repository holds its local procedures and modules. They add to the shared modules and never restate them.
+- **Workflows** (the skills `plan`, `code-review`, `council` and `research` in [`agent-skills/skills/`](agent-skills/MAP.md)): for complex tasks, a coordinator guide (the `SKILL.md`) and role guides (its `roles/` folder), with agents in separate roles, each reviewed by another, and the user steering at the start and judging at the end.
 
 [Why it is built in layers](bkf/manual/what-is-bkf.md#the-layers). [How it compares with a single AGENTS.md, editor rules, and skill collections, and when not to use it](bkf/manual/why-bkf.md). This repository is itself the worked example of BKF.
 

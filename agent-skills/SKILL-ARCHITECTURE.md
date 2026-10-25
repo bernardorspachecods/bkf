@@ -22,6 +22,15 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Brainstorm
   - `short_description`: Think through ideas and decisions together
 
+## code-review
+
+- Description: Use when the user asks for a code review of a branch, pull request, revision range or working tree run by separate agents, or a stopped review run to resume. Looking over your own change while you work is part of code-work.
+- Package: [`agent-skills/skills/code-review`](skills/code-review/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Code review
+  - `short_description`: Review a diff on two axes with agents that check each other
+
 ## code-work
 
 - Description: Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules.
@@ -39,6 +48,15 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Conversation Transcript
   - `short_description`: Clean exported session transcripts
+
+## council
+
+- Description: Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume.
+- Package: [`agent-skills/skills/council`](skills/council/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Council
+  - `short_description`: Five advisors and five reviewers on one question
 
 ## delegate-work
 
@@ -59,15 +77,6 @@ It contains only package metadata and supported runtime metadata derived from th
   - `short_description`: Run multi-agent workflows on Codex or Claude and inspect the results
 - Runtime policy: `explicit invocation required`
 
-## do-research
-
-- Description: Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail.
-- Package: [`agent-skills/skills/do-research`](skills/do-research/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Do research
-  - `short_description`: Rules for sourced research, evidence, and conclusions
-
 ## git-worktree-cleanup
 
 - Description: Commit selected worktree changes while preserving changes outside the chosen scope.
@@ -87,6 +96,15 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Handoff
   - `short_description`: Continue the current task in a fresh Claude session
 - Runtime policy: `explicit invocation required`
+
+## plan
+
+- Description: Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script runs, or a stopped plan run to resume. A single task is not a plan.
+- Package: [`agent-skills/skills/plan`](skills/plan/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Plan
+  - `short_description`: Plan a goal as reviewed units run by agents
 
 ## prototype
 
@@ -114,6 +132,15 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Repo maintenance
   - `short_description`: Rules for keeping, organizing and writing a repo's documents under BKF
+
+## research
+
+- Description: Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail; or a stopped research run to resume.
+- Package: [`agent-skills/skills/research`](skills/research/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Research
+  - `short_description`: Sourced research from objective to delivery
 
 ## retrieval-chat-audit
 
@@ -149,12 +176,3 @@ It contains only package metadata and supported runtime metadata derived from th
 - Description: Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or local WhisperX / cloud Whisper fallback), and hands the result to the agent so it can answer questions about what's in the video. With a Gemini API key, Google's agentic video model watches the full video instead.
 - Package: [`agent-skills/skills/watch`](skills/watch/SKILL.md)
 - Runtime metadata: `missing`
-
-## work-in-stages
-
-- Description: Use when work has several stages or roles, hands work to other agents, needs a plan, a council or a code review, or resumes a stopped run.
-- Package: [`agent-skills/skills/work-in-stages`](skills/work-in-stages/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Work in stages
-  - `short_description`: Rules for planning, delegating, and reviewing multi-step work

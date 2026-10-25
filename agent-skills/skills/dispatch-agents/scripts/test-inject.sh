@@ -89,12 +89,12 @@ while IFS= read -r g; do
   while IFS= read -r rel; do
     [ -f "$d/$rel" ] || bad="$bad $g -> $rel;"
   done < <(sed -n 's/^<!-- inject: \(.*\) -->$/\1/p' "$g")
-done < <(find "$here/../../../library/workflow-types" -name '*.md' ! -name MAP.md)
+done < <(find "$here/../.." \( -path '*/roles/*.md' -o -name SKILL.md \) -not -path '*/dispatch-agents/*')
 check "real guides: every directive resolves${bad:+ (broken:$bad)}" '[ -z "$bad" ]'
 
 # The guides that apply core-code-principles still ask for it, so a brief for each of these roles carries the rules.
-lib=$(cd "$here/../../../library/workflow-types" && pwd)
-for g in plan/plan-implementation.md plan/plan-review.md code-review/code-review-axis.md; do
+lib=$(cd "$here/../.." && pwd)
+for g in plan/roles/plan-implementation.md plan/roles/plan-review.md code-review/roles/code-review-axis.md; do
   printf '# Brief\n\n## Role\nOpen and follow the role guide: %s/%s (read-only).\n' "$lib" "$g" >"$work/p.md"
   inject_rules "$work/p.md"
   check "real guides: $g brings core-code-principles into the brief" 'grep -q "^## Rules from core-code-principles$" "$work/p.md"'

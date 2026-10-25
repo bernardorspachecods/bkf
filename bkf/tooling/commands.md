@@ -42,8 +42,8 @@ with `--force`, and for a checkout's `.venv` run
 `uv pip install --python bkf/tooling/.venv/bin/python -e bkf/tooling`.
 
 Skills are installed through the symlink `~/.claude/skills`. Their relative
-links to `../../library/` resolve through a second symlink,
-`~/.claude/library`, pointing to `agent-skills/library`. Create both on a new
+links to `../../modules/` resolve through a second symlink,
+`~/.claude/modules`, pointing to `agent-skills/modules`. Create both on a new
 machine.
 
 ## bkf help
@@ -129,14 +129,9 @@ non-string description stops generation with an error naming the map; the
 validator reports the same condition as an error. The required map fields are
 owned by the [map specification](/format/format-specification.md#31-map-files-and-inventories).
 
-`--skills <skills-dir>` also processes tagged lists in entry skills. A list is
-delimited by `<!-- BKF:GENERATED-TAGGED-LIST tags: t1, t2 -->` and
-`<!-- BKF:GENERATED-TAGGED-LIST-END -->` and holds the same two-column table
-for the library files with matching tags, grouped `modules/` then
-`workflow-types/` and sorted by filename. Files without markers are unchanged.
-From the repository root, `bkf inventory agent-skills/library --skills agent-skills/skills --write` refreshes these lists; use the same invocation with `--check` to verify them.
+`--skills <skills-dir>` also expands the inject directives of the `SKILL.md` files in that directory. From the repository root, `bkf inventory agent-skills/modules --skills agent-skills/skills --write` refreshes them; use the same invocation with `--check` to verify.
 
-With `--skills`, a line `<!-- inject: path -->` in an entry skill (the path is relative to the
+With `--skills`, a line `<!-- inject: path -->` in a skill (the path is relative to the
 skill file and names a Markdown file) is followed by a generated block, between
 `<!-- BKF:GENERATED-INJECTED -->` and `<!-- BKF:GENERATED-INJECTED-END -->`, holding the
 file's text without its frontmatter, with headings one level lower and relative links
@@ -147,21 +142,20 @@ because it would not resolve from the skill. The block is replaced when the sour
 ## bkf skills
 
 `bkf skills [REPOSITORY-ROOT] [--check|--write]` checks or regenerates the
-agent-skills inventories, generated tagged lists, and skill catalog. The root
-defaults to the current directory and must contain `agent-skills/library` and
+agent-skills inventories, injected module text, and skill catalog. The root
+defaults to the current directory and must contain `agent-skills/modules` and
 `agent-skills/skills`.
 
-`--check` is the default and never writes. It checks the library map
-inventories and skill tagged lists, then validates skill metadata and links,
+`--check` is the default and never writes. It checks the modules map
+inventories and the injected text in skills, then validates skill metadata and links,
 runtime metadata, and whether `agent-skills/SKILL-ARCHITECTURE.md` is current.
 It prints both check results and exits non-zero if either check fails.
 A `SKILL.md` or `openai.yaml` value without quotes that YAML would reject (it
 contains `: `, ends with `:` or starts with `@`, a backtick, `%`, `&`, `*` or
 `!`) is a `FRONTMATTER_INVALID` error: quote the value.
 
-`--write` refreshes library map inventories and tagged lists, then writes the
-generated skill catalog. Use it after changing a skill or a library module
-listed by a skill.
+`--write` refreshes the modules map inventory and the injected text, then writes the
+generated skill catalog. Use it after changing a skill or a module a skill injects.
 
 ## bkf log
 

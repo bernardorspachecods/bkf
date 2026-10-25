@@ -5,7 +5,7 @@ description: "Use when adding or reviewing an entry of a repository's repo-libra
 
 # Repo library
 
-A repository keeps its own procedures in `repo-library/` at its root, a BKF bundle shaped like the general library: `modules/` for one rule set about one activity, `workflow-types/` for a procedure with stages (a release, a migration), and a `MAP.md` with the generated member inventory. An entry's `description` follows the Descriptions section of `bkf/format/frontmatter-profiles.md`. If the folder does not exist yet, create it with the root `MAP.md`.
+A repository keeps its own procedures in `repo-library/` at its root, a BKF bundle: `modules/` for one rule set about one activity, `workflow-types/` for a procedure with stages (a release, a migration), and a `MAP.md` with the generated member inventory. An entry's `description` follows the Descriptions section of `bkf/format/frontmatter-profiles.md`. If the folder does not exist yet, create it with the root `MAP.md`.
 
 Nothing sends an agent to `repo-library/` by default. An entry is used only when the documents of the task lead to it, so an entry that nothing links to is never read.
 

@@ -122,7 +122,7 @@ class ReviewWorkflow(Workflow):
         if repo is None:
             raise RunError(self.repo_hint)
         guides = os.environ.get("REVIEW_GUIDES") or str(
-            Path(repo) / "agent-skills" / "library" / "workflow-types" / "code-review"
+            Path(repo) / "agent-skills" / "skills" / "code-review" / "roles"
         )
         if not os.path.isdir(guides):
             raise RunError("no role guides at {0} (set REVIEW_GUIDES)".format(guides))
@@ -190,7 +190,7 @@ class ReviewWorkflow(Workflow):
         run = ctx.run.path
         repo = ctx.run.repo
         guides = os.environ.get("REVIEW_GUIDES") or str(
-            Path(ctx.run.repo) / "agent-skills" / "library" / "workflow-types" / "code-review"
+            Path(ctx.run.repo) / "agent-skills" / "skills" / "code-review" / "roles"
         )
         lines = [
             "# Brief: {0} review\n\n## What to review\nThe diff is `diff.patch` in the current directory (read-only)".format(self._axis_title(axis)),
@@ -210,7 +210,7 @@ class ReviewWorkflow(Workflow):
     def _check_brief(self, ctx, axis):
         title = self._axis_title(axis)
         guides = os.environ.get("REVIEW_GUIDES") or str(
-            Path(ctx.run.repo) / "agent-skills" / "library" / "workflow-types" / "code-review"
+            Path(ctx.run.repo) / "agent-skills" / "skills" / "code-review" / "roles"
         )
         lines = ["# Brief: check of the {0} findings\n\n## Inputs (read-only, in the current directory)\n- diff.patch: the diff under review\n".format(title)]
         lines.append("- standards/: the documented standards\n" if axis == "standards" else "- spec.md: the originating spec\n")

@@ -236,10 +236,10 @@ class SkillCatalogTests(unittest.TestCase):
         self.assertEqual(checked.returncode, 0, checked.stderr)
         self.assertTrue(markdown_exists)
 
-    def test_bkf_skills_write_then_default_check_covers_lists_and_catalog(self):
+    def test_bkf_skills_write_then_default_check_covers_injected_text_and_catalog(self):
         temp_dir = tempfile.TemporaryDirectory()
         root = Path(temp_dir.name)
-        library = root / "agent-skills" / "library"
+        library = root / "agent-skills" / "modules"
         skills = root / "agent-skills" / "skills"
         library.mkdir(parents=True)
         package = skills / "alpha-skill"
@@ -251,15 +251,13 @@ class SkillCatalogTests(unittest.TestCase):
             "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",
             encoding="utf-8",
         )
-        (library / "modules").mkdir()
-        (library / "modules" / "alpha.md").write_text(
-            "---\nbkf: document\ndescription: Alpha library rule.\ntags: [always]\n---\n\n# Alpha\n",
+        (library / "alpha.md").write_text(
+            "---\nbkf: document\ndescription: Alpha library rule.\ntags: [always]\n---\n\n# Alpha\n\nAlpha library rule.\n",
             encoding="utf-8",
         )
         (package / "SKILL.md").write_text(
             "---\nname: alpha-skill\ndescription: Alpha behavior\n---\n\n# Alpha\n\n"
-            "<!-- BKF:GENERATED-TAGGED-LIST tags: always -->\n"
-            "old list\n<!-- BKF:GENERATED-TAGGED-LIST-END -->\n",
+            "<!-- inject: ../../modules/alpha.md -->\n",
             encoding="utf-8",
         )
 

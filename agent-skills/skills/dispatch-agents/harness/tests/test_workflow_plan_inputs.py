@@ -205,7 +205,7 @@ gamma
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
         self.assertEqual(
             plan_inputs.guides_path({}, repo),
-            str(repo.resolve() / "agent-skills" / "library" / "workflow-types" / "plan"),
+            str(repo.resolve() / "agent-skills" / "skills" / "plan" / "roles"),
         )
 
 

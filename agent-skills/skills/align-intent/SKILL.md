@@ -7,7 +7,7 @@ description: "Use at the start of any task that is more than a small change: set
 
 Inside a plan, a delegated task or a review, stop reading: the brief already carries the intent.
 
-<!-- inject: ../../library/modules/intent.md -->
+<!-- inject: ../../modules/intent.md -->
 <!-- BKF:GENERATED-INJECTED -->
 ## Intent and alignment
 

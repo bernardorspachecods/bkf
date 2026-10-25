@@ -1,0 +1,3 @@
+interface:
+  display_name: "Council"
+  short_description: "Five advisors and five reviewers on one question"

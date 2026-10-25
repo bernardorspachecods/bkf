@@ -18,17 +18,17 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
 
    ```sh
    ln -s "$PWD/agent-skills/skills" ~/.claude/skills
-   ln -s "$PWD/agent-skills/library" ~/.claude/library
+   ln -s "$PWD/agent-skills/modules" ~/.claude/modules
    ```
 
    Codex:
 
    ```sh
    ln -s "$PWD/agent-skills/skills" ~/.agents/skills
-   ln -s "$PWD/agent-skills/library" ~/.agents/library
+   ln -s "$PWD/agent-skills/modules" ~/.agents/modules
    ```
 
-   Expected result: the two skill paths point to `agent-skills/skills` and `agent-skills/library`; the skills' `../../library/` links resolve through the library link.
+   Expected result: the two skill paths point to `agent-skills/skills` and `agent-skills/modules`; the skills' `../../modules/` links resolve through the modules link.
 
 3. Check the repository from its root:
 

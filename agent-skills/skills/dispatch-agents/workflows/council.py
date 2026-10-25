@@ -30,7 +30,7 @@ def _env_int(name, default):
 
 def _guides(repo):
     return os.environ.get("COUNCIL_GUIDES") or str(
-        Path(repo) / "agent-skills" / "library" / "workflow-types" / "council"
+        Path(repo) / "agent-skills" / "skills" / "council" / "roles"
     )
 
 
