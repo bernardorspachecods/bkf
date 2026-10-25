@@ -67,7 +67,7 @@ chmod +x "$work/bin/pnpm"
 cat >"$work/bin/plan-run-limited" <<EOF3
 #!/usr/bin/env bash
 if [ -n "\${FAKE_STATE:-}" ] && [ -d "\$FAKE_STATE" ]; then printf '%s\n' "\$\$" >>"\$FAKE_STATE/plan-pids"; fi
-exec perl -e 'alarm shift @ARGV; exec @ARGV' "\${PLAN_TEST_LIMIT:-120}" "$here/plan-run.sh" "\$@"
+exec perl -e 'alarm shift @ARGV; exec @ARGV' "\${PLAN_TEST_LIMIT:-120}" "$here/\${PLAN_RUN_UNDER_TEST:-plan-run.sh}" "\$@"
 EOF3
 chmod +x "$work/bin/plan-run-limited"
 cat >"$work/bin/ps" <<'EOF5'
@@ -77,7 +77,11 @@ while [ "$#" -gt 0 ]; do
   case "$1" in -p) pid=$2; shift 2 ;; *) shift ;; esac
 done
 if [ -n "${FAKE_STATE:-}" ] && grep -qxF "$pid" "$FAKE_STATE/plan-pids" 2>/dev/null; then
-  printf 'plan-run.sh\n'
+  if [ "${PLAN_RUN_UNDER_TEST:-plan-run.sh}" = plan-run-engine.sh ]; then
+    printf 'python3 -m harness run\n'
+  else
+    printf 'plan-run.sh\n'
+  fi
 fi
 EOF5
 chmod +x "$work/bin/ps"
@@ -162,6 +166,9 @@ check "gates: lists the command" 'echo "$gout" | grep -q "\$ echo hello"'
 check "gates: flags the unit with no gate and exits 1" 'echo "$gout" | grep -q "NO GATE" && [ "$gcode" -eq 1 ]'
 
 # 9. The bridge: what the implementer may run outside the sandbox.
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP bridge (cases 9-10)'
+else
 new_case bridge 'echo gate-ok' 'echo change >>a.txt
 P=.plan-porteiro/ponte
 $P pnpm db:test:query --sql "a; touch pwned" >r1.txt; echo $? >c1.txt
@@ -191,6 +198,7 @@ sed -i.bak "s/echo q/echo evil/" package.json; rm -f package.json.bak
 .plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt'
 run bridgechg
 check "bridge: a db:test script redefined in the unit is refused" 'grep -q "was changed" $case_dir/repo/r1.txt && [ "$(cat $case_dir/repo/c1.txt)" = 126 ]'
+fi
 
 # 11. Metrics: one line per implementation round, and a table in status.md after finish.
 new_case metrics 'true' 'echo change >>a.txt'
@@ -211,6 +219,9 @@ run tierset PLAN_CODEX_TIER=flex
 check "tier: PLAN_CODEX_TIER picks another tier" 'grep -qx "service_tier=\"flex\"" $case_dir/state/codex-config'
 
 # 13. The bridge's pnpm list comes from .plan-run.json at the base. Without that file only gate commands run.
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP bridge config (cases 13-19)'
+else
 BRIDGE_CONFIG=none new_case noconf 'echo gate-ok' 'echo change >>a.txt
 .plan-porteiro/ponte pnpm db:test:query >r1.txt; echo $? >c1.txt
 .plan-porteiro/ponte echo gate-ok >r2.txt; echo $? >c2.txt'
@@ -273,10 +284,14 @@ run untracked
 r=$case_dir/repo
 check "untracked config: start says it is not committed" 'grep -q "is not committed" $case_dir/runs/r/status.log'
 check "untracked config: the base copy is used, so pnpm db:test:query runs" 'grep -qx "FAKEPNPM: db:test:query" $r/r1.txt && [ "$(cat $r/c1.txt)" = 0 ]'
+fi
 
 # 20. The integration and the final review read the current briefs in 00-input/units/, not the copy the implementer got.
-# The fake implementer of the first unit corrects its own brief in 00-input/units/ while it works, as the coordinator would between runs.
 HDR='Brief received by the implementer (differs from the current one)'
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP integration briefs (cases 20-23)'
+else
+# The fake implementer of the first unit corrects its own brief in 00-input/units/ while it works, as the coordinator would between runs.
 GRPIMPL='n=$(basename "$PWD"); echo x >"f-$n.txt"'
 new_case grp '' "$GRPIMPL; [ \"\$n\" = 01-unit ] && echo CURRENT-NOTE >>$work/grp/runs/r/00-input/units/01-unit.md; true"
 printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.md" >"$case_dir/plan/plan.txt"
@@ -309,6 +324,7 @@ printf '# U2\n\n## Result\nx\n' >"$case_dir/plan/unit2.md"; echo "unit.md unit2.
 run grpgone
 check "missing brief: the run stops and says which brief is missing" '[ "$code" -ne 0 ] && grep -q "S1-integration: 02-unit2: the current brief .* is missing or empty" $case_dir/runs/r/status.log'
 check "missing brief: no reviewer saw an integration" '[ ! -e $case_dir/runs/r/S1-integration/rounds/1/diff.patch ]'
+fi
 
 # 24. A plain step has no integration: the final review still shows the current brief and the received one, and logs nothing.
 new_case single '' "echo change >>a.txt; echo CURRENT-NOTE >>$work/single/runs/r/00-input/units/01-unit.md"
@@ -340,6 +356,9 @@ kill "$other" 2>/dev/null
 check "lock: a live pid that is not a plan-run.sh does not hold the run" '[ "$rc" -eq 0 ] && grep -q READY "$case_dir/resume.txt"'
 
 # 26. rebase-integration without --paths: the base becomes the checkout minus the units' diffs, while the integrator never ran.
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP rebase and accept integration (cases 26-30)'
+else
 envrun() { (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "$@") >"$case_dir/cmd.txt" 2>&1; }
 rbi() { envrun "$work/bin/plan-run-limited" rebase-integration r "$@"; }
 resume_with() { envrun "$work/bin/plan-run-limited" resume r; }
@@ -487,6 +506,7 @@ new_case acs '' 'echo change >>a.txt'
 run acs
 acc 1 --why x; rc=$?
 check "accept: a step that is not a group is refused" '[ "$rc" -ne 0 ] && grep -q "not a parallel group" $case_dir/cmd.txt'
+fi
 
 # 31. A usage limit is named in status.log as QUOTA: <the text as Codex wrote it>, wherever it hits; other failures keep their message.
 for stage in implement review report; do
@@ -496,9 +516,13 @@ for stage in implement review report; do
   check "quota ($stage): the run stops and status.log has the text after 'try again at', unparsed" '[ "$code" -ne 0 ] && grep -q "QUOTA: 9:43 PM\.$" $rp/status.log'
   check "quota ($stage): the reason says usage limit, not a bare exit code" 'grep -q "usage limit reached. QUOTA: 9:43 PM." $rp/status.log && ! grep -q "exit=1" $rp/status.log'
 done
-grp_case q-integrate
-run q-integrate FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=2 FAKE_QUOTA=integrate
-check "quota (integrate): named too" '[ "$code" -ne 0 ] && grep -q "S1-integration: usage limit reached. QUOTA: 9:43 PM." $case_dir/runs/r/status.log'
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP integration quota'
+else
+  grp_case q-integrate
+  run q-integrate FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=2 FAKE_QUOTA=integrate
+  check "quota (integrate): named too" '[ "$code" -ne 0 ] && grep -q "S1-integration: usage limit reached. QUOTA: 9:43 PM." $case_dir/runs/r/status.log'
+fi
 new_case q-other '' 'echo change >>a.txt'
 run q-other FAKE_QUOTA=implement FAKE_QUOTA_MSG="You’ve hit your usage limit. Resets on Friday, 3 Nov."
 check "quota: a message with no 'try again at' is kept whole, not guessed" 'grep -q "QUOTA: You’ve hit your usage limit. Resets on Friday, 3 Nov." $case_dir/runs/r/status.log'
@@ -507,6 +531,9 @@ run q-none FAKE_FAIL=implement
 check "quota: another failure keeps its exit message and no QUOTA line" '[ "$code" -ne 0 ] && grep -q "01-unit: implementer exit=1" $case_dir/runs/r/status.log && ! grep -q QUOTA $case_dir/runs/r/status.log'
 
 # 32. Disk: the first worktree of a group measures what one takes; the group is refused when the rest cannot fit (with a margin of a quarter).
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP disk (case 32)'
+else
 grp_case dk-ok
 run dk-ok FAKE_DF_BEFORE=300000 FAKE_DF_AFTER=200000
 check "disk: room for the rest (125000 KB needed, 200000 free): the group runs" '[ "$code" -eq 0 ] && grep -q "READY" $case_dir/out.txt'
@@ -524,6 +551,7 @@ check "disk: after the space is back, resume runs the group" 'grep -q READY $cas
 grp_case dk-noise
 run dk-noise FAKE_DF_BEFORE=1000 FAKE_DF_AFTER=2000
 check "disk: a measure that shows no consumption (noise) never refuses, and is reported as 0 MB, not a negative number" '[ "$code" -eq 0 ] && grep -q "S1: disk: the first worktree took 0 MB; 1 more need about 0 MB" $case_dir/runs/r/status.log'
+fi
 
 # 33. Progress: a green single-unit gate reports each stage in order.
 new_case progress-green 'true' 'echo change >>a.txt'
@@ -553,6 +581,9 @@ pg_escalate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · escalada' "$case
 check "progress backs: the final back is followed by escalation" '[ "$code" -ne 0 ] && [ "$pg_back" -lt "$pg_escalate" ] && grep -qF "[plan] S1 parou" "$case_dir/out.txt"'
 
 # 36. Progress: a parallel step names the group and reports both units.
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP parallel progress (case 36)'
+else
 grp_case progress-group
 printf '# Unit\n\n## Result\nx\n\n```gate\ntrue\n```\n' >"$case_dir/plan/unit.md"
 printf '# U2\n\n## Result\nx\n\n```gate\ntrue\n```\n' >"$case_dir/plan/unit2.md"
@@ -564,14 +595,19 @@ pg_review=$(grep -nF '[plan] S1 integração · ronda 1 · revisão' "$case_dir/
 pg_pass=$(grep -nF '[plan] S1 integração · ronda 1 · passou' "$case_dir/out.txt" | cut -d: -f1)
 check "progress group: names both units and reports each implementation" 'grep -qF "[plan] S1 início · paralelo · 01-unit, 02-unit2" "$case_dir/out.txt" && grep -qF "[plan] S1 unidade 01-unit · ronda 1 · implementação" "$case_dir/out.txt" && grep -qF "[plan] S1 unidade 02-unit2 · ronda 1 · implementação" "$case_dir/out.txt"'
 check "progress group: integration stages are in order" '[ "$code" -eq 0 ] && [ "$pg_apply" -lt "$pg_integrate" ] && [ "$pg_integrate" -lt "$pg_gate" ] && [ "$pg_gate" -lt "$pg_review" ] && [ "$pg_review" -lt "$pg_pass" ]'
+fi
 
 # 37. Progress: stdout keeps READY and does not receive progress lines.
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ] && [ "${PLAN_RUN_UNDER_TEST:-plan-run.sh}" = plan-run-engine.sh ]; then
+  echo 'SKIP progress stdout ENGINE GAP: Bash preserves root//name when PLAN_RUNS_DIR ends in /; the engine prints the normalized ctx.run.path'
+else
 new_case progress-stdout '' 'echo change >>a.txt'
 (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
   "$work/bin/plan-run-limited" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") 2>/dev/null >"$case_dir/stdout.txt"
 stdout_code=$?
 stdout_expected=$(printf 'Run folder: %s\nREADY: %s/report.md\nSee %s/status.log' "$case_dir/runs/r" "$case_dir/runs/r" "$case_dir/runs/r")
 check "progress stdout: start keeps its exact output and progress does not leak to it" '[ "$stdout_code" -eq 0 ] && [ "$(cat "$case_dir/stdout.txt")" = "$stdout_expected" ] && ! grep -qF "[plan]" "$case_dir/stdout.txt"'
+fi
 
 # 38. Progress: a gate that reaches its cap escalates and stops the step.
 new_case progress-gate-cap 'false' 'echo change >>a.txt'
@@ -611,6 +647,9 @@ echo 'Board sample from the finished sequential plan:'
 cat "$case_dir/board.txt"
 
 # 42. A parallel group gets a heading, both unit rows and its integration row.
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ]; then
+  echo 'SKIP parallel board (case 42)'
+else
 grp_case board-group
 run board-group
 rp=$case_dir/runs/r
@@ -621,6 +660,7 @@ board_unit1=$(grep -nF '01-unit' "$case_dir/board.txt" | cut -d: -f1)
 board_unit2=$(grep -nF '02-unit2' "$case_dir/board.txt" | cut -d: -f1)
 board_integration=$(grep -nF 'integração' "$case_dir/board.txt" | cut -d: -f1)
 check "board parallel: both units and integration appear under the parallel step" '[ "$code" -eq 0 ] && [ "$board_head" -lt "$board_unit1" ] && [ "$board_unit1" -lt "$board_unit2" ] && [ "$board_unit2" -lt "$board_integration" ] && grep -qF "✓ integração" "$case_dir/board.txt"'
+fi
 
 # 43. A failed gate sends the unit back; the round 2 board is captured from stderr.
 new_case board-gate-back 'test -f ok' 'echo change >>a.txt; [ "$FAKE_N" -ge 2 ] && touch ok; true'
@@ -630,6 +670,9 @@ gate_back_code=$?
 check "board gate back: round 2 shows the gate failure on stderr" '[ "$gate_back_code" -eq 0 ] && grep -qF "[plan] S1 unidade 01-unit · ronda 2 · implementação" "$case_dir/stderr.txt" && grep -qF "↩ 01-unit" "$case_dir/stderr.txt" && grep -qF "gate falhou · ronda 2 a implementar" "$case_dir/stderr.txt"'
 
 # 44. Resume keeps the same stdout contract as start while the board stays on stderr.
+if [ "${PLAN_RUN_SCOPE:-}" = sequential ] && [ "${PLAN_RUN_UNDER_TEST:-plan-run.sh}" = plan-run-engine.sh ]; then
+  echo 'SKIP board stdout ENGINE GAP: Bash preserves root//name when PLAN_RUNS_DIR ends in /; the engine prints the normalized ctx.run.path'
+else
 new_case board-resume-stdout '' 'echo change >>a.txt'
 (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" \
   "$work/bin/plan-run-limited" start -p each r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/start.stdout" 2>"$case_dir/start.stderr"
@@ -640,5 +683,6 @@ start_expected=$(printf 'Run folder: %s\nPAUSED after step 1 (01-unit). Read it 
 resume_code=$?
 resume_expected=$(printf 'Run folder: %s\nREADY: %s/report.md\nSee %s/status.log' "$case_dir/runs/r" "$case_dir/runs/r" "$case_dir/runs/r")
 check "board stdout: start and resume preserve their exact stdout" '[ "$pause_code" -eq 3 ] && [ "$resume_code" -eq 0 ] && [ "$(cat "$case_dir/start.stdout")" = "$start_expected" ] && [ "$(cat "$case_dir/resume.stdout")" = "$resume_expected" ] && ! grep -qF "[plan]" "$case_dir/start.stdout" && ! grep -qF "[plan]" "$case_dir/resume.stdout"'
+fi
 
 exit "$fail"

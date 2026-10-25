@@ -5,8 +5,11 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from unittest import mock
 
+from harness import agent
 
 HARNESS_DIR = pathlib.Path(__file__).resolve().parents[1]
 
@@ -28,6 +31,7 @@ class AgentCliTests(unittest.TestCase):
             "    json.dump(arguments, output)\n"
             "with open(os.environ['INPUT_LOG'], 'wb') as output:\n"
             "    output.write(sys.stdin.buffer.read())\n"
+            "import time; time.sleep(float(os.environ.get('FAKE_SLEEP', '0')))\n"
             "with open(arguments[arguments.index('-o') + 1], 'w') as output:\n"
             "    output.write('last message')\n"
             "sys.stdout.write('{\\\"type\\\":\\\"event\\\"}\\n')\n"
@@ -166,6 +170,53 @@ class AgentCliTests(unittest.TestCase):
             "last message",
         )
 
+    def run_in_process(self, **environment):
+        patched = dict(self.env)
+        patched.update(environment)
+        with mock.patch.dict(os.environ, patched, clear=True):
+            return agent.run_agent(
+                str(self.root), str(self.prompt), str(self.prefix), "gpt-test", "high"
+            )
+
+    def spawn_kwargs(self, in_thread):
+        calls = []
+        real_popen = subprocess.Popen
+
+        def recording_popen(*args, **kwargs):
+            calls.append(kwargs)
+            return real_popen(*args, **kwargs)
+
+        with mock.patch.object(agent.subprocess, "Popen", recording_popen):
+            if in_thread:
+                results = []
+                worker = threading.Thread(target=lambda: results.append(self.run_in_process()))
+                worker.start()
+                worker.join()
+                self.assertEqual(results, [0])
+            else:
+                self.assertEqual(self.run_in_process(), 0)
+        return calls[0]
+
+    def test_main_thread_masks_signals_while_the_agent_registers(self):
+        self.assertIn("preexec_fn", self.spawn_kwargs(in_thread=False))
+
+    def test_worker_thread_does_not_use_preexec_fn(self):
+        self.assertNotIn("preexec_fn", self.spawn_kwargs(in_thread=True))
+
+    def test_agent_started_in_a_worker_thread_ends_when_the_run_is_stopping(self):
+        results = []
+        agent.stopping.set()
+        try:
+            worker = threading.Thread(
+                target=lambda: results.append(self.run_in_process(FAKE_SLEEP="30"))
+            )
+            worker.start()
+            worker.join(timeout=10)
+        finally:
+            agent.stopping.clear()
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(results, [128 + signal.SIGTERM])
+
     def test_exit_status_is_propagated(self):
         environment = self.env.copy()
         environment["FAKE_EXIT"] = "23"
@@ -199,6 +250,38 @@ class AgentCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn(b"backend not implemented: claude", result.stderr)
         self.assertFalse(self.arg_log.exists())
+
+    def test_backend_quota_text_matches_bash_extraction(self):
+        backend = agent.CodexBackend()
+        events = self.root / "quota.events.jsonl"
+        cases = (
+            ('{"message":"You\'ve hit your usage limit. try again at 2026-10-23 10:00 UTC"}\n',
+             "2026-10-23 10:00 UTC"),
+            ('{"message":"You’ve hit your usage limit. try again at tomorrow \\"later\\""}\n',
+             'tomorrow \\"later\\"'),
+            ('{"message":"You’ve hit your usage limit. Please wait"}\n',
+             "You’ve hit your usage limit. Please wait"),
+        )
+        for content, expected in cases:
+            with self.subTest(content=content):
+                events.write_text(content, encoding="utf-8")
+                self.assertEqual(backend.quota_text(str(events)), expected)
+
+    def test_backend_quota_text_uses_first_matching_line_and_returns_none_without_match(self):
+        backend = agent.CodexBackend()
+        events = self.root / "quota.events.jsonl"
+        events.write_text(
+            '{"message":"hit your usage limit; try again at first"}\n'
+            '{"message":"hit your usage limit; try again at second"}\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(backend.quota_text(str(events)), "first")
+        events.write_text('{"message":"other event"}\n', encoding="utf-8")
+        self.assertIsNone(backend.quota_text(str(events)))
+
+    def test_get_backend_returns_registered_class_or_none(self):
+        self.assertIs(agent.get_backend("codex"), agent.CodexBackend)
+        self.assertIsNone(agent.get_backend("unknown"))
 
 if __name__ == "__main__":
     unittest.main()

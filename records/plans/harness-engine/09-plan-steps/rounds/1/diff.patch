@@ -1,0 +1,513 @@
+diff --git a/agent-skills/skills/dispatch-codex/SKILL.md b/agent-skills/skills/dispatch-codex/SKILL.md
+index 5aac3bd..b98e3aa 100644
+--- a/agent-skills/skills/dispatch-codex/SKILL.md
++++ b/agent-skills/skills/dispatch-codex/SKILL.md
+@@ -92,7 +92,7 @@ For a [code review](../../library/workflow-types/code-review/code-review.md), us
+ 
+ ## Shared code
+ 
+-The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [workflow contract module](harness/harness/engine/workflow.py), [workflow pipeline module](harness/harness/engine/pipeline.py), [plan input workflow module](workflows/plan_inputs.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), [review module](harness/harness/engine/review.py), [unit loop module](harness/harness/engine/loop.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [workflow pipeline tests](harness/tests/test_engine_pipeline.py), [plan input tests](harness/tests/test_workflow_plan_inputs.py), [engine robustness tests](harness/tests/test_engine_robustness.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), [agent step tests](harness/tests/test_engine_agentstep.py), [review tests](harness/tests/test_engine_review.py), and [unit loop tests](harness/tests/test_engine_loop.py). `bkf skills` requires links to every module and test file.
++The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [workflow contract module](harness/harness/engine/workflow.py), [workflow pipeline module](harness/harness/engine/pipeline.py), [plan input workflow module](workflows/plan_inputs.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), [review module](harness/harness/engine/review.py), [unit loop module](harness/harness/engine/loop.py), [plan workflow module](workflows/plan.py), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [workflow pipeline tests](harness/tests/test_engine_pipeline.py), [plan input tests](harness/tests/test_workflow_plan_inputs.py), [plan workflow tests](harness/tests/test_workflow_plan.py), [plan test support](harness/tests/plan_test_support.py), [engine robustness tests](harness/tests/test_engine_robustness.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), [agent step tests](harness/tests/test_engine_agentstep.py), [review tests](harness/tests/test_engine_review.py), and [unit loop tests](harness/tests/test_engine_loop.py). `bkf skills` requires links to every module and test file.
+ 
+ Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness ...`.
+ 
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/plan_test_support.py b/agent-skills/skills/dispatch-codex/harness/tests/plan_test_support.py
+new file mode 100644
+index 0000000..70210f8
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/tests/plan_test_support.py
+@@ -0,0 +1,127 @@
++"""Throwaway repository and fake Codex helpers for plan workflow tests."""
++import os
++import subprocess
++import tempfile
++from pathlib import Path
++
++
++class PlanRunFixture:
++    def __init__(self, test_case):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = Path(self.temp.name)
++        self.repo = self.root / "repo"
++        self.repo.mkdir()
++        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
++        subprocess.run(["git", "-C", str(self.repo), "config", "user.email", "t@t"], check=True)
++        subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "t"], check=True)
++        (self.repo / "seed.txt").write_text("seed\n", encoding="utf-8")
++        subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
++        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "init"], check=True)
++        self.plan = self.root / "plan"
++        self.plan.mkdir()
++        self.goal = self.plan / "goal.md"
++        self.goal.write_text("Goal\n", encoding="utf-8")
++        self.guides = self.root / "guides"
++        self.guides.mkdir()
++        for name in ("plan-implementation.md", "plan-review.md"):
++            (self.guides / name).write_text("guide\n", encoding="utf-8")
++        self.runs = self.root / "runs"
++        self.bin = self.root / "bin"
++        self.bin.mkdir()
++        codex = self.bin / "codex"
++        codex.write_text(_FAKE_CODEX, encoding="utf-8")
++        codex.chmod(0o755)
++        self.state = self.root / "state"
++        self.state.mkdir()
++        self.env = os.environ.copy()
++        self.env.update({
++            "PATH": str(self.bin) + os.pathsep + self.env.get("PATH", ""),
++            "PLAN_RUNS_DIR": str(self.runs),
++            "PLAN_GUIDES": str(self.guides),
++            "FAKE_STATE": str(self.state),
++            "FAKE_IMPLS": "{}",
++        })
++        self.test_case = test_case
++
++    def add_brief(self, name, text="## Result\nImplement it.\n"):
++        path = self.plan / (name + ".md")
++        path.write_text(text, encoding="utf-8")
++        return path
++
++    def write_plan(self, *lines):
++        path = self.plan / "plan.txt"
++        path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
++        return path
++
++    def call(self, *args):
++        from harness.engine.pipeline import main
++
++        previous = os.getcwd()
++        try:
++            os.chdir(self.repo)
++            with _environment(self.env):
++                return main(str(_WORKFLOW), list(args))
++        finally:
++            os.chdir(previous)
++
++    def close(self):
++        self.temp.cleanup()
++
++
++class _environment:
++    def __init__(self, values):
++        self.values = values
++        self.previous = None
++
++    def __enter__(self):
++        self.previous = os.environ.copy()
++        os.environ.clear()
++        os.environ.update(self.values)
++
++    def __exit__(self, exc_type, exc_value, traceback):
++        os.environ.clear()
++        os.environ.update(self.previous)
++
++
++_WORKFLOW = Path(os.environ.get(
++    "PLAN_WORKFLOW_PATH", str(Path(__file__).parents[2] / "workflows" / "plan.py")
++))
++
++
++_FAKE_CODEX = '''#!/usr/bin/env python3
++import json
++import os
++import pathlib
++import subprocess
++import sys
++
++args = sys.argv[1:]
++directory = pathlib.Path(args[args.index("-C") + 1])
++output = pathlib.Path(args[args.index("-o") + 1])
++prompt = sys.stdin.read()
++state = pathlib.Path(os.environ["FAKE_STATE"])
++if prompt.startswith("# Final review"):
++    output.write_text("Final report\\n", encoding="utf-8")
++elif prompt.startswith("# Review"):
++    count_file = state / "reviews"
++    count = int(count_file.read_text() if count_file.exists() else "0") + 1
++    count_file.write_text(str(count))
++    remove = os.environ.get("FAKE_REMOVE_BRIEF_ON_REVIEW")
++    if remove:
++        pathlib.Path(remove).unlink(missing_ok=True)
++    output.write_text("## What I checked\\n\\n- patch\\n- prompt\\n- result\\n\\n## Problems\\n\\nnone\\n\\nVERDICT: pass\\n", encoding="utf-8")
++else:
++    count_file = state / "implementations"
++    count = int(count_file.read_text() if count_file.exists() else "0") + 1
++    count_file.write_text(str(count))
++    scripts = json.loads(os.environ.get("FAKE_IMPLS", "{}"))
++    script = scripts.get(str(count), "echo change >> seed.txt")
++    completed = subprocess.run(["bash", "-c", script], cwd=str(directory), check=False)
++    if completed.returncode:
++        raise SystemExit(completed.returncode)
++    output.write_text("handoff\\n", encoding="utf-8")
++    print('{"type":"item.completed"}')
++    print('{"type":"item.completed"}')
++    print('{"type":"item.completed"}')
++    print('{"type":"turn.completed","usage":{"input_tokens":1234}}')
++'''
+diff --git a/agent-skills/skills/dispatch-codex/harness/tests/test_workflow_plan.py b/agent-skills/skills/dispatch-codex/harness/tests/test_workflow_plan.py
+new file mode 100644
+index 0000000..a8c35c2
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/harness/tests/test_workflow_plan.py
+@@ -0,0 +1,151 @@
++import contextlib
++import io
++import json
++import unittest
++from unittest.mock import patch
++
++from harness.engine.run import RunError
++from plan_test_support import PlanRunFixture, _WORKFLOW
++
++
++class PlanWorkflowTests(unittest.TestCase):
++    def setUp(self):
++        self.fixture = PlanRunFixture(self)
++
++    def tearDown(self):
++        self.fixture.close()
++
++    def call(self, *args):
++        output, errors = io.StringIO(), io.StringIO()
++        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
++            code = self.fixture.call(*args)
++        return code, output.getvalue(), errors.getvalue()
++
++    def test_one_unit_runs_to_final_report(self):
++        self.fixture.add_brief("unit")
++        plan = self.fixture.write_plan("unit.md")
++        code, out, err = self.call("start", "sample", str(self.fixture.goal), str(plan))
++        run = self.fixture.runs / "sample"
++
++        self.assertEqual(code, 0)
++        self.assertEqual(out, "Run folder: {0}\nREADY: {0}/report.md\nSee {0}/status.log\n".format(run))
++        self.assertIn("[plan] S1 início · unidade 01-unit", err)
++        for path in (
++            "00-input/goal.md", "00-input/units/01-unit.md", "00-input/order",
++            "plan-base/base", "01-unit/brief.md", "01-unit/base", "01-unit/final.patch",
++            "01-unit/rounds/1/implement-prompt.md", "01-unit/rounds/1/diff.patch",
++            "report-prompt.md", "report.md", "state-after-S1", "cumulative.patch", "status.log",
++        ):
++            self.assertTrue((run / path).is_file(), path)
++        self.assertEqual((run / "00-input/order").read_text(), "01-unit\n")
++        self.assertEqual((run / "01-unit/status").read_text(), "passed\n")
++        self.assertTrue((run / ".done-S1").is_file())
++        self.assertTrue((run / ".done-report").is_file())
++        self.assertIn("start sample (gpt-6-luna xhigh, review xhigh, max 3 rounds, 1 step(s), 1 unit(s), repo ", (run / "status.log").read_text())
++        self.assertIn("unit 01-unit has no gate: only a reviewer checks it", (run / "status.log").read_text())
++        self.assertIn("READY: report at {0}/report.md".format(run), (run / "status.log").read_text())
++        self.assertEqual((run / "report.md").read_text(), "Final report\n")
++        self.assertIn("diff --git a/seed.txt b/seed.txt", (run / "cumulative.patch").read_text())
++
++    def test_second_unit_patch_is_based_on_first_units_state(self):
++        self.fixture.add_brief("first")
++        self.fixture.add_brief("second")
++        plan = self.fixture.write_plan("first.md", "second.md")
++        self.fixture.env["FAKE_IMPLS"] = json.dumps({
++            "1": "echo first >> seed.txt; echo first-created > first.txt",
++            "2": "test -f first.txt && echo second > second.txt",
++        })
++
++        code, _, _ = self.call("start", "sequence", str(self.fixture.goal), str(plan))
++        run = self.fixture.runs / "sequence"
++        self.assertEqual(code, 0)
++        patch = (run / "02-second/rounds/1/diff.patch").read_text()
++        self.assertIn("second.txt", patch)
++        self.assertNotIn("first-created", patch)
++        self.assertNotIn("first.txt", patch)
++        self.assertEqual((run / "state-after-S1").read_text(), (run / "02-second/base").read_text())
++
++    def test_failing_gate_stops_before_review(self):
++        self.fixture.add_brief("unit", "## Result\nChange it.\n\n```gate\nfalse\n```\n")
++        plan = self.fixture.write_plan("unit.md")
++        self.fixture.env["PLAN_MAX_GATE_ROUNDS"] = "1"
++        code, out, _ = self.call("start", "red", str(self.fixture.goal), str(plan))
++        run = self.fixture.runs / "red"
++
++        self.assertEqual(code, 1)
++        self.assertIn("STOPPED at step 1 (01-unit): 01-unit: the gate still fails after 1 rounds", out)
++        self.assertFalse((self.fixture.state / "reviews").exists())
++        self.assertEqual((run / "01-unit/status").read_text(), "escalated\n")
++        self.assertIn("exit code: 1", (run / "01-unit/rounds/1/gate.md").read_text())
++
++    def test_pause_and_resume_continues_to_report(self):
++        self.fixture.add_brief("unit")
++        plan = self.fixture.write_plan("unit.md")
++        code, out, _ = self.call("start", "-p", "each", "paused", str(self.fixture.goal), str(plan))
++        run = self.fixture.runs / "paused"
++        self.assertEqual(code, 3)
++        self.assertIn("PAUSED after step 1 (01-unit).", out)
++        self.assertTrue((run / ".paused-S1").exists())
++
++        code, out, _ = self.call("resume", "-p", "none", "paused")
++        self.assertEqual(code, 0)
++        self.assertIn("READY:", out)
++        self.assertEqual((self.fixture.state / "implementations").read_text(), "1")
++
++    def test_missing_current_brief_stops_before_final_review(self):
++        self.fixture.add_brief("unit")
++        plan = self.fixture.write_plan("unit.md")
++        self.fixture.env["FAKE_REMOVE_BRIEF_ON_REVIEW"] = str(self.fixture.runs / "briefs/00-input/units/01-unit.md")
++        code, out, _ = self.call("start", "briefs", str(self.fixture.goal), str(plan))
++
++        self.assertEqual(code, 1)
++        self.assertIn("STOPPED at the final review: 01-unit: the current brief", out)
++        run = self.fixture.runs / "briefs"
++        self.assertFalse((run / "report.md").exists())
++        self.assertEqual((self.fixture.state / "reviews").read_text(), "1")
++
++    def test_several_briefs_on_one_line_are_refused(self):
++        self.fixture.add_brief("one")
++        self.fixture.add_brief("two")
++        plan = self.fixture.write_plan("one.md two.md")
++        code, _, errors = self.call("start", "group", str(self.fixture.goal), str(plan))
++        self.assertEqual(code, 1)
++        self.assertIn("step 1 has several briefs; this engine runs one unit per step", errors)
++        self.assertFalse(self.fixture.runs.exists())
++
++    def test_validate_start_messages(self):
++        self.fixture.add_brief("unit")
++        plan = self.fixture.write_plan("unit.md")
++        empty_goal = self.fixture.root / "empty-goal.md"
++        empty_goal.write_text("", encoding="utf-8")
++        empty_plan = self.fixture.root / "empty-plan.txt"
++        empty_plan.write_text("", encoding="utf-8")
++        cases = (
++            (("start", "missing-goal", str(self.fixture.root / "missing.md"), str(plan)), "missing or empty goal:"),
++            (("start", "empty-goal", str(empty_goal), str(plan)), "missing or empty goal:"),
++            (("start", "missing-plan", str(self.fixture.goal), str(self.fixture.root / "missing.txt")), "missing or empty plan:"),
++            (("start", "empty-plan", str(self.fixture.goal), str(empty_plan)), "missing or empty plan:"),
++        )
++        for args, expected in cases:
++            with self.subTest(expected=expected):
++                code, _, errors = self.call(*args)
++                self.assertEqual(code, 1)
++                self.assertIn(expected, errors)
++        with patch.dict("os.environ", {"PATH": ""}):
++            with self.assertRaises(RunError) as error:
++                from harness.engine.pipeline import _load_workflow
++                workflow = _load_workflow(_WORKFLOW)
++                workflow.validate_start([str(self.fixture.goal), str(plan)])
++        self.assertIn("codex not found", str(error.exception))
++        environment = dict(self.fixture.env)
++        environment["PLAN_GUIDES"] = str(self.fixture.root / "missing-guides")
++        with patch.dict("os.environ", environment):
++            with self.assertRaises(RunError) as error:
++                from harness.engine.pipeline import _load_workflow
++                workflow = _load_workflow(_WORKFLOW)
++                workflow.validate_start([str(self.fixture.goal), str(plan)])
++        self.assertIn("no role guides at {0} (set PLAN_GUIDES)".format(environment["PLAN_GUIDES"]), str(error.exception))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/agent-skills/skills/dispatch-codex/workflows/plan.py b/agent-skills/skills/dispatch-codex/workflows/plan.py
+new file mode 100644
+index 0000000..67396cf
+--- /dev/null
++++ b/agent-skills/skills/dispatch-codex/workflows/plan.py
+@@ -0,0 +1,204 @@
++"""Sequential plan workflow for the harness pipeline."""
++import os
++import shutil
++from pathlib import Path
++from typing import NamedTuple
++
++from harness.engine.agentstep import run_agent_step, tier_from_environment
++from harness.engine.diffbase import make_patch, snapshot_base, snapshot_tree
++from harness.engine.loop import UnitHooks, run_unit_loop
++from harness.engine.workflow import Step, Stop, Workflow
++from harness.engine.run import RunError
++
++import plan_inputs
++
++
++class _Limits(NamedTuple):
++    max_rounds: int
++    max_gate_rounds: int
++    gate_timeout: float
++    min_checked: int
++
++
++def _env_int(name, default):
++    return int(os.environ.get(name, str(default)))
++
++
++def _limits():
++    return _Limits(
++        _env_int("PLAN_MAX_ROUNDS", 3),
++        _env_int("PLAN_MAX_GATE_ROUNDS", 5),
++        float(os.environ.get("PLAN_GATE_TIMEOUT", "900")),
++        _env_int("PLAN_MIN_CHECKED", 3),
++    )
++
++
++def _review_effort(settings):
++    return settings.review_effort or settings.effort
++
++
++class _UnitHooks(UnitHooks):
++    def __init__(self, ctx, step):
++        self.ctx = ctx
++        self.step = step
++
++    def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff):
++        return plan_inputs.implement_prompt(
++            os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ, self.ctx.repo),
++            brief, round_number, resumed, previous_problems, previous_handoff,
++        )
++
++    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file):
++        return plan_inputs.review_prompt(
++            os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ, self.ctx.repo),
++            brief, patch, previous_problems, attempt, gate_file,
++        )
++
++    def gate_commands(self, brief):
++        return plan_inputs.gate_commands([brief])
++
++    def progress(self, text):
++        self.ctx.progress(text)
++
++
++class PlanWorkflow(Workflow):
++    name = "plan"
++    command = "plan-run.sh"
++    usage_start = "usage: start [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> <goal.md> <plan.txt>"
++    repo_hint = "run start inside the repository the plan changes"
++
++    def validate_start(self, args):
++        if len(args) != 2:
++            raise RunError(self.usage_start)
++        goal, plan = args
++        if not os.path.isfile(goal) or os.path.getsize(goal) == 0:
++            raise RunError("missing or empty goal: {0}".format(goal))
++        if not os.path.isfile(plan) or os.path.getsize(plan) == 0:
++            raise RunError("missing or empty plan: {0}".format(plan))
++        steps = plan_inputs.parse_plan(plan)
++        del steps
++        if shutil.which("codex") is None:
++            raise RunError("codex not found")
++        guides = plan_inputs.guides_path(os.environ, Path(__file__).resolve().parents[1])
++        if not os.path.isdir(guides):
++            raise RunError("no role guides at {0} (set PLAN_GUIDES)".format(guides))
++
++    def start(self, ctx, args):
++        goal, plan = args
++        steps = plan_inputs.parse_plan(plan)
++        plan_inputs.write_inputs(ctx.run.path, goal, steps)
++        base = ctx.run.path / "plan-base"
++        base.mkdir(parents=True, exist_ok=True)
++        snapshot_base(base, ctx.repo)
++        unit_count = len(steps)
++        ctx.note(
++            "start {0} ({1} {2}, review {3}, max {4} rounds, {5} step(s), {6} unit(s), repo {7})".format(
++                ctx.run.name, ctx.settings.model, ctx.settings.effort,
++                _review_effort(ctx.settings), _limits().max_rounds,
++                unit_count, unit_count, ctx.repo,
++            )
++        )
++        units = (ctx.run.path / "00-input" / "order").read_text(encoding="utf-8").splitlines()
++        for unit in units:
++            if not plan_inputs.gate_commands([plan_inputs.brief_current(ctx.run.path, unit)]):
++                ctx.note("unit {0} has no gate: only a reviewer checks it".format(unit))
++
++    def steps(self, ctx):
++        order_path = ctx.run.path / "00-input" / "order"
++        units = [line.rstrip("\r\n") for line in order_path.read_text(encoding="utf-8").splitlines()]
++        steps = []
++        for index, unit in enumerate(units, 1):
++            def run_step(step_ctx, step_number=index, step_unit=unit):
++                step_ctx.progress("S{0} início · unidade {1}".format(step_number, step_unit))
++                if (step_ctx.run.path / (".done-" + step_unit)).exists():
++                    return
++                base_from = None
++                if step_number > 1:
++                    candidate = step_ctx.run.path / "state-after-S{0}".format(step_number - 1)
++                    if candidate.is_file():
++                        base_from = candidate
++                else:
++                    candidate = step_ctx.run.path / "plan-base" / "base"
++                    base_format = step_ctx.run.path / "plan-base" / "base-format"
++                    if candidate.is_file() and base_format.is_file() and base_format.read_text(encoding="utf-8").strip() == "tree":
++                        base_from = candidate
++                result = run_unit_loop(
++                    step_ctx.run, step_unit, step_ctx.repo,
++                    source_brief=plan_inputs.brief_current(step_ctx.run.path, step_unit),
++                    hooks=_UnitHooks(step_ctx, step_number),
++                    settings=step_ctx.settings,
++                    tier=tier_from_environment(),
++                    limits=_limits(),
++                    step=step_number,
++                    base_from=base_from,
++                )
++                if not result.ok:
++                    raise Stop(result.reason)
++                (step_ctx.run.path / (".done-" + step_unit)).touch()
++
++            steps.append(Step(index, unit, run_step))
++        return steps
++
++    def after_step(self, ctx, step):
++        path = ctx.run.path / "state-after-S{0}".format(step.number)
++        try:
++            tree = snapshot_tree(ctx.repo)
++            path.write_text(tree + "\n", encoding="utf-8")
++        except (OSError, RunError):
++            try:
++                path.unlink()
++            except FileNotFoundError:
++                pass
++
++    def final_step(self, ctx):
++        run = ctx.run
++
++        def report(_ctx):
++            order_path = run.path / "00-input" / "order"
++            units = [unit for line in order_path.read_text(encoding="utf-8").splitlines() for unit in line.split()]
++            try:
++                plan_inputs.check_briefs(run.path, units)
++            except RunError as error:
++                raise Stop(str(error))
++            make_patch(run.path / "plan-base", run.path / "cumulative.patch", ctx.repo)
++            prompt = plan_inputs.report_prompt(
++                run.path,
++                os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ, ctx.repo),
++            )
++            prompt_path = run.path / "report-prompt.md"
++            with prompt_path.open("w", encoding="utf-8", newline="") as output:
++                output.write(prompt)
++            result = run_agent_step(
++                run, "final review", ctx.repo, str(prompt_path), str(run.path / "report"),
++                ctx.settings.model, _review_effort(ctx.settings), "read-only",
++                tier_from_environment(),
++                "final review exit=<exit> (see {0}/report.stderr.log)".format(run.path),
++            )
++            if not result.ok:
++                raise Stop(result.reason)
++            last_message = run.path / "report.last-message.md"
++            if not last_message.is_file() or last_message.stat().st_size == 0:
++                raise Stop("final review wrote no report")
++            shutil.copyfile(last_message, run.path / "report.md")
++
++        return Step("final", "review", report)
++
++    def ready_path(self, ctx):
++        return str(ctx.run.path / "report.md")
++
++    def fix_hint(self, ctx):
++        return "Read the rounds in {0}, fix the cause (the briefs in {0}/00-input/units/, or the checkout), then: plan-run.sh resume {1}".format(
++            ctx.run.path, ctx.run.name
++        )
++
++    def board(self, ctx):
++        return ""
++
++    def finish(self, ctx):
++        raise NotImplementedError("plan finish is the next unit")
++
++    def commands(self):
++        return {"gates": plan_inputs.gates_command}
++
++
++WORKFLOW = PlanWorkflow()

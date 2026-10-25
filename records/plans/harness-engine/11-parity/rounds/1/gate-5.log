@@ -1,0 +1,23 @@
+PASS no directive: the brief is unchanged
+PASS no guide in the brief: unchanged
+PASS one directive: succeeds
+PASS one directive: the original text stays first
+PASS one directive: the rule text is in the brief
+PASS one directive: the frontmatter is not
+PASS one directive: the brief says where the text came from
+PASS second run: the brief is unchanged
+PASS two directives: both texts, in order
+PASS missing file: fails
+PASS missing file: the message names the file
+PASS missing file: the brief is unchanged
+PASS not a .md file: fails
+PASS codex_run: the agent receives the rule text
+PASS codex_run: the recorded brief is what the agent read
+PASS codex_run: a failed injection stops the agent from starting
+PASS real guides: every directive resolves
+PASS real guides: plan/plan-implementation.md brings core-code-principles into the brief
+PASS real guides: plan/plan-implementation.md brings the gate into the brief
+PASS real guides: plan/plan-review.md brings core-code-principles into the brief
+PASS real guides: plan/plan-review.md brings the gate into the brief
+PASS real guides: code-review/code-review-axis.md brings core-code-principles into the brief
+PASS real guides: code-review/code-review-axis.md brings the gate into the brief
