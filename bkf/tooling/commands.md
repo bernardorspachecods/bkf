@@ -84,6 +84,8 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   The `feedback` and `ideas` logs are exempt from the navigation map warnings.
   When any navigation map warning is printed, one paragraph on writing the map
   ends the findings.
+- `REPO_LIBRARY_ENTRY_UNLINKED` warns when no enclosing-bundle document outside
+  `repo-library/` links to a Markdown entry.
 
 ## bkf updates
 
