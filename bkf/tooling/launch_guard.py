@@ -24,6 +24,25 @@ REASON = (
 )
 
 
+HEREDOC = re.compile(r"<<-?\s*(?:'([^']+)'|\"([^\"]+)\"|([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _without_heredoc_bodies(command: str) -> str:
+    """Drop the text a heredoc feeds to a command: it is data, not a command that runs."""
+    kept: list[str] = []
+    ending: str | None = None
+    for line in command.split("\n"):
+        if ending is not None:
+            if line.strip() == ending:
+                ending = None
+            continue
+        kept.append(line)
+        match = HEREDOC.search(line)
+        if match:
+            ending = next(group for group in match.groups() if group)
+    return "\n".join(kept)
+
+
 def _segments(command: str) -> list[tuple[list[str], str]]:
     """Split a command into (words, the separator that followed it)."""
     try:
@@ -84,7 +103,9 @@ def check(data: dict) -> dict | None:
     command = tool_input.get("command")
     if not isinstance(command, str) or not command.strip():
         return None
-    segments = _segments(command)
+    segments: list[tuple[list[str], str]] = []
+    for line in _without_heredoc_bodies(command).replace("\\\n", " ").split("\n"):
+        segments.extend(_segments(line))
     launches = [index for index, (words, _) in enumerate(segments) if _launch(words)]
     if not launches:
         return None

@@ -78,6 +78,17 @@ class LaunchGuardTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertAllowed(command)
 
+    def test_text_fed_to_a_command_by_a_heredoc_is_not_a_launch(self):
+        command = (
+            "cat > run.sh <<'EOF'\n"
+            "bash plan-run.sh start x goal.md plan.txt\n"
+            "codex exec -\n"
+            "EOF\n"
+            "echo done"
+        )
+        self.assertAllowed(command)
+        self.assertBlocked(command + "\nbash plan-run.sh start x g p")
+
     def test_other_tools_and_bad_input_are_ignored(self):
         self.assertIsNone(call("plan-run.sh start r g p", tool="Read"))
         self.assertIsNone(check({"tool_name": "Bash"}))
