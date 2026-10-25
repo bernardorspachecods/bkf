@@ -29,7 +29,7 @@ BKF answers this with a few ideas applied consistently, not with a fixed set of 
 | --- | --- | --- | --- |
 | Format | `bkf/` | Defines a valid document, map, and bundle, and ships the tooling that checks them | Without a checkable format, structure is a convention that decays |
 | Library | `agent-skills/library/` (`modules/`, `workflow-types/`) | Rule modules and workflow types for daily use, each written once | Skills repeated the same guidance; a module is written once and selected per task |
-| Entry skills | `agent-skills/skills/` | Thin triggers, one per situation, each carrying a generated list of the modules that apply | The harness always loads a triggered skill's body, but a pointer to a file can be skipped, so the list sits in the skill |
+| Skills | `agent-skills/skills/` | One per situation: orders for the agent, with the text a module shares injected into the body at build time | The harness always loads a triggered skill's body, but a pointer to a file can be skipped, so the shared text sits in the skill |
 | Repo library | `repo-library/` in each repo | A repo's own procedures and modules, added to the library and never restating it | A repo has local rules the library cannot know; the more specific rule wins |
 | Workflows | A bundle in `workflow-types/`, run from a script outside the repository | A coordinator guide and role guides: agents do the middle of a task, each reviewed by another, and the user steers at the start and judges at the end | Work that spans agents needs roles that do not review their own output; small tasks stay plain skills |
 
@@ -41,7 +41,7 @@ Hooks handle behavior that must run in every session, which a skill cannot guara
 
 ## How a task moves through the layers
 
-An entry skill matches the request. It lists the library modules that apply, and the agent reads the ones that fit. The agent finds the documents it needs through the maps. If the repo has a `repo-library/`, the documents of a task link to the entries that apply to it, and the repo's rules add to the library's. If the task is complex, a workflow gives it roles, handoffs, and review. When it changes something, it updates the owner document in the same change.
+A skill matches the request and carries its orders, including the text of the modules it shares. The agent finds the documents it needs through the maps. If the repo has a `repo-library/`, the documents of a task link to the entries that apply to it, and the repo's rules add to the library's. If the task is complex, a workflow gives it roles, handoffs, and review. When it changes something, it updates the owner document in the same change.
 
 For a complex task the coordinator picks a workflow type and agrees the objective with the user. A script then runs the agents in their roles, each reviewed by another, and stops when a review escalates. The run lives outside the repository until the user chooses to keep it. The steps for the coordinator are in the workflow type's guide and the library module `coordinate-a-run`. Small skills such as `repo-maintenance` run anywhere in this flow.
 
