@@ -41,7 +41,7 @@ Hooks handle behavior that must run in every session, which a skill cannot guara
 
 ## How a task moves through the layers
 
-An entry skill matches the request. It lists the library modules that apply, and the agent reads the ones that fit. If the repo has a `repo-library/`, a line in its `AGENTS.md` sends the agent to the repo's map first, and the repo's rules add to the library's. The agent finds the documents it needs through the maps. If the task is complex, a workflow gives it roles, handoffs, and review. When it changes something, it updates the owner document in the same change.
+An entry skill matches the request. It lists the library modules that apply, and the agent reads the ones that fit. The agent finds the documents it needs through the maps. If the repo has a `repo-library/`, the documents of a task link to the entries that apply to it, and the repo's rules add to the library's. If the task is complex, a workflow gives it roles, handoffs, and review. When it changes something, it updates the owner document in the same change.
 
 For a complex task the coordinator picks a workflow type and agrees the objective with the user. A script then runs the agents in their roles, each reviewed by another, and stops when a review escalates. The run lives outside the repository until the user chooses to keep it. The steps for the coordinator are in the workflow type's guide and the library module `coordinate-a-run`. Small skills such as `repo-maintenance` run anywhere in this flow.
 

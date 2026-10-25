@@ -1,0 +1,3 @@
+interface:
+  display_name: "Align intent"
+  short_description: "Settle what is wanted and why before working, so the agent can work alone"
