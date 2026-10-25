@@ -26,7 +26,7 @@ the installed tool's environment, so plain `python3` does not run them.
 ## Artifact references
 
 - [generate_inventory.py](/tooling/generate_inventory.py) — Implements preview, check, and write modes for BKF member inventories.
-- [skills.py](/tooling/skills.py) — Combines inventory, tagged-list, and skill-catalog checks and writes for `bkf skills`.
+- [skills.py](/tooling/skills.py) — Combines inventory, injected-text, and skill-catalog checks and writes for `bkf skills`.
 - [skill_catalog_common.py](/tooling/skill_catalog_common.py) — Validates skill packages and generates the skill catalog.
 - [generate_skill_catalog.py](/tooling/generate_skill_catalog.py) — Writes or prints the generated skill catalog.
 - [validate_skill_catalog.py](/tooling/validate_skill_catalog.py) — Validates skill metadata and catalog consistency.

@@ -19,15 +19,11 @@ from bkf_common import (
     inventory_entries,
     render_inventory_entry,
     read_text_preserving_newlines,
-    parse_markdown,
 )
 
 
 START_MARKER = "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->"
 END_MARKER = "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->"
-TAGGED_LIST_END_MARKER = "<!-- BKF:GENERATED-TAGGED-LIST-END -->"
-TAGGED_LIST_START_PREFIX = "<!-- BKF:GENERATED-TAGGED-LIST"
-TAGGED_LIST_START_RE = re.compile(r"^<!-- BKF:GENERATED-TAGGED-LIST\s+tags:\s*(.*?)\s*-->$")
 INJECT_DIRECTIVE_RE = re.compile(r"^<!--\s*inject:\s*(\S+?)\s*-->$")
 INJECT_START_MARKER = "<!-- BKF:GENERATED-INJECTED -->"
 INJECT_END_MARKER = "<!-- BKF:GENERATED-INJECTED-END -->"
@@ -66,61 +62,12 @@ def update_map(root: Path, map_path: Path) -> tuple[str, str]:
     return original, updated
 
 
-def update_skill_file(library_root: Path, skill_path: Path) -> tuple[str, str]:
+def update_skill_file(skill_path: Path) -> tuple[str, str]:
     try:
         original = read_text_preserving_newlines(skill_path)
     except BKFInputError as exc:
         raise BKFInputError(f"{skill_path}: {exc}") from exc
-    lines = original.splitlines(keepends=True)
-    contents = [line.rstrip("\r\n") for line in lines]
-    starts = [i for i, line in enumerate(contents) if TAGGED_LIST_START_PREFIX in line and TAGGED_LIST_END_MARKER not in line]
-    ends = [i for i, line in enumerate(contents) if line.strip() == TAGGED_LIST_END_MARKER]
-    if not starts and not ends:
-        return original, apply_injections(original, skill_path)
-    if len(starts) != 1 or len(ends) != 1:
-        raise BKFInputError(f"{skill_path}: generated tagged list needs exactly one paired marker set")
-    start, end = starts[0], ends[0]
-    if start >= end:
-        raise BKFInputError(f"{skill_path}: generated tagged list markers are unpaired or reversed")
-    match = TAGGED_LIST_START_RE.fullmatch(contents[start].strip())
-    if match is None or not match.group(1).strip():
-        raise BKFInputError(f"{skill_path}: generated tagged list marker must name at least one tag")
-    tags = [tag.strip() for tag in match.group(1).split(",")]
-    if not tags or any(not tag for tag in tags):
-        raise BKFInputError(f"{skill_path}: generated tagged list marker has an empty tag")
-
-    entries: list[tuple[str, Path, str]] = []
-    for group in ("modules", "workflow-types"):
-        directory = library_root / group
-        if not directory.exists():
-            continue
-        for path in sorted(directory.rglob("*.md"), key=lambda item: (item.name.casefold(), item.as_posix())):
-            if path.name == MAP_NAME:
-                continue
-            try:
-                metadata = parse_markdown(path).frontmatter
-            except BKFInputError as exc:
-                raise BKFInputError(f"{path.relative_to(library_root).as_posix()}: {exc}") from exc
-            file_tags = metadata.get("tags")
-            if not isinstance(file_tags, list) or not set(tags).intersection(
-                value for value in file_tags if isinstance(value, str)
-            ):
-                continue
-            description = metadata.get("description")
-            if not isinstance(description, str) or not description.strip():
-                raise BKFInputError(
-                    f"{path.relative_to(library_root).as_posix()}: matching file needs a non-empty description"
-                )
-            entries.append((group, path, " ".join(description.split())))
-
-    newline = "\r\n" if "\r\n" in original else "\n"
-    generated = [TABLE_HEADER + newline, TABLE_SEPARATOR + newline]
-    for _, path, description in entries:
-        relative = os.path.relpath(path, skill_path.parent).replace(os.sep, "/")
-        escaped_description = description.replace("|", "\\|")
-        generated.append(f"| {escaped_description} | [{path.name}]({relative}) |{newline}")
-    updated = "".join(lines[: start + 1] + generated + lines[end:])
-    return original, apply_injections(updated, skill_path)
+    return original, apply_injections(original, skill_path)
 
 
 def injected_body(source: Path, skill_path: Path) -> list[str]:
@@ -205,11 +152,11 @@ def apply_injections(text: str, skill_path: Path) -> str:
     return "".join(out)
 
 
-def skill_updates(library_root: Path, skills_dir: Path) -> list[tuple[Path, str, str]]:
+def skill_updates(skills_dir: Path) -> list[tuple[Path, str, str]]:
     skill_files = sorted(skills_dir.glob("*/SKILL.md"), key=lambda path: path.as_posix())
     updates: list[tuple[Path, str, str]] = []
     for skill_path in skill_files:
-        original, updated = update_skill_file(library_root, skill_path)
+        original, updated = update_skill_file(skill_path)
         updates.append((skill_path, original, updated))
     return updates
 
@@ -237,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="write refreshed inventories")
     mode.add_argument("--check", action="store_true", help="fail if any inventory is stale")
-    parser.add_argument("--skills", type=Path, help="also generate tagged lists in entry skills (selected bundle only)")
+    parser.add_argument("--skills", type=Path, help="also expand inject directives in the SKILL.md files of this directory (selected bundle only)")
     parser.add_argument(
         "--this-bundle",
         action="store_true",
@@ -255,7 +202,7 @@ def process_bundle(root: Path, skills: Path | None, check: bool, write: bool) ->
             original, updated = update_map(root, map_path)
             updates.append((map_path, original, updated))
         if skills is not None:
-            skill_changes = skill_updates(root, skills.resolve())
+            skill_changes = skill_updates(skills.resolve())
     except BKFInputError as exc:
         print(f"error: {map_path.relative_to(root).as_posix()}: {exc}", file=sys.stderr)
         return 2

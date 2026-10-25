@@ -5,7 +5,7 @@ description: Hand one short, objective task to another agent, either a Claude su
 
 # Delegate work
 
-Delegation hands one bounded, objective task to another agent. The principles are the same whichever agent runs it; only the launch differs. Work with several stages, roles or a plan belongs to `work-in-stages`, which runs on the scripts of `dispatch-agents`.
+Delegation hands one bounded, objective task to another agent. The principles are the same whichever agent runs it; only the launch differs. Work with several stages, roles or a plan belongs to the `plan`, `code-review`, `council` and `research` skills, which run on the scripts of `dispatch-agents`.
 
 ## Decide
 
@@ -17,7 +17,7 @@ Delegation hands one bounded, objective task to another agent. The principles ar
 ## Brief
 
 - Give the smallest brief that lets the agent complete and verify the work: the objective and expected output, the inputs and relevant decisions, the files or components it owns and its write boundaries, constraints, completion conditions, and the verification required. Write it by the rules of `handoff` for sources, what the agent can access and delimiting pasted material.
-- Name the check that decides: a test or script. The agent runs it and reports; you run it again when the work comes back (see Reconcile). For code, follow [core-code-principles](../../library/modules/core-code-principles.md). Do not accept "it works" from a report.
+- Name the check that decides: a test or script. The agent runs it and reports; you run it again when the work comes back (see Reconcile). For code, follow [core-code-principles](../../modules/core-code-principles.md). Do not accept "it works" from a report.
 - When an authoritative plan already holds the objective, context, process and output, use its unit as the brief: do not create a second plan or copy the parent plan. Keep only that source, a few high-stakes stop conditions, the immediate request, and a verify-by only if the plan's definition of done is vague.
 - Keep established facts, constraints and sourced context in the context section. Add a separate section for assumptions and unresolved context only for material uncertainties not already stated; write "None identified" when there are none.
 - A brief no stage file holds is transient: write it to the scratchpad or a temporary folder, not into the repository's documents or tooling folders, and save it in the repository only when the user asks.

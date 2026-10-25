@@ -28,7 +28,7 @@ def _limits():
 
 def _guides(repo):
     return os.environ.get("RESEARCH_GUIDES") or str(
-        Path(repo) / "agent-skills" / "library" / "workflow-types" / "research"
+        Path(repo) / "agent-skills" / "skills" / "research" / "roles"
     )
 
 

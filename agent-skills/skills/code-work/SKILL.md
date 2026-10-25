@@ -7,7 +7,7 @@ description: "Use when you write or fix code yourself, in conversation. Do not u
 
 Inside a plan, a delegated task or a review, stop reading: the brief you were given already carries these rules.
 
-<!-- inject: ../../library/modules/core-code-principles.md -->
+<!-- inject: ../../modules/core-code-principles.md -->
 <!-- BKF:GENERATED-INJECTED -->
 ## Core principles for code
 

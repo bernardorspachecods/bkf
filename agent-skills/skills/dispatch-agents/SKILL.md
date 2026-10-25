@@ -21,7 +21,7 @@ and [verdict tests](harness/tests/test_verdict.py).
 
 ## Research runs
 
-For a whole [research](../../library/workflow-types/research/research.md), use [scripts/research-run.sh](scripts/research-run.sh), which runs the research workflow on the engine.
+For a whole [research](../research/SKILL.md), use [scripts/research-run.sh](scripts/research-run.sh), which runs the research workflow on the engine.
 
 - Write `objective.md`, `sourcemap.md` (one numbered niche per line) and `collectors.txt` (`name: 1,2,5` per line, the niches each collector covers), then run `research-run.sh start [-m model] [-e effort] <name> <objective.md> <sourcemap.md> <collectors.txt>` with `run_in_background: true`. The engine completes the source map with a cheap agent, collects with one agent per collector, joins the collections, digests them and reviews the collection and digest. State defaults to `~/.research-runs/<name>/`; `RESEARCH_RUNS_DIR` or `HARNESS_RUNS_DIR` can set another root.
 - The engine records progress in `status.log` and shows a step board. `research-run.sh status <name>` prints the log, and `research-run.sh board <name>` prints the board. If a step fails or is escalated, fix the cause and run `research-run.sh resume <name>`; completed steps stay done and the unfinished step runs again. If a run is killed, resume detects the interrupted attempt and continues from the unfinished step.
@@ -32,7 +32,7 @@ For a whole [research](../../library/workflow-types/research/research.md), use [
 
 ## Plan runs
 
-For a whole [plan](../../library/workflow-types/plan/plan.md), use [scripts/plan-run.sh](scripts/plan-run.sh). Run it inside the repository the plan changes.
+For a whole [plan](../plan/SKILL.md), use [scripts/plan-run.sh](scripts/plan-run.sh). Run it inside the repository the plan changes.
 
 - You write `goal.md`, one brief per unit, and `plan.txt`: one step per line, holding the unit briefs' paths (relative to `plan.txt`). A line with one brief runs a unit in the checkout; several briefs on a line run as a parallel group in separate worktrees, followed by integration and review of the combined result. Before creating a parallel group, the runner checks available disk space; if the projected worktrees will not fit, it refuses the step. Run `plan-run.sh start [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> <goal.md> <plan.txt>` with `run_in_background: true`. `-e` sets the implementers' reasoning effort and `-r` the reviewers' (and the final review's); without `-r` both use `-e`. `resume` takes the same options and keeps what the run already stored.
 - `start` creates `~/.plan-runs/<name>/` and begins the run at once; it fails if that folder exists. Do not create the folder by hand. Keep a plan that is ready but not to be launched yet as `goal.md`, `plan.txt` and the briefs in a folder outside `~/.plan-runs` (for example `~/.plan-runs-pending/<name>/`), and run `start` from it. The script prefixes each unit name with its step number, so name the brief files without one.
@@ -73,7 +73,7 @@ For a whole [plan](../../library/workflow-types/plan/plan.md), use [scripts/plan
 
 ## Council runs
 
-For a [council](../../library/workflow-types/council/council.md), use [scripts/council-run.sh](scripts/council-run.sh), which runs the council workflow on the engine. `council-run.sh start [-m model] [-e effort] <name> <brief.md>` runs five advisors independently, anonymizes their responses into a packet with the key in `02-packet/key.md`, then runs five independent reviewers and prints `READY`. State defaults to `~/.council-runs/<name>/`; `COUNCIL_RUNS_DIR` or `HARNESS_RUNS_DIR` can set another root. `COUNCIL_GUIDES` sets the folder containing role guides.
+For a [council](../council/SKILL.md), use [scripts/council-run.sh](scripts/council-run.sh), which runs the council workflow on the engine. `council-run.sh start [-m model] [-e effort] <name> <brief.md>` runs five advisors independently, anonymizes their responses into a packet with the key in `02-packet/key.md`, then runs five independent reviewers and prints `READY`. State defaults to `~/.council-runs/<name>/`; `COUNCIL_RUNS_DIR` or `HARNESS_RUNS_DIR` can set another root. `COUNCIL_GUIDES` sets the folder containing role guides.
 
 The engine records progress in `status.log` and shows a step board. `council-run.sh status <name>` prints the log, and `council-run.sh board <name>` prints the board. If a step fails, fix the cause and run `council-run.sh resume <name>`; completed steps stay done and the unfinished step runs again. If a run is killed, resume detects the interrupted attempt and continues from the unfinished step.
 
@@ -83,7 +83,7 @@ When the engine prints `READY`, write the report and run `council-run.sh check [
 
 ## Review runs
 
-For a [code review](../../library/workflow-types/code-review/code-review.md), use [scripts/review-run.sh](scripts/review-run.sh), which runs the review workflow on the engine. Start with `review-run.sh start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>`, where the target is `working-tree` or a revision range such as `main...feature`. Each `-g` command runs in the repository before the reviewers start; its command, output and exit code are saved in `00-input/gate.md` and shown in the report. Red checks remain visible in the report, and no checks are reported as a gap. `REVIEW_GATE_TIMEOUT` (default 900 seconds) limits each check. `-2` adds a second reviewer per axis. State defaults to `~/.review-runs/<name>/`; `REVIEW_RUNS_DIR` or `HARNESS_RUNS_DIR` can set another root, and `REVIEW_GUIDES` sets the role guides folder.
+For a [code review](../code-review/SKILL.md), use [scripts/review-run.sh](scripts/review-run.sh), which runs the review workflow on the engine. Start with `review-run.sh start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>`, where the target is `working-tree` or a revision range such as `main...feature`. Each `-g` command runs in the repository before the reviewers start; its command, output and exit code are saved in `00-input/gate.md` and shown in the report. Red checks remain visible in the report, and no checks are reported as a gap. `REVIEW_GATE_TIMEOUT` (default 900 seconds) limits each check. `-2` adds a second reviewer per axis. State defaults to `~/.review-runs/<name>/`; `REVIEW_RUNS_DIR` or `HARNESS_RUNS_DIR` can set another root, and `REVIEW_GUIDES` sets the role guides folder.
 
 The engine records progress in `status.log` and shows a step board. `review-run.sh status <name>` prints the log, and `review-run.sh board <name>` prints the board. If a step fails, fix the cause and run `review-run.sh resume <name>`; completed steps stay done and the unfinished step runs again. If a run is killed, resume detects the interrupted attempt and continues from the unfinished step. When it prints `READY`, read `report.md`; `review-run.sh finish <name>` keeps the record in `records/reviews/<name>/` and removes the run folder.
 

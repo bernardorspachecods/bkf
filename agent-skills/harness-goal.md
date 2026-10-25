@@ -59,6 +59,7 @@ Four kinds of step: agents (N in parallel), a review with a verdict (pass, back 
 | `research`, `council` and `review` on the engine | Done. |
 | Claude backend | Done: `ClaudeBackend` in `agent.py`, picked with `HARNESS_BACKEND=claude`; write confinement verified (path-scoped `Write`/`Edit` plus Claude's sandbox for Bash, outside temp folders); a real council ran on Haiku. The quota signal for a hit limit is built from the `rate_limit_event` fields but was never seen firing. `dispatch-agents` is now `dispatch-agents`. |
 | `bkf validate` warning for a `repo-library` entry nobody links to | Done and merged (260 tests, +0.5 s on a large repo). |
+| Workflows as skills | Done: `plan`, `code-review`, `council`, `research` are skills (`SKILL.md` = coordinator guide, `roles/` = role guides, `agents/openai.yaml`), each injecting `modules/coordinate-a-run.md`; `work-in-stages` and `do-research` are gone; modules moved to `agent-skills/modules/` (a bundle of its own); the guides folder defaults of the four scripts point to `skills/<name>/roles`; `bkf skills` checks the modules bundle and the injected text, with no tagged lists. |
 | Docs restructure: `code-work`, `align-intent`, `repo-library` (grow only, entries reached by a link from outside), `repo-maintenance` (one skill of principles, writing rules and conventions, about 830 words), modules `core-code-principles` (absorbs `determinism`), `gate`, `intent` | Done and merged. |
 
 ## Where the work is
@@ -69,7 +70,8 @@ Nothing goes to `main` while plans run on the scripts installed from it, so `int
 
 ## Next, in order
 
-1. Turn the workflows into skills and rename `library/` to `modules/`; remove the tag system if nothing uses it.
+1. Shrink `dispatch-agents/SKILL.md` (about 3,400 words, mostly command reference the engine makes redundant).
+2. Brief failures in plans (`/Users/bernardopacheco/falhas-de-briefs-em-planos.md`, see the remaining blocks).
 
 ## Open threads with the user
 
@@ -112,13 +114,13 @@ The run `harness-groups` (8 units, Codex) finished on 2026-10-25 and is merged i
 1. **Run closed.** Done (see above).
 2. **`review`, `research` and `council` on the engine.** Done on 2026-10-25 (run `harness-workflows`, 6 units, merged into `integration`).
 3. **Claude backend.** Done on 2026-10-25 (see State). Confinement found: `--permission-mode dontAsk --allowedTools "Read,Glob,Grep,Write(./**),Edit(./**),Bash"` plus `--settings` with `sandbox.enabled`; unrestricted `Write` is not confined and Bash is confined only by the sandbox. Left unverified: the exact events of a hit usage limit, and web access for research collectors (add `WebFetch,WebSearch` to the allowed tools when a research runs on Claude).
-4. **Workflows become skills** (design below), when its turn comes in this order: done by me with Haiku subagents for the bulk renames. It stays after steps 2 and 3 because the scripts and tests of step 2 name the guide paths.
+4. **Workflows become skills.** Done on 2026-10-25 by me (see State): the design below is kept as the record. Deviations from it: `tags` stay a required field of every tracked document (the validator needs them), so the modules keep `tags: [injected]`; only the tagged-list feature of `bkf skills`, the tag vocabulary and the words "entry skills" went.
 5. **Shrink `dispatch-agents/SKILL.md`** (about 3,400 words, mostly command reference the engine makes redundant) once every workflow runs on the engine.
 6. **Brief failures in plans.** Handle `/Users/bernardopacheco/falhas-de-briefs-em-planos.md` (6 of 29 units in two real plans stopped or lost rounds because of the brief, not the code). Last piece of work, after the engine is complete, because the code items land in the engine and not in the bash. In the document's order: R4 (scope by exclusion, plus the clause that tests and documents broken by the change are the unit's to adapt) in the `plan` guide; R1 (the run stops when the same gate command fails on the same tests in two rounds, or a review sends back for the same file or sentence) and one automatic repeat of a failing gate before it counts; R2 (`blocked.md` from the implementer, `VERDICT: brief` from the reviewer); R3 and R5 (brief lint and ratchet numbers inside `gates`); R6 (rehearsal at the starting state); one combined round cap of 4; R7, R8 (a Haiku reads the brief for contradictions), R9. It happened in this very run: unit 2 of `harness-groups` lost four rounds to a brief that forbade editing the test its own required behavior broke (the document's F5); briefs 3 to 8 now carry a stop-asking, adapt-the-expectation rule as a stopgap.
 7. **Tests with real sessions**, by the user at the end: one request of each kind with `retrieval-chat-audit`, and a small real plan.
 8. **Main.** Ask the user. Before any merge into `main`, read the first row of the worktree table above.
 
-### Workflows become skills: the design
+### Workflows become skills: the design (done; kept as the record)
 
 Today: `agent-skills/library/workflow-types/<plan|code-review|council|research>/` holds a coordinator guide (`plan.md`, ...) and role guides (`plan-implementation.md`, ...), each a tracked BKF document with `tags`; `agent-skills/library/modules/` holds four modules, all tagged `injected`; the skills `work-in-stages` (a menu of plan, code review and council, built with a generated tagged list) and `do-research` (research) list the coordinator guides by tag and inject `coordinate-a-run`.
 
