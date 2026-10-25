@@ -1,5 +1,6 @@
 """Run an agent backend with a prepared prompt and captured output files."""
 
+import json
 import signal
 import subprocess
 import sys
@@ -52,6 +53,17 @@ class Backend:
         return None
 
 
+def _is_error_event(line):
+    """False for a typed event that is not a failure: the phrase there is quoted text, such as a file the agent printed."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return True
+    if not isinstance(event, dict) or "type" not in event:
+        return True
+    return event["type"] in ("turn.failed", "error")
+
+
 class CodexBackend(Backend):
     """Build the Codex CLI arguments used by scripts/lib-codex.sh."""
 
@@ -85,6 +97,8 @@ class CodexBackend(Backend):
             with open(events_path, "r", encoding="utf-8") as events:
                 for line in events:
                     if "hit your usage limit" not in line:
+                        continue
+                    if not _is_error_event(line):
                         continue
                     marker = "try again at "
                     if marker in line:

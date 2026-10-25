@@ -267,6 +267,17 @@ class AgentCliTests(unittest.TestCase):
                 events.write_text(content, encoding="utf-8")
                 self.assertEqual(backend.quota_text(str(events)), expected)
 
+    def test_backend_quota_text_ignores_the_phrase_inside_other_events(self):
+        backend = agent.CodexBackend()
+        with tempfile.TemporaryDirectory() as directory:
+            events = pathlib.Path(directory) / "events.jsonl"
+            quoted = {"type": "item.completed", "item": {"aggregated_output": "You've hit your usage limit. try again at tomorrow"}}
+            failed = {"type": "turn.failed", "error": {"message": "You've hit your usage limit. try again at 5:44 PM."}}
+            events.write_text(json.dumps(quoted) + "\n" + json.dumps(failed) + "\n", encoding="utf-8")
+            self.assertEqual(backend.quota_text(str(events)), "5:44 PM.")
+            events.write_text(json.dumps(quoted) + "\n", encoding="utf-8")
+            self.assertIsNone(backend.quota_text(str(events)))
+
     def test_backend_quota_text_uses_first_matching_line_and_returns_none_without_match(self):
         backend = agent.CodexBackend()
         events = self.root / "quota.events.jsonl"
