@@ -49,7 +49,12 @@ case "$prompt" in
     exit 2
     ;;
 esac
-[ -z "$out" ] || printf 'fake response\n' >"$out"
+[ -z "$out" ] || {
+  case "$prompt" in
+    '# Brief: review of the collection'*|'# Brief: review of the digest'*) cp "$dir/problems.md" "$out" ;;
+    *) printf 'fake response\n' >"$out" ;;
+  esac
+}
 printf '%s\n' '{"type":"turn.completed"}'
 EOF
 chmod +x "$work/bin/codex"
@@ -57,6 +62,7 @@ chmod +x "$work/bin/codex"
 new_case() { # <name>
   case_dir=$work/$1
   mkdir -p "$case_dir/repo" "$case_dir/runs"
+  git -C "$case_dir/repo" init -q
   printf '# Objective\n\nFind useful evidence.\n' >"$case_dir/objective.md"
   printf '1. **Primary sources.** Example sites.\n' >"$case_dir/sourcemap.md"
   printf '# Collectors\n\n# one collector\nprimary: 1\n' >"$case_dir/collectors.txt"
@@ -91,7 +97,8 @@ check "finished: the collector output file is present" '[ -s "$run/02-collection
 check "collector parsing: comments and blank lines are skipped" '[ "$(grep -c "^    " "$case_dir/board.txt")" -eq 1 ]'
 check "board command: renderer errors do not change its exit code" '[ "$board_code" -eq 0 ]'
 check "board command: the board is printed on stdout" '[ "$board_code" -eq 0 ] && [ -s "$case_dir/board.txt" ] && [ ! -s "$case_dir/board.stderr" ]'
-expected_stdout=$(printf 'Run folder: %s\nREADY: %s/03-digest/digest.md\nSee %s/status.log' "$run" "$run" "$run")
+normalized_run=${run//\/\//\/}
+expected_stdout=$(printf 'Run folder: %s\nREADY: %s/03-digest/digest.md\nSee %s/status.log' "$normalized_run" "$normalized_run" "$normalized_run")
 check "start stdout: READY output is unchanged" '[ "$finished_stdout" = "$expected_stdout" ]'
 check "start: the initial board precedes progress" 'awk '\''/^Pesquisa finished/ && !initial { initial=NR } $0 == "[research] map · início" { progress=NR; exit } END { exit !(initial && progress && initial < progress) }'\'' "$case_dir/stderr.txt"'
 check "progress: the line is followed by a blank line and board" 'awk '\''$0 == "[research] map · início" { if (getline <= 0 || $0 != "") exit 1; if (getline <= 0 || index($0, "Pesquisa finished") != 1) exit 1; found=1; exit } END { exit !found }'\'' "$case_dir/stderr.txt"'

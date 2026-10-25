@@ -87,7 +87,8 @@ check "finished: renderer errors do not change the run exit code" '[ "$finished_
 check "finished: both checkers are checked" 'grep -qF "✓ standards" "$case_dir/board.txt" && grep -qF "✓ spec" "$case_dir/board.txt" && [ -s "$run/02-check/standards/checked.md" ] && [ -s "$run/02-check/spec/checked.md" ]'
 check "board command: renderer errors do not change its exit code" '[ "$board_code" -eq 0 ]'
 check "board command: the board is printed on stdout" '[ "$board_code" -eq 0 ] && [ -s "$case_dir/board.txt" ] && [ ! -s "$case_dir/board.stderr" ]'
-expected_stdout=$(printf 'Run folder: %s\nREADY: %s/report.md\nSee %s/status.log' "$run" "$run" "$run")
+run_normalized=$(python3 -c 'import os, sys; print(os.path.normpath(sys.argv[1]))' "$run")
+expected_stdout=$(printf 'Run folder: %s\nREADY: %s/report.md\nSee %s/status.log' "$run_normalized" "$run_normalized" "$run_normalized")
 check "start stdout: READY output is unchanged" '[ "$finished_stdout" = "$expected_stdout" ]'
 check "start: the initial board precedes progress" 'awk '\''/^Revisão finished/ && !initial { initial=NR } $0 == "[review] review · início" { progress=NR; exit } END { exit !(initial && progress && initial < progress) }'\'' "$case_dir/stderr.txt"'
 check "progress: the line is followed by a blank line and board" 'awk '\''$0 == "[review] review · início" { if (getline <= 0 || $0 != "") exit 1; if (getline <= 0 || index($0, "Revisão finished") != 1) exit 1; found=1; exit } END { exit !found }'\'' "$case_dir/stderr.txt"'

@@ -11,7 +11,6 @@ LAUNCHERS = {
     "review-run.sh": {"start", "resume"},
     "council-run.sh": {"start", "resume"},
     "research-run.sh": {"start", "resume"},
-    "phase-codex.sh": {"start"},
     "run-codex.sh": None,
 }
 WRAPPERS = {"bash", "sh", "zsh", "env", "nohup", "time", "exec", "command", "setsid"}

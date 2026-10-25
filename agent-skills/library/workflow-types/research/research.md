@@ -134,8 +134,8 @@ You give each agent a short brief. The method lives in the guide for its role,
 so the brief never explains it, it points to it. This keeps the method in one
 place and the brief short. The briefs are the same every time, so they are made
 from fixed templates: you write only the objective, the source map and which
-collector covers which niches, and a script builds the briefs, runs the phases
-that need no one, and stops when a review escalates.
+collector covers which niches, and the engine builds the briefs, runs the phases
+that need no coordinator, and stops when a review escalates.
 
 ```
 Brief
@@ -166,10 +166,10 @@ Rules that hold whatever the number of agents:
 - **Collection and filtering are separate work.** The one gathering does not
   decide what fits the delivery.
 - **Each collector writes only its own file.** No two agents touch the same
-  file, so nothing conflicts. When all have finished, you join the files into one
-  by concatenating them, each under a heading with the collector's name. This is
-  a command, not an agent, and you do not open the content. The digest role receives
-  that single file. With one collector there is nothing to join.
+  file, so nothing conflicts. When all have finished, the engine joins the files
+  into one by concatenating them, each under a heading with the collector's name.
+  This deterministic step does not open the content. The digest role receives that
+  single file. With one collector there is nothing to join.
 - **Count provenance after the merge,** not inside each parallel collection. Two
   collectors can bring the same source. The digest role does this.
 
