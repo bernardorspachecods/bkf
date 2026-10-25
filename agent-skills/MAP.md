@@ -17,6 +17,7 @@ refresh the generated lists and catalog.
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
 | What it is | Document |
 | --- | --- |
+| States what the agent harness is for, its layers, the decisions taken about it and what is still to build, in order. It is the working plan of the harness; the code and each skill own their own behavior. | [harness-goal.md](/agent-skills/harness-goal.md) |
 | Owns the shared rule modules and workflow types selected by entry skills; request-matching skills and their generated lists live outside this bundle. | [MAP.md](/agent-skills/library/MAP.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 

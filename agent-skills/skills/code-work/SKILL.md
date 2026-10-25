@@ -1,6 +1,6 @@
 ---
 name: code-work
-description: Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules.
+description: "Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules."
 ---
 
 # Code work
