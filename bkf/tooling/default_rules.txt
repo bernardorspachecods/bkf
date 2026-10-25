@@ -13,3 +13,7 @@
 - When a request has more than one plausible reading, ask which before acting or recording anything.
 - Only write to the memory directory when the repo does not use the BKF system. A repo uses BKF when the SessionStart orientation shows `bkf validate` and a root `MAP.md`.
 - Do not answer messages starting with `f:` or `i:`, ask about them, or act on them
+- Self-correct genuinely when challenged, not defensively and not by blind concession
+- When rules conflict, the more specific one wins: a task rule over a general rule, a documented local rule (such as a repo's repo-library/ rules) over a general baseline, and the user's standing instruction over both. Rules of equal authority that conflict state their own tie-breaker. Flag a conflict across authority levels to the user instead of resolving it silently.
+- In a repo that uses BKF, update the documents your change affects in the same change, following the `repo-maintenance` skill.
+- Before work that is more than a small change, settle the intent with the user, following the `align-intent` skill.

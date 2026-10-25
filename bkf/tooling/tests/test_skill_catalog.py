@@ -122,6 +122,33 @@ class SkillCatalogTests(unittest.TestCase):
         self.assertIn("REFERENCE_MISSING", codes)
         self.assertEqual(report["status"], "invalid")
 
+    def test_frontmatter_value_that_yaml_would_reject_is_reported_unless_quoted(self):
+        temp_dir, root, skills = self.make_repo()
+        self.add_skill(
+            skills, "colon-skill",
+            "---\nname: colon-skill\ndescription: Use when you write code: not in a plan\n---\n\nBody\n",
+        )
+        self.add_skill(
+            skills, "quoted-skill",
+            '---\nname: quoted-skill\ndescription: "Use when you write code: not in a plan"\n---\n\nBody\n',
+        )
+        self.add_skill(
+            skills, "at-skill",
+            "---\nname: at-skill\ndescription: @mention first\n---\n\nBody\n",
+        )
+
+        try:
+            report = validate_repository(root)
+        finally:
+            temp_dir.cleanup()
+
+        broken = {
+            Path(issue["path"]).parent.name
+            for issue in report["issues"]
+            if issue["code"] == "FRONTMATTER_INVALID"
+        }
+        self.assertEqual(broken, {"colon-skill", "at-skill"})
+
     def test_generator_is_deterministic_and_check_detects_drift(self):
         temp_dir, root, skills = self.make_repo()
         self.add_skill(

@@ -155,6 +155,9 @@ defaults to the current directory and must contain `agent-skills/library` and
 inventories and skill tagged lists, then validates skill metadata and links,
 runtime metadata, and whether `agent-skills/SKILL-ARCHITECTURE.md` is current.
 It prints both check results and exits non-zero if either check fails.
+A `SKILL.md` or `openai.yaml` value without quotes that YAML would reject (it
+contains `: `, ends with `:` or starts with `@`, a backtick, `%`, `&`, `*` or
+`!`) is a `FRONTMATTER_INVALID` error: quote the value.
 
 `--write` refreshes library map inventories and tagged lists, then writes the
 generated skill catalog. Use it after changing a skill or a library module
@@ -315,6 +318,15 @@ a tool whose folder is missing is skipped.
   path is allowed in the same session. Partial `Read` calls and other shell
   commands are allowed. Refusals are stored per session in
   `~/.agent-hooks/state/` and pruned after 14 days.
+  The same hook also denies a `Bash` call that starts a long-run launcher in the
+  foreground: `plan-run.sh`, `review-run.sh`, `council-run.sh` or `research-run.sh` with
+  `start` or `resume`, `phase-codex.sh start`, `run-codex.sh`, or `codex exec`, whether
+  called by path, behind `cd`, an environment assignment, `bash`, `env` or `nohup`. It is
+  allowed only when the tool input has `run_in_background: true`; a launcher backgrounded by
+  hand (`nohup`, or a trailing `&`) is denied even then, because the session cannot show its
+  state. Commands that only mention a name (`grep`, `cat`, `echo`) and the read-only
+  subcommands (`status`, `board`, `gates`, `finish`) are allowed.
+  [launch_guard.py](/tooling/launch_guard.py) owns the check.
 - **audit** registers a `UserPromptSubmit` hook, `bkf hooks run audit`, with a
   60-second timeout. A prompt starting with `bkf:` (any case) triggers an audit
   of the git repository that contains the working directory; any other prompt

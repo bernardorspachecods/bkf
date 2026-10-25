@@ -119,6 +119,10 @@ def _scalar(value: str) -> Any:
             except json.JSONDecodeError as exc:
                 raise ParseError(f"invalid quoted scalar: {value}") from exc
         return value[1:-1].replace("''", "'")
+    if ": " in value or value.endswith(":"):
+        raise ParseError(f"unquoted value contains ': ', which YAML reads as a mapping: quote it ({value[:60]})")
+    if value[0] in "@`%&*!":
+        raise ParseError(f"unquoted value starts with {value[0]!r}, which YAML reserves: quote it ({value[:60]})")
     return value
 
 

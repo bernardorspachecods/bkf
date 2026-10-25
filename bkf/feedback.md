@@ -8,6 +8,12 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
+## 2026-10-22: a skill manda lançar com run_in_background: true, para o…
+
+> a skill manda lançar com run_in_background: true, para o estado ficar visível na sessão, e eu usei nohup com a saída num ficheiro.
+
+Noticed by the user, working in bkf.
+
 ## 2026-10-19: nao correu o script no sitio certo
 
 Noticed by the user, working in bkf.
