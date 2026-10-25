@@ -70,15 +70,13 @@ Nothing goes to `main` while plans run on the scripts installed from it, so `int
 
 ## Next, in order
 
-1. Shrink `dispatch-agents/SKILL.md` (about 3,400 words, mostly command reference the engine makes redundant).
-2. Brief failures in plans (`/Users/bernardopacheco/falhas-de-briefs-em-planos.md`, see the remaining blocks).
+1. Brief failures in plans (`/Users/bernardopacheco/falhas-de-briefs-em-planos.md`, see the remaining blocks).
 
 ## Open threads with the user
 
 From the walk through what an agent loads in a normal session (about 1.45 thousand words always, 4 thousand for a code fix, 9 thousand to start a plan):
 
 - Done: `repo-library` no longer loads on every task; `align-intent` and `code-work` exclude agents inside a plan, a delegated task or a review; `repo-maintenance` is one skill (about 830 words, the heaviest path went from 1,300).
-- `dispatch-agents` is about 3,400 words read by every workflow, mostly command reference that the engine makes redundant: shrink it once the engine runs every workflow.
 - Whether the `intent` module is also injected into the plan, research, council and code-review coordinator guides, so their goal files carry the same sections; first see whether an agent opens `align-intent` when the user starts talking about a plan.
 - Check the picture with real sessions using the `retrieval-chat-audit` skill: one request of each kind, in particular adding a paragraph to an existing document (does the agent revise the section or append?) and adding a `repo-library` entry.
 
@@ -115,7 +113,7 @@ The run `harness-groups` (8 units, Codex) finished on 2026-10-25 and is merged i
 2. **`review`, `research` and `council` on the engine.** Done on 2026-10-25 (run `harness-workflows`, 6 units, merged into `integration`).
 3. **Claude backend.** Done on 2026-10-25 (see State). Confinement found: `--permission-mode dontAsk --allowedTools "Read,Glob,Grep,Write(./**),Edit(./**),Bash"` plus `--settings` with `sandbox.enabled`; unrestricted `Write` is not confined and Bash is confined only by the sandbox. Left unverified: the exact events of a hit usage limit, and web access for research collectors (add `WebFetch,WebSearch` to the allowed tools when a research runs on Claude).
 4. **Workflows become skills.** Done on 2026-10-25 by me (see State): the design below is kept as the record. Deviations from it: `tags` stay a required field of every tracked document (the validator needs them), so the modules keep `tags: [injected]`; only the tagged-list feature of `bkf skills`, the tag vocabulary and the words "entry skills" went.
-5. **Shrink `dispatch-agents/SKILL.md`** (about 3,400 words, mostly command reference the engine makes redundant) once every workflow runs on the engine.
+5. **Shrink `dispatch-agents/SKILL.md`.** Done on 2026-10-25: 3,700 to 2,100 words. What the four scripts share is one "Every run" section; the file index, the commands of the harness CLI and the shell tests moved to `harness/README.md`, which the skill links.
 6. **Brief failures in plans.** Handle `/Users/bernardopacheco/falhas-de-briefs-em-planos.md` (6 of 29 units in two real plans stopped or lost rounds because of the brief, not the code). Last piece of work, after the engine is complete, because the code items land in the engine and not in the bash. In the document's order: R4 (scope by exclusion, plus the clause that tests and documents broken by the change are the unit's to adapt) in the `plan` guide; R1 (the run stops when the same gate command fails on the same tests in two rounds, or a review sends back for the same file or sentence) and one automatic repeat of a failing gate before it counts; R2 (`blocked.md` from the implementer, `VERDICT: brief` from the reviewer); R3 and R5 (brief lint and ratchet numbers inside `gates`); R6 (rehearsal at the starting state); one combined round cap of 4; R7, R8 (a Haiku reads the brief for contradictions), R9. It happened in this very run: unit 2 of `harness-groups` lost four rounds to a brief that forbade editing the test its own required behavior broke (the document's F5); briefs 3 to 8 now carry a stop-asking, adapt-the-expectation rule as a stopgap.
 7. **Tests with real sessions**, by the user at the end: one request of each kind with `retrieval-chat-audit`, and a small real plan.
 8. **Main.** Ask the user. Before any merge into `main`, read the first row of the worktree table above.
