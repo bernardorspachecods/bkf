@@ -125,6 +125,16 @@ It contains only package metadata and supported runtime metadata derived from th
   - `short_description`: Audit repository reading and retrieval
 - Runtime policy: `explicit invocation required`
 
+## run-to-completion
+
+- Description: The user's last contact before a long plan or task runs unattended. Checks that the goal, artifacts and limits are aligned, gets one explicit go, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end.
+- Package: [`agent-skills/skills/run-to-completion`](skills/run-to-completion/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Run to completion
+  - `short_description`: Final check with the user, then work alone until the plan is done
+- Runtime policy: `explicit invocation required`
+
 ## skill-authoring
 
 - Description: Create and maintain agent skills.
