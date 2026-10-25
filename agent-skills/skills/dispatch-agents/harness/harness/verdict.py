@@ -1,4 +1,4 @@
-"""Read verdicts and check review notes in dispatch-codex reports."""
+"""Read verdicts and check review notes in dispatch-agents reports."""
 
 
 def read_verdict(path):

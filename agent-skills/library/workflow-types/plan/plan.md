@@ -84,7 +84,7 @@ pattern already settled across many files is mechanical and fast. So:
 
 Long rounds also carry a much larger context, which slows every step further. The run
 records the size of each implementation round; read it after a plan and correct these
-limits. The measurements so far are in the `dispatch-codex` skill.
+limits. The measurements so far are in the `dispatch-agents` skill.
 
 **When the split depends on something you do not yet know,** such as how many
 modules cross a boundary or what a move would break, do not write a unit for
@@ -198,7 +198,7 @@ the brief points to it and never explains it. The briefs are the same shape ever
 time, so they are built from fixed templates: you write only the goal, the unit
 briefs and their order, and a script builds the agent briefs, runs each unit and
 stops when a review escalates. That script is `plan-run.sh`, owned by the
-`dispatch-codex` skill (`scripts/plan-run.sh`); load that skill for its usage. It runs
+`dispatch-agents` skill (`scripts/plan-run.sh`); load that skill for its usage. It runs
 Codex agents, not Claude ones.
 
 | Role | Does | Receives |
@@ -257,7 +257,7 @@ its handoff, so the user can open one unit and see only it. The plan's goal, the
 of the units and a status log sit at the top. A plan that is ready but not yet launched
 is kept as its source files (the goal, the order and the briefs) outside the run folder,
 and the run is started when it is time. Where the folder is, and how it is created, is
-in the `dispatch-codex` skill.
+in the `dispatch-agents` skill.
 
 When the plan is done, the user chooses: keep the record, which is copied into
 `records/plans/` in the repository, or delete the run. Until they choose, it stays where it is.

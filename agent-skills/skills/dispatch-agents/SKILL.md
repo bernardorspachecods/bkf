@@ -1,12 +1,13 @@
 ---
-name: dispatch-codex
-description: Run multi-phase workflows (plan, research, council, code review) as Codex CLI scripts that chain agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
+name: dispatch-agents
+description: Run multi-phase workflows (plan, research, council, code review) as scripts that chain Codex or Claude agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
 ---
 
 ## Use
 
 - Briefs are written and handoffs checked by the rules of the `delegate-work` skill.
 - For a whole plan, use [Plan runs](#plan-runs).
+- Agents are Codex by default. `HARNESS_BACKEND=claude` runs a whole run on `claude -p` (give `-m` a Claude model such as `sonnet` and `-e` an effort from `low` to `max`): write access is confined to the agent's working directory, a reviewer can only read, and the quota signal is Claude's `rate_limit_event`. A run keeps the backend it was started with only as long as the variable is set on every `resume`.
 
 ## Gate harness
 
@@ -15,7 +16,7 @@ The stdlib gate runner lives in [harness](harness/pyproject.toml):
 [CLI](harness/harness/cli.py), [gate runner](harness/harness/gate.py),
 [agent runner](harness/harness/agent.py), [rule injection](harness/harness/inject.py),
 [verdict handling](harness/harness/verdict.py), and the [tests](harness/tests/test_gate.py),
-[agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py),
+[agent tests](harness/tests/test_agent.py), [Claude backend tests](harness/tests/test_agent_claude.py), [injection tests](harness/tests/test_inject.py),
 and [verdict tests](harness/tests/test_verdict.py).
 
 ## Research runs
@@ -92,7 +93,7 @@ The engine records progress in `status.log` and shows a step board. `review-run.
 
 The `harness/` project is a standard-library Python CLI called by the scripts through the `harness` function in [`scripts/lib-codex.sh`](scripts/lib-codex.sh). Its files are [the project metadata](harness/pyproject.toml), [package initializer](harness/harness/__init__.py), [module entry point](harness/harness/__main__.py), [CLI](harness/harness/cli.py), [gate module](harness/harness/gate.py), [agent module](harness/harness/agent.py), [injection module](harness/harness/inject.py), [verdict module](harness/harness/verdict.py), [engine package initializer](harness/harness/engine/__init__.py), [run state module](harness/harness/engine/run.py), [run lock module](harness/harness/engine/lock.py), [workflow contract module](harness/harness/engine/workflow.py), [workflow pipeline module](harness/harness/engine/pipeline.py), [plan input workflow module](workflows/plan_inputs.py), [plan integration recovery module](workflows/plan_integration.py), [review workflow module](workflows/review.py), [council workflow module](workflows/council.py), [diff base module](harness/harness/engine/diffbase.py), [round metrics module](harness/harness/engine/metrics.py), [agent step module](harness/harness/engine/agentstep.py), [review module](harness/harness/engine/review.py), [phase module](harness/harness/engine/phase.py), [stepboard module](harness/harness/engine/stepboard.py), [record module](harness/harness/engine/record.py), [unit loop module](harness/harness/engine/loop.py), [integration loop module](harness/harness/engine/integration.py), [bridge module](harness/harness/engine/bridge.py), [group worktree module](harness/harness/engine/group.py), [plan workflow module](workflows/plan.py), [plan board and record module](workflows/plan_board.py), [plan runner](scripts/plan-run.sh), and the [gate tests](harness/tests/test_gate.py), [agent tests](harness/tests/test_agent.py), [injection tests](harness/tests/test_inject.py), [verdict tests](harness/tests/test_verdict.py), [run state tests](harness/tests/test_engine_run.py), [run lock tests](harness/tests/test_engine_lock.py), [workflow pipeline tests](harness/tests/test_engine_pipeline.py), [plan input tests](harness/tests/test_workflow_plan_inputs.py), [plan workflow tests](harness/tests/test_workflow_plan.py), [plan board and record tests](harness/tests/test_workflow_plan_board.py), [plan test support](harness/tests/plan_test_support.py), [review workflow tests](harness/tests/test_workflow_review.py), [council workflow tests](harness/tests/test_workflow_council.py), [engine robustness tests](harness/tests/test_engine_robustness.py), [diff base tests](harness/tests/test_engine_diffbase.py), [round metrics tests](harness/tests/test_engine_metrics.py), [agent step tests](harness/tests/test_engine_agentstep.py), [review tests](harness/tests/test_engine_review.py), [phase tests](harness/tests/test_engine_phase.py), [stepboard tests](harness/tests/test_engine_stepboard.py), [record tests](harness/tests/test_engine_record.py), [unit loop tests](harness/tests/test_engine_loop.py), [integration loop tests](harness/tests/test_engine_integration.py), [bridge tests](harness/tests/test_engine_bridge.py), [group worktree tests](harness/tests/test_engine_group.py), [plan integration recovery tests](harness/tests/test_workflow_plan_integration.py), [research workflow module](workflows/research.py), and [research workflow tests](harness/tests/test_workflow_research.py). `bkf skills` requires links to every module and test file.
 
-Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-codex/harness python3 -m harness ...`.
+Run any command by hand with `PYTHONPATH=<repo>/agent-skills/skills/dispatch-agents/harness python3 -m harness ...`.
 
 The shared engine and its first workflow are described in [The engine](#the-engine).
 

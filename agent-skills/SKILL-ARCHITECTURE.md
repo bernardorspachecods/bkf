@@ -49,14 +49,14 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Delegate Work
   - `short_description`: Hand a short, objective task to a Claude subagent or a Codex run
 
-## dispatch-codex
+## dispatch-agents
 
-- Description: Run multi-phase workflows (plan, research, council, code review) as Codex CLI scripts that chain agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
-- Package: [`agent-skills/skills/dispatch-codex`](skills/dispatch-codex/SKILL.md)
+- Description: Run multi-phase workflows (plan, research, council, code review) as scripts that chain Codex or Claude agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
+- Package: [`agent-skills/skills/dispatch-agents`](skills/dispatch-agents/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
-  - `display_name`: Dispatch Codex
-  - `short_description`: Launch Codex CLI tasks and inspect run diffs
+  - `display_name`: Dispatch agents
+  - `short_description`: Run multi-agent workflows on Codex or Claude and inspect the results
 - Runtime policy: `explicit invocation required`
 
 ## do-research

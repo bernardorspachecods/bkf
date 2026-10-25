@@ -34,7 +34,7 @@ class LaunchGuardTests(unittest.TestCase):
             "research-run.sh resume r",
             "run-codex.sh name brief.md",
             "codex exec -m m -",
-            "~/.claude/skills/dispatch-codex/scripts/plan-run.sh start r g p",
+            "~/.claude/skills/dispatch-agents/scripts/plan-run.sh start r g p",
             "cd /repo && /abs/plan-run.sh resume -p none r",
             "FOO=1 bash scripts/review-run.sh start a b",
             "CODEX_IN_PLACE=1 run-codex.sh n b",
@@ -45,7 +45,7 @@ class LaunchGuardTests(unittest.TestCase):
     def test_a_background_call_is_allowed(self):
         for command in (
             "plan-run.sh start r g p",
-            "cd /repo && ~/.claude/skills/dispatch-codex/scripts/plan-run.sh resume -p none r",
+            "cd /repo && ~/.claude/skills/dispatch-agents/scripts/plan-run.sh resume -p none r",
             "run-codex.sh n b integration gpt-6-luna high",
             "codex exec -m m -",
         ):

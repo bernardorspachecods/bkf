@@ -1,0 +1,5 @@
+interface:
+  display_name: "Dispatch agents"
+  short_description: "Run multi-agent workflows on Codex or Claude and inspect the results"
+policy:
+  allow_implicit_invocation: false
