@@ -1,0 +1,5 @@
+interface:
+  display_name: "Run to completion"
+  short_description: "Final check with the user, then work alone until the plan is done"
+policy:
+  allow_implicit_invocation: false
