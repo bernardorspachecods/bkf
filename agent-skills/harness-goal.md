@@ -56,7 +56,7 @@ Four kinds of step: agents (N in parallel), a review with a verdict (pass, back 
 | Gate, injection, verdict, agent launch with the Codex backend | Done. |
 | The engine (run state, lock, unit loop, pipeline, kill detection) with the sequential plan as its first workflow | Done and merged. |
 | Parallel groups, worktrees, group diff bases, integration and review, bridge, disk check, compact board, and ending the separate bash plan runner | Done. `scripts/plan-run.sh` runs plans through the engine. |
-| `research`, `council` and `review` on the engine | Not started. |
+| `research`, `council` and `review` on the engine | Done. |
 | Claude backend | Not started. |
 | `bkf validate` warning for a `repo-library` entry nobody links to | Done and merged (260 tests, +0.5 s on a large repo). |
 | Docs restructure: `code-work`, `align-intent`, `repo-library` (grow only, entries reached by a link from outside), `repo-maintenance` (one skill of principles, writing rules and conventions, about 830 words), modules `core-code-principles` (absorbs `determinism`), `gate`, `intent` | Done and merged. |
@@ -69,9 +69,8 @@ Nothing goes to `main` while plans run on the scripts installed from it, so `int
 
 ## Next, in order
 
-1. Migrate `review`, `research` and `council` onto the engine.
-2. Verify the Claude backend (write confinement, the quota signal, `--bare`), implement it, then rename to `dispatch-agents`.
-3. Turn the workflows into skills and rename `library/` to `modules/`; remove the tag system if nothing uses it.
+1. Verify the Claude backend (write confinement, the quota signal, `--bare`), implement it, then rename to `dispatch-agents`.
+2. Turn the workflows into skills and rename `library/` to `modules/`; remove the tag system if nothing uses it.
 
 ## Open threads with the user
 
