@@ -38,22 +38,18 @@ def parse_plan(plan_path):
             words = _words(line.split("#", 1)[0])
             if not words:
                 continue
-            if len(words) > 1:
-                raise RunError(
-                    "step {0} has several briefs; this engine runs one unit per step".format(
-                        len(steps) + 1
-                    )
-                )
-            word = words[0]
-            brief_path = Path(word)
-            if not brief_path.is_absolute():
-                brief_path = plan_dir / brief_path
-            if not brief_path.is_file() or brief_path.stat().st_size == 0:
-                raise RunError("missing or empty unit brief: {0}".format(word))
-            name = brief_path.name[:-3] if brief_path.name.endswith(".md") else brief_path.name
-            if not _valid_name(name):
-                raise RunError("bad unit name (from the file name): {0}".format(word))
-            steps.append((name, str(brief_path)))
+            units = []
+            for word in words:
+                brief_path = Path(word)
+                if not brief_path.is_absolute():
+                    brief_path = plan_dir / brief_path
+                if not brief_path.is_file() or brief_path.stat().st_size == 0:
+                    raise RunError("missing or empty unit brief: {0}".format(word))
+                name = brief_path.name[:-3] if brief_path.name.endswith(".md") else brief_path.name
+                if not _valid_name(name):
+                    raise RunError("bad unit name (from the file name): {0}".format(word))
+                units.append((name, str(brief_path)))
+            steps.append(units)
     if not steps:
         raise RunError("plan.txt has no step")
     return steps
@@ -66,11 +62,15 @@ def write_inputs(run_path, goal_path, steps):
     units_path.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(goal_path, run_path / "00-input" / "goal.md")
     order = []
-    for index, step in enumerate(steps, 1):
-        name, brief_path = step
-        unit_name = "{0:02d}-{1}".format(index, name)
-        shutil.copyfile(brief_path, units_path / (unit_name + ".md"))
-        order.append(unit_name)
+    index = 0
+    for step in steps:
+        step_units = []
+        for name, brief_path in step:
+            index += 1
+            unit_name = "{0:02d}-{1}".format(index, name)
+            shutil.copyfile(brief_path, units_path / (unit_name + ".md"))
+            step_units.append(unit_name)
+        order.append(" ".join(step_units))
     with open(run_path / "00-input" / "order", "w", encoding="utf-8", newline="") as output:
         output.write("".join(name + "\n" for name in order))
 
@@ -187,6 +187,58 @@ def print_unit_brief(run_path, unit, heading_marks):
             "say so: the deviation comes from the change of brief, not from the unit. If it fails "
             "both, the unit failed.\n\n{1}"
         ).format(heading_marks, received)
+    return text
+
+
+def integration_brief(run_path, units, goal_text):
+    """Build the current integration brief, including the frozen plan goal."""
+    text = (
+        '# Integration of a parallel group\n\nThe units below were implemented apart, each in its own copy of the repository, '
+        'and their diffs were brought together in this checkout. Check the combined result against every brief and against each other: '
+        'contradictions between units, a "Receives" that the other unit did not leave ready as stated, duplicated or clashing names, '
+        'and each unit\'s own criteria. Use the section "The integration review" of the review guide.\n'
+        '\n## The goal of the plan\n\nThis is the goal of the whole plan, read from 00-input/goal.md when this integration started. '
+        'Use it to judge how the units fit together and what is out of scope, and to read any note the coordinator left in it about how '
+        'the run was carried out. It adds no criteria to the briefs.\n\n'
+    )
+    text += re.sub(r"(?m)^```gate", "``` gate", goal_text)
+    text += "\n"
+    for unit in units:
+        text += "\n## Unit {0}\n\n{1}\n".format(unit, print_unit_brief(run_path, unit, "###"))
+    return text
+
+
+def integrate_prompt(guides, brief, failed_patches, previous_problems, previous_handoff):
+    """Build the integration agent prompt using the plan role guide."""
+    text = _read_text(brief)
+    text += (
+        "\n\n---\n## Role\nOpen and follow the role guide: {0}/plan-integration.md (read-only). "
+        "It says how to bring the units of a parallel group together and what the handoff holds.\n"
+        "\n## Rules\n- The current directory is the repository: work here.\n"
+        "- Do not run git commands that change state (no commit, stage, stash, reset, clean, checkout).\n"
+        "- Do not write the handoff to a file. Your final message is the handoff, and nothing else.\n"
+    ).format(guides)
+    if failed_patches:
+        text += (
+            "\n## What to do\nThe diffs of these units did not apply to the checkout. Bring what each one meant into the checkout, "
+            "resolving the conflict, and change nothing else:\n{0}\n"
+        ).format(failed_patches)
+    if previous_problems:
+        handoff = _read_text(previous_handoff) if previous_handoff and os.path.isfile(previous_handoff) else ""
+        text += (
+            "\nA reviewer found problems in the combined result. Fix those and only those, then verify again.\n\n"
+            "Problems from the review:\n\n{0}\n\nYour handoff from the previous round, for you to resume from:\n\n{1}\n"
+        ).format(_read_text(previous_problems), handoff)
+    return text
+
+
+def integration_review_prompt(guides, brief, patch, previous_problems, attempt, gate_file):
+    """Build the read-only review prompt for a group's combined diff."""
+    text = review_prompt(guides, brief, patch, previous_problems, attempt, gate_file)
+    text = text.replace(
+        "Open and follow the role guide: {0}/plan-review.md (read-only). You are not the author of the work.".format(guides),
+        'Open and follow the role guide: {0}/plan-review.md (read-only), section "The integration review". You are not the author of the work.'.format(guides),
+    )
     return text
 
 

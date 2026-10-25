@@ -40,8 +40,8 @@ Four kinds of step: agents (N in parallel), a review with a verdict (pass, back 
 | Piece | State |
 | --- | --- |
 | Gate, injection, verdict, agent launch with the Codex backend | Done. |
-| The engine (run state, lock, unit loop, pipeline, kill detection) with the sequential plan as its first workflow | Done and merged. `plan-run-engine.sh` runs the plan; against `test-plan-run-gate.sh` in sequential scope 49 cases pass and 2 are `ENGINE GAP` (a runs root ending in a slash: the bash prints `root//name`, the engine the normalized path). The default mode still passes 144. The record is in `records/plans/harness-engine`. |
-| Parallel launching, worktrees, diff base for groups, integration, bridge, disk check | Not started; still in `plan-run.sh`. |
+| The engine (run state, lock, unit loop, pipeline, kill detection) with the sequential plan as its first workflow | Done and merged. |
+| Parallel groups, worktrees, group diff bases, integration and review, bridge, disk check, compact board, and ending the separate bash plan runner | Done. `scripts/plan-run.sh` runs plans through the engine. |
 | `research`, `council` and `review` on the engine | Not started. |
 | Claude backend | Not started. |
 | `bkf validate` warning for a `repo-library` entry nobody links to | Done and merged (260 tests, +0.5 s on a large repo). |
@@ -51,15 +51,14 @@ Four kinds of step: agents (N in parallel), a review with a verdict (pass, back 
 
 Everything above is merged into `integration`; the worktrees `bkf-engine`, `bkf-docs` and `bkf-codex/repo-library-reach` can be removed. Nothing is on `main` yet. Edits that had to be made in the `main` checkout, uncommitted and live because the installed `bkf` is editable from there: `bkf/tooling/default_rules.txt` (three new lines), `launch_guard.py` and its test, `hook_events.py`, `pyproject.toml` and `commands.md` for the hook, and an entry in `bkf/feedback.md`. When `integration` goes to `main`, those edits move into `integration` first and the `main` checkout is cleaned, so the merge does not collide with them.
 
-Nothing goes to `main` while plans run on the scripts installed from it, so `integration` keeps no compatibility with the `main` scripts: the engine and `plan-run.sh` recognise only their own lock, and a run belongs to one runner.
+Nothing goes to `main` while plans run on the scripts installed from it, so `integration` keeps no compatibility with the `main` scripts.
 
 ## Next, in order
 
-1. Move the groups, worktrees, base of the diff for groups, integration, bridge and disk check into the engine as optional capabilities (the eight sequential-scope skips of the parity run); then `plan-run.sh` can go and `plan-run-engine.sh` takes its name.
-2. Move `run-codex.sh` (delegate-work) onto the agent launch, which removes the last copy of the Codex command.
-3. Migrate `review`, `research` and `council` onto the engine.
-4. Verify the Claude backend (write confinement, the quota signal, `--bare`), implement it, then rename to `dispatch-agents`.
-5. Turn the workflows into skills and rename `library/` to `modules/`; remove the tag system if nothing uses it.
+1. Move `run-codex.sh` (delegate-work) onto the agent launch, which removes the last copy of the Codex command.
+2. Migrate `review`, `research` and `council` onto the engine.
+3. Verify the Claude backend (write confinement, the quota signal, `--bare`), implement it, then rename to `dispatch-agents`.
+4. Turn the workflows into skills and rename `library/` to `modules/`; remove the tag system if nothing uses it.
 
 ## Open threads with the user
 

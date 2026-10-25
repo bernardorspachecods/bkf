@@ -38,8 +38,13 @@ def _round_count(directory):
         return 0
 
 
-def _state_row(run_path, unit, step, step_done, step_stopped, width):
-    directory = Path(run_path) / unit
+def board_state_row(run_path, kind, label, step, step_done, step_stopped, width):
+    """Render a unit or group integration row for the plan board."""
+    if kind == "integration":
+        directory = Path(run_path) / "S{0}-integration".format(step)
+        step_done = step_done or (Path(run_path) / ".done-S{0}-integration".format(step)).exists()
+    else:
+        directory = Path(run_path) / label
     status = _read(directory / "status").rstrip("\r\n")
     rounds = _round_count(directory)
     icon, state = "○", "pendente"
@@ -83,7 +88,7 @@ def _state_row(run_path, unit, step, step_done, step_stopped, width):
                 "reviewing": "revisão",
                 "integrating": "integrar",
             }[phase] + " · ronda {0}".format(round_number)
-    return _emit(icon, unit, state, width)
+    return _emit(icon, label, state, width)
 
 
 def _step_stopped(events, step):
@@ -97,8 +102,8 @@ def _step_stopped(events, step):
     return stopped
 
 
-def board(run):
-    """Return the sequential plan board using only files in the run directory."""
+def board(run, compact=False):
+    """Return the plan board using only files in the run directory."""
     run_path = Path(run.path)
     order_path = run_path / "00-input" / "order"
     order_text = _read(order_path)
@@ -112,12 +117,52 @@ def board(run):
     result = "Plano {0} · {1} unidades · início {2} → agora {3}\n\n".format(
         run_path.name, len(units), start_time, _now_time()
     )
+    finished = []
     for step, line in enumerate(lines, 1):
-        result += "Passo {0}\n".format(step)
+        step_done = (run_path / ".done-S{0}".format(step)).exists()
+        passed = step_done or all(
+            _read(run_path / unit / "status").rstrip("\r\n") == "passed" for unit in line
+        )
+        if passed and len(line) > 1:
+            integration = run_path / "S{0}-integration".format(step)
+            passed = (
+                _read(integration / "status").rstrip("\r\n") == "passed"
+                or (run_path / ".done-S{0}-integration".format(step)).exists()
+            )
+        if passed:
+            finished.append(step)
+    folded = set(finished[:-1]) if compact and len(lines) > 2 else set()
+    if folded:
+        folded_units = [unit for step in folded for unit in lines[step - 1]]
+        folded_rounds = sum(_round_count(run_path / unit) for unit in folded_units)
+        folded_rounds += sum(
+            _round_count(run_path / "S{0}-integration".format(step))
+            for step in folded if len(lines[step - 1]) > 1
+        )
+        if len(folded) == 1:
+            folded_label = "Passo {0} passou".format(next(iter(folded)))
+        else:
+            folded_label = "Passos 1-{0} passaram".format(max(folded))
+        folded_row = "  ✓ {0} · {1} unidades · {2} rondas\n\n".format(
+            folded_label, len(folded_units), folded_rounds
+        )
+        first_folded = min(folded)
+    else:
+        folded_row = ""
+        first_folded = None
+    for step, line in enumerate(lines, 1):
+        if step in folded:
+            if step == first_folded:
+                result += folded_row
+            continue
+        parallel = len(line) > 1
+        result += "Passo {0}{1}\n".format(step, " (paralelo)" if parallel else "")
         step_done = (run_path / ".done-S{0}".format(step)).exists()
         stopped = _step_stopped(events, step)
         for unit in line:
-            result += _state_row(run_path, unit, step, step_done, stopped, width)
+            result += board_state_row(run_path, "unit", unit, step, step_done, stopped, width)
+        if parallel:
+            result += board_state_row(run_path, "integration", "integração", step, False, stopped, width)
         result += "\n"
     final_state = 0
     for event in events:
@@ -136,6 +181,10 @@ def board(run):
     else:
         final_icon, final_status = "○", "pendente"
     return result + _emit(final_icon, "Revisão final", final_status, width)
+
+
+def compact_board(run):
+    return board(run, compact=True)
 
 
 def _summary_rounds(directory):
@@ -274,8 +323,3 @@ def finish(ctx):
         raise RunError("copy to {0} failed; nothing deleted".format(destination))
     shutil.rmtree(run_path)
     print("Kept in {0}; removed {1}".format(destination, run_path))
-    agents = repo / "AGENTS.md"
-    if "records/" not in _read(agents):
-        print(
-            "Note: {0}/AGENTS.md does not mention records/. Add a line saying records/ holds the history of past runs, not rules, to be opened only when asked.".format(repo)
-        )

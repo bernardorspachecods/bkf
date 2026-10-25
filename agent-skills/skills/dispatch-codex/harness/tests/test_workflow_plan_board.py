@@ -33,8 +33,9 @@ class PlanBoardTests(unittest.TestCase):
 
     def unit(self, unit, status="implementing round 1", rounds=1, verdict=None, gate=None):
         directory = self.run_path / unit
+        for number in range(1, rounds + 1):
+            (directory / "rounds" / str(number)).mkdir(parents=True, exist_ok=True)
         round_path = directory / "rounds" / str(rounds)
-        round_path.mkdir(parents=True, exist_ok=True)
         (directory / "status").write_text(status + "\n", encoding="utf-8")
         if verdict:
             (round_path / "verdict").write_text(verdict + "\n", encoding="utf-8")
@@ -63,6 +64,63 @@ class PlanBoardTests(unittest.TestCase):
         )
         self.assertEqual(self.board(), expected)
 
+    def test_board_folds_finished_steps_and_keeps_full_board_available(self):
+        (self.run_path / "00-input" / "order").write_text(
+            "01-alpha\n02-beta\n03-gamma\n", encoding="utf-8"
+        )
+        self.unit("01-alpha", "passed", rounds=2)
+        self.unit("02-beta", "passed", rounds=1)
+        self.unit("03-gamma", "passed", rounds=3)
+
+        compact = self.board()
+        full = WORKFLOW.full_board(self.ctx())
+
+        self.assertIn("  ✓ Passos 1-2 passaram · 2 unidades · 3 rondas\n\n", compact)
+        self.assertNotIn("Passo 1\n", compact)
+        self.assertNotIn("Passo 2\n", compact)
+        self.assertIn("Passo 3\n  ✓ 03-gamma", compact)
+        self.assertIn("Passo 1\n  ✓ 01-alpha", full)
+        self.assertIn("Passo 2\n  ✓ 02-beta", full)
+        self.assertIn("Passo 3\n  ✓ 03-gamma", full)
+
+    def test_two_step_plan_keeps_both_finished_steps_expanded(self):
+        self.unit("01-alpha", "passed")
+        self.unit("02-beta", "passed")
+
+        board = self.board()
+
+        self.assertIn("Passo 1\n  ✓ 01-alpha", board)
+        self.assertIn("Passo 2\n  ✓ 02-beta", board)
+        self.assertNotIn("Passos", board)
+
+    def test_board_fold_counts_group_integration_rounds_but_not_units(self):
+        (self.run_path / "00-input" / "order").write_text(
+            "01-alpha 02-beta\n03-gamma\n04-delta\n", encoding="utf-8"
+        )
+        self.unit("01-alpha", "passed", rounds=1)
+        self.unit("02-beta", "passed", rounds=2)
+        integration = self.run_path / "S1-integration"
+        (integration / "rounds" / "1").mkdir(parents=True)
+        (integration / "rounds" / "2").mkdir()
+        (integration / "status").write_text("passed\n", encoding="utf-8")
+        self.unit("03-gamma", "passed", rounds=1)
+        self.assertIn("  ✓ Passo 1 passou · 2 unidades · 5 rondas\n", self.board())
+
+    def test_parallel_step_includes_integration_row(self):
+        (self.run_path / "00-input" / "order").write_text(
+            "01-alpha 02-beta\n", encoding="utf-8"
+        )
+        integration = self.run_path / "S1-integration"
+        round_path = integration / "rounds" / "1"
+        round_path.mkdir(parents=True)
+        (integration / "status").write_text("passed\n", encoding="utf-8")
+        (round_path / "verdict").write_text("pass\n", encoding="utf-8")
+        (self.run_path / ".done-S1-integration").touch()
+        board = self.board()
+        self.assertIn("Passo 1 (paralelo)\n", board)
+        self.assertIn("  ✓ integração", board)
+        self.assertIn("passou · 1 ronda\n", board)
+
     def test_board_implementation_review_red_gate_pass_and_escalated(self):
         self.unit("01-alpha", "reviewing round 1")
         self.assert_board(
@@ -84,7 +142,7 @@ class PlanBoardTests(unittest.TestCase):
 
     def test_board_red_gate_return_and_final_review_states(self):
         self.unit("01-alpha", "implementing round 2", rounds=2)
-        (self.run_path / "01-alpha/rounds/1").mkdir(parents=True)
+        (self.run_path / "01-alpha/rounds/1").mkdir(parents=True, exist_ok=True)
         (self.run_path / "01-alpha/rounds/1/verdict").write_text("back\n", encoding="utf-8")
         (self.run_path / "01-alpha/rounds/1/gate.md").write_text("Result: RED\n", encoding="utf-8")
         self.unit("02-beta", "reviewing round 1")
@@ -145,17 +203,28 @@ class PlanBoardTests(unittest.TestCase):
 
     def test_real_run_progress_and_board_command_show_the_board(self):
         self.fixture.add_brief("unit")
-        plan = self.fixture.write_plan("unit.md")
+        self.fixture.add_brief("unit2")
+        self.fixture.add_brief("unit3")
+        plan = self.fixture.write_plan("unit.md", "unit2.md", "unit3.md")
         output, errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             code = self.fixture.call("start", "live-board", str(self.fixture.goal), str(plan))
         self.assertEqual(code, 0)
-        self.assertIn("Plano live-board · 1 unidades · início ", errors.getvalue())
-        self.assertIn("Passo 1\n  ◐ 01-unit", errors.getvalue())
+        self.assertIn("Plano live-board · 3 unidades · início ", errors.getvalue())
+        self.assertIn("✓ Passos 1-2 passaram · 2 unidades · 2 rondas", errors.getvalue())
+        self.assertIn("Passo 3\n  ✓ 03-unit3", errors.getvalue())
+        run_path = self.fixture.runs / "live-board"
+        full_board = (run_path / "board.txt").read_text(encoding="utf-8")
+        self.assertIn("Passo 1\n  ✓ 01-unit", full_board)
+        self.assertIn("Passo 2\n  ✓ 02-unit2", full_board)
+        self.assertIn("Passo 3\n  ✓ 03-unit3", full_board)
         board_output, board_errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(board_output), contextlib.redirect_stderr(board_errors):
             code = self.fixture.call("board", "live-board")
         self.assertEqual(code, 0)
+        self.assertIn("✓ Passos 1-2 passaram · 2 unidades · 2 rondas", board_output.getvalue())
+        self.assertNotIn("Passo 1\n", board_output.getvalue())
+        self.assertIn("Passo 1\n  ✓ 01-unit", (run_path / "board.txt").read_text(encoding="utf-8"))
         self.assertIn("Revisão final", board_output.getvalue())
         self.assertEqual(board_errors.getvalue(), "")
 
@@ -196,7 +265,6 @@ class PlanBoardTests(unittest.TestCase):
             "\nThe final review is in report.md.\n"
         ))
         self.assertTrue(output.getvalue().startswith("Kept in "))
-        self.assertIn("Note: {0}/AGENTS.md does not mention records/.".format(self.fixture.repo.resolve()), output.getvalue())
 
     def test_finish_refuses_existing_destination(self):
         (self.run_path / "report.md").write_text("review\n", encoding="utf-8")

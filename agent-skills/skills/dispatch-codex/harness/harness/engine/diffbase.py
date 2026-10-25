@@ -71,6 +71,30 @@ def snapshot_tree(checkout):
             pass
 
 
+def snapshot_commit(checkout):
+    """Return a commit on HEAD containing a snapshot of the checkout tree."""
+    try:
+        tree = snapshot_tree(checkout)
+        env = os.environ.copy()
+        env.update({
+            "GIT_AUTHOR_NAME": "plan-run",
+            "GIT_AUTHOR_EMAIL": "plan-run@localhost",
+            "GIT_COMMITTER_NAME": "plan-run",
+            "GIT_COMMITTER_EMAIL": "plan-run@localhost",
+        })
+        result = _git(
+            checkout,
+            ["commit-tree", tree, "-p", "HEAD", "-m", "plan-run snapshot"],
+            env,
+        )
+    except OSError as error:
+        raise RunError("cannot snapshot the checkout {0}".format(checkout)) from error
+    commit = result.stdout.strip()
+    if result.returncode != 0 or not commit:
+        raise RunError("cannot snapshot the checkout {0}".format(checkout))
+    return commit
+
+
 def snapshot_base(directory, checkout):
     """Write the tree id and its format marker to a round directory."""
     try:

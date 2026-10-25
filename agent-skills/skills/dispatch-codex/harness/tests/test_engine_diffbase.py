@@ -43,37 +43,6 @@ class DiffBaseTests(unittest.TestCase):
             env=env or self.git_env,
         ).stdout.strip()
 
-    def test_snapshot_builds_same_tree_as_plan_run_shell_function(self):
-        (self.checkout / "tracked.txt").write_text("changed\n")
-        (self.checkout / "new.txt").write_text("new\n")
-        (self.checkout / "deleted.txt").unlink()
-        (self.checkout / "ignored.txt").write_text("ignored\n")
-        script = Path(__file__).resolve().parents[2] / "scripts" / "plan-run.sh"
-        with tempfile.TemporaryDirectory() as shell_dir:
-            shell_file = Path(shell_dir) / "snapshot.sh"
-            function_lines = []
-            in_function = False
-            for line in script.read_text().splitlines():
-                if line.startswith("snapshot_tree() {"):
-                    in_function = True
-                if in_function:
-                    function_lines.append(line)
-                    if line == "}":
-                        break
-            shell_file.write_text(
-                "#!/usr/bin/env bash\n" + "\n".join(function_lines) +
-                "\nsnapshot_tree \"$1\"\n"
-            )
-            bash_tree = subprocess.run(
-                ["bash", str(shell_file), str(self.checkout)],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=self.git_env,
-            ).stdout.strip()
-        self.assertEqual(snapshot_tree(self.checkout), bash_tree)
-
     def test_snapshot_includes_changes_and_omits_ignored_files_without_changing_index(self):
         (self.checkout / "tracked.txt").write_text("changed\n")
         (self.checkout / "new.txt").write_text("new\n")

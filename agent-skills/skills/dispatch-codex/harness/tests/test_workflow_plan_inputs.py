@@ -33,14 +33,13 @@ class PlanInputTests(unittest.TestCase):
     def test_parse_plan_comments_relative_paths_and_unit_names(self):
         brief = self.write("inputs/one.md", "brief\n")
         plan = self.write("inputs/plan.txt", "# ignored\n\n one.md # inline comment\n")
-        self.assertEqual(plan_inputs.parse_plan(plan), [("one", str(brief))])
+        self.assertEqual(plan_inputs.parse_plan(plan), [[("one", str(brief))]])
 
-    def test_parse_plan_rejects_multiple_briefs_on_a_line(self):
-        self.write("one.md", "one\n")
-        self.write("two.md", "two\n")
+    def test_parse_plan_keeps_multiple_briefs_in_one_group_step(self):
+        one = self.write("one.md", "one\n")
+        two = self.write("two.md", "two\n")
         plan = self.write("plan.txt", "one.md two.md\n")
-        with self.assertRaisesRegex(RunError, "^step 1 has several briefs; this engine runs one unit per step$"):
-            plan_inputs.parse_plan(plan)
+        self.assertEqual(plan_inputs.parse_plan(plan), [[("one", str(one)), ("two", str(two))]])
 
     def test_parse_plan_rejects_missing_empty_bad_name_and_empty_plan(self):
         plan = self.write("plan.txt", "missing.md\n")
@@ -52,7 +51,7 @@ class PlanInputTests(unittest.TestCase):
             plan_inputs.parse_plan(plan)
         self.write("bad name.md", "brief\n")
         self.write("plan.txt", "bad name.md\n")
-        with self.assertRaisesRegex(RunError, "^step 1 has several briefs; this engine runs one unit per step$"):
+        with self.assertRaisesRegex(RunError, "^missing or empty unit brief: bad$"):
             plan_inputs.parse_plan(plan)
         self.write("bad@name.md", "brief\n")
         self.write("plan.txt", "bad@name.md\n")
@@ -67,7 +66,7 @@ class PlanInputTests(unittest.TestCase):
         first = self.write("one.md", "one brief\n")
         second = self.write("two.md", "two brief\n")
         run = self.root / "run"
-        plan_inputs.write_inputs(run, goal, [("first", first), ("second", second)])
+        plan_inputs.write_inputs(run, goal, [[("first", first)], [("second", second)]])
         self.assertEqual((run / "00-input" / "goal.md").read_text(), "goal\n")
         self.assertEqual((run / "00-input" / "order").read_text(), "01-first\n02-second\n")
         self.assertEqual((run / "00-input" / "units" / "01-first.md").read_text(), "one brief\n")

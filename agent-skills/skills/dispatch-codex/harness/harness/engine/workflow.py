@@ -36,9 +36,16 @@ class Context:
 
     def progress(self, text):
         print("[{0}] {1}\n".format(self.workflow.name, text), file=sys.stderr)
+        self.print_board(sys.stderr)
+
+    def print_board(self, output):
         board = self.workflow.board(self)
         if board:
-            print(board, end="" if board.endswith("\n") else "\n", file=sys.stderr)
+            full_board = self.workflow.full_board(self)
+            with (self.run.path / "board.txt").open("w", encoding="utf-8", newline="") as board_file:
+                board_file.write(full_board)
+            print(board, end="" if board.endswith("\n") else "\n", file=output)
+        return board
 
     def note(self, text):
         self.run.note(text)
@@ -69,6 +76,9 @@ class Workflow:
 
     def board(self, ctx):
         return ""
+
+    def full_board(self, ctx):
+        return self.board(ctx)
 
     def fix_hint(self, ctx):
         return "Read the rounds in {0}, then: {1} resume {2}".format(

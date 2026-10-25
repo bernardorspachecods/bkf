@@ -1,17 +1,23 @@
 """Sequential plan workflow for the harness pipeline."""
+from contextlib import contextmanager
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
 from harness.engine.agentstep import run_agent_step
+from harness.engine.bridge import porteiro
 from harness.engine.diffbase import make_patch, snapshot_base, snapshot_tree
+from harness.engine.group import remove_worktrees, run_group
+from harness.engine.integration import run_integration
 from harness.engine.loop import UnitHooks, run_unit_loop
 from harness.engine.workflow import Step, Stop, Workflow
 from harness.engine.run import RunError
 
 import plan_inputs
 import plan_board
+import plan_integration
 
 
 class _Limits(NamedTuple):
@@ -65,6 +71,31 @@ class _UnitHooks(UnitHooks):
     def progress(self, text):
         self.ctx.progress(text)
 
+    @contextmanager
+    def around_implement(self, checkout, unit, base, brief):
+        with porteiro(
+            checkout, unit, base, self.gate_commands(brief),
+            self.ctx.run.path / "porteiro.log",
+        ):
+            yield
+
+
+class _IntegrationHooks(_UnitHooks):
+    def integration_brief(self, run_path, units, goal_text):
+        return plan_inputs.integration_brief(run_path, units, goal_text)
+
+    def integrate_prompt(self, brief, failed, previous_problems, previous_handoff):
+        return plan_inputs.integrate_prompt(
+            os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ, self.ctx.repo),
+            brief, failed, previous_problems, previous_handoff,
+        )
+
+    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file):
+        return plan_inputs.integration_review_prompt(
+            os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ, self.ctx.repo),
+            brief, patch, previous_problems, attempt, gate_file,
+        )
+
 
 class PlanWorkflow(Workflow):
     name = "plan"
@@ -95,25 +126,84 @@ class PlanWorkflow(Workflow):
         base = ctx.run.path / "plan-base"
         base.mkdir(parents=True, exist_ok=True)
         snapshot_base(base, ctx.repo)
-        unit_count = len(steps)
+        unit_count = sum(len(step) for step in steps)
         ctx.note(
             "start {0} ({1} {2}, review {3}, max {4} rounds, {5} step(s), {6} unit(s), repo {7})".format(
                 ctx.run.name, ctx.settings.model, ctx.settings.effort,
                 _review_effort(ctx.settings), _limits().max_rounds,
-                unit_count, unit_count, ctx.repo,
+                len(steps), unit_count, ctx.repo,
             )
         )
-        units = (ctx.run.path / "00-input" / "order").read_text(encoding="utf-8").splitlines()
+        units = [unit for line in (ctx.run.path / "00-input" / "order").read_text(encoding="utf-8").splitlines() for unit in line.split()]
         for unit in units:
             if not plan_inputs.gate_commands([plan_inputs.brief_current(ctx.run.path, unit)]):
                 ctx.note("unit {0} has no gate: only a reviewer checks it".format(unit))
+        config_at_head = subprocess.run(
+            ["git", "-C", os.fspath(ctx.repo), "cat-file", "-e", "HEAD:.plan-run.json"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode == 0
+        if not config_at_head:
+            if (Path(ctx.repo) / ".plan-run.json").is_file():
+                ctx.note(".plan-run.json is not committed: commit it so changes to it are reviewed like code")
+            else:
+                ctx.note(
+                    "no .plan-run.json at HEAD: the bridge will run only gate commands unless an untracked copy "
+                    "is in the checkout; commit it so changes to it are reviewed like code"
+                )
 
     def steps(self, ctx):
         order_path = ctx.run.path / "00-input" / "order"
-        units = [line.rstrip("\r\n") for line in order_path.read_text(encoding="utf-8").splitlines()]
+        units = [line.split() for line in order_path.read_text(encoding="utf-8").splitlines() if line.split()]
         steps = []
-        for index, unit in enumerate(units, 1):
-            def run_step(step_ctx, step_number=index, step_unit=unit):
+        for index, step_units in enumerate(units, 1):
+            def run_step(step_ctx, step_number=index, step_members=step_units):
+                if len(step_members) > 1:
+                    def unit_runner(step_unit, worktree):
+                        unit_base = step_ctx.run.path / step_unit / "group-base"
+                        unit_base.parent.mkdir(parents=True, exist_ok=True)
+                        if not unit_base.is_file():
+                            try:
+                                unit_base.write_text(snapshot_tree(worktree) + "\n", encoding="utf-8")
+                            except (OSError, RunError):
+                                return False, "{0}: cannot snapshot the worktree {1}".format(step_unit, worktree)
+                        result = run_unit_loop(
+                            step_ctx.run, step_unit, worktree,
+                            source_brief=plan_inputs.brief_current(step_ctx.run.path, step_unit),
+                            hooks=_UnitHooks(step_ctx, step_number),
+                            settings=step_ctx.settings._replace(
+                                review_effort=_review_effort(step_ctx.settings)
+                            ),
+                            tier=_plan_tier(),
+                            limits=_limits(),
+                            step=step_number,
+                            base_from=unit_base,
+                        )
+                        return result.ok, result.reason
+
+                    ok, reason = run_group(step_ctx, step_number, step_members, unit_runner)
+                    if not ok:
+                        raise Stop(reason)
+                    integration_marker = step_ctx.run.path / (".done-S{0}-integration".format(step_number))
+                    if not integration_marker.exists():
+                        result = run_integration(
+                            step_ctx.run, step_ctx.repo, step_number, step_members,
+                            hooks=_IntegrationHooks(step_ctx, step_number),
+                            settings=step_ctx.settings._replace(review_effort=_review_effort(step_ctx.settings)),
+                            tier=_plan_tier(), limits=_limits(),
+                            goal_path=step_ctx.run.path / "00-input" / "goal.md",
+                            brief_check=plan_inputs.check_briefs,
+                            brief_differs=plan_inputs.brief_differs,
+                            gate_differs=plan_inputs.gate_differs,
+                        )
+                        if not result.ok:
+                            raise Stop(result.reason)
+                        integration_marker.touch()
+                    remove_worktrees(step_ctx.run, step_ctx.repo)
+                    return
+
+                step_unit = step_members[0]
                 step_ctx.progress("S{0} início · unidade {1}".format(step_number, step_unit))
                 if (step_ctx.run.path / (".done-" + step_unit)).exists():
                     return
@@ -143,7 +233,8 @@ class PlanWorkflow(Workflow):
                     raise Stop(result.reason)
                 (step_ctx.run.path / (".done-" + step_unit)).touch()
 
-            steps.append(Step(index, unit, run_step))
+            label = step_units[0] if len(step_units) == 1 else "paralelo · {0}".format(", ".join(step_units))
+            steps.append(Step(index, label, run_step))
         return steps
 
     def after_step(self, ctx, step):
@@ -199,13 +290,20 @@ class PlanWorkflow(Workflow):
         )
 
     def board(self, ctx):
+        return plan_board.compact_board(ctx.run)
+
+    def full_board(self, ctx):
         return plan_board.board(ctx.run)
 
     def finish(self, ctx):
         return plan_board.finish(ctx)
 
     def commands(self):
-        return {"gates": plan_inputs.gates_command}
+        return {
+            "gates": plan_inputs.gates_command,
+            "rebase-integration": plan_integration.rebase_integration,
+            "accept-integration": plan_integration.accept_integration,
+        }
 
 
 WORKFLOW = PlanWorkflow()
