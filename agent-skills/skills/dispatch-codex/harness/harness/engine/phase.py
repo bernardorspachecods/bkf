@@ -1,7 +1,7 @@
 """Run or resume a parallel review phase.
 
     run_phase(run, phase_dir, agents, model, effort, tier=None, outfile="output.md",
-              max_rounds=0, min_checked=0, backend="codex")
+              max_rounds=0, min_checked=0, backend=None)
     join_phase(phase_dir)
     clean_phase(phase_dir)
 
@@ -149,7 +149,7 @@ def _agent(run, phase_path, name, agent_brief, review_brief, model, effort, tier
 
 
 def run_phase(run, phase_dir, agents, model, effort, tier=None, outfile="output.md",
-              max_rounds=0, min_checked=0, backend="codex"):
+              max_rounds=0, min_checked=0, backend=None):
     """Run a named parallel phase, resuming agents whose status is not passed."""
     agents = list(agents)
     names = [item[0] for item in agents]

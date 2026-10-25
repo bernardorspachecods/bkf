@@ -31,7 +31,7 @@ def run_agent_step(
     sandbox,
     tier,
     reason_when_not_quota,
-    backend="codex",
+    backend=None,
 ):
     status = agent.run_agent(
         directory, prompt_file, out_prefix, model, effort, sandbox, tier, backend
@@ -55,7 +55,7 @@ def run_agent_step(
     return StepResult(False, reason_when_not_quota.replace("<exit>", str(status)), None)
 
 
-def run_agents(phase_dir, output_file, folders, model, effort, tier, backend="codex"):
+def run_agents(phase_dir, output_file, folders, model, effort, tier, backend=None):
     phase_path = os.fspath(phase_dir)
     pending = [
         folder

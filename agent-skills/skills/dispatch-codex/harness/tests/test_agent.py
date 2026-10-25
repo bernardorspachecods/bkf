@@ -246,9 +246,9 @@ class AgentCliTests(unittest.TestCase):
         self.assertFalse(self.input_log.exists())
 
     def test_unknown_backend_exits_two_without_starting_agent(self):
-        result = self.run_agent(backend="claude")
+        result = self.run_agent(backend="gemini")
         self.assertEqual(result.returncode, 2)
-        self.assertIn(b"backend not implemented: claude", result.stderr)
+        self.assertIn(b"backend not implemented: gemini", result.stderr)
         self.assertFalse(self.arg_log.exists())
 
     def test_backend_quota_text_matches_bash_extraction(self):
