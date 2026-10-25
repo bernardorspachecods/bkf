@@ -82,3 +82,55 @@ From the walk through what an agent loads in a normal session (about 1.45 thousa
 - `bkf validate`, `bkf skills` and `bkf inventory` do not fail when the frontmatter of a skill is not valid YAML (for example an unquoted `: ` in a description); `bkf inventory` reports up to date while skipping the documents it cannot read.
 - The `guard` hook applies to Codex agents too (it is registered for both), so a Codex agent that calls `codex exec` or a run script from its shell is refused.
 - In the `desmor-hub` repo: every `repo-library` entry is linked from durable documents, but the root task route "Preparar e validar uma release" leads to a protocol that links only the database module; the platform modules are reached through `docs/feedback/release.md`.
+
+## How to continue (written on 2026-10-25, for whoever picks the work up)
+
+The user gave full autonomy to finish the objective: do small and medium work yourself (or with Haiku subagents for mechanical bulk edits), and give large work to Codex as a plan run, tending other work meanwhile. The user does not need to approve anything. The one hard limit: **nothing goes to `main`**, because other plans run on the scripts installed from it. Commits on `integration` and its side branches are fine; commit trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. Standing rules of the session hook still apply (informal pt-PT, direct, visual aids, no flattery, do not touch what other agents changed). Nothing needs backward compatibility with the scripts on `main`.
+
+### Worktrees and what runs now
+
+| Worktree | Branch | State |
+| --- | --- | --- |
+| `bkf` | `main` | Not to be committed to. It holds uncommitted edits that are also committed on `work` (the launch guard, three session rules, the `hook_events.py` guard branch, `pyproject.toml`, `commands.md`, `feedback.md`); the installed `bkf` is editable from here, so the hook is live from these files. When `integration` goes to `main`: `git checkout -- .` and remove the two untracked files there first, then merge. If the guard files change on `work` meanwhile, copy them over (`launch_guard.py`, `tests/test_launch_guard.py`) or the live hook goes stale. |
+| `bkf-agents` | `integration` | The merged base (harness gate/inject/verdict/agent, engine, docs, repo-library warning). **Its `scripts/` drive the plan runs: do not edit `agent-skills/skills/dispatch-codex/scripts/` here while a run is active.** |
+| `bkf-groups` | `groups` | Where the plan run `harness-groups` writes (Codex). Do not touch it while the run is active. |
+| `bkf-work` | `work` | Side work, from `integration`: YAML check in `bkf skills`, launch guard fixes, `run-codex.sh` on the harness, manual and plan guide edits. Merge `work` and `groups` into `integration` when the run ends (small conflicts expected in `dispatch-codex/SKILL.md`, `harness-goal.md`, and the guide-path defaults if the restructure below is done on `work`). |
+
+The run: `~/.plan-runs/harness-groups` (8 units, started 2026-10-25 12:55; briefs and goal in `~/.plan-runs-pending/harness-groups/`; it moves the groups, worktrees, disk check, bridge, integration and the two recovery commands into the engine, then makes `plan-run.sh` the engine wrapper and fixes the three small defects). Start/resume it from `bkf-groups` with the scripts of `bkf-agents`, always with `run_in_background: true` (the guard refuses otherwise): `cd /Users/bernardopacheco/bkf-groups && /Users/bernardopacheco/bkf-agents/agent-skills/skills/dispatch-codex/scripts/plan-run.sh resume -p none harness-groups`. A stop is read in `~/.plan-runs/harness-groups/status.log` and the round's `problems.md`; the usual cause is a contradiction in my own brief, fixed in `~/.plan-runs/harness-groups/00-input/units/` before `resume`. When the Codex quota runs out the log says `try again at <time>`: schedule one wakeup after it, do not resume in a loop. When the run is READY: `plan-run.sh finish harness-groups` from `bkf-groups`, read `records/plans/harness-groups/report.md`, run all the checks (harness unit tests, `bkf skills`, `bkf validate .`, `scripts/test-plan-run-gate.sh`, `test-inject.sh`, `test-review-run-gate.sh` and the three `test-*-run-board.sh`; the tooling tests with `/Users/bernardopacheco/.local/share/uv/tools/bkf-tooling/bin/python -m unittest discover -s tests` in `bkf/tooling`), commit, merge `groups` and `work` into `integration`, remove the finished worktrees and branches (`git branch -d` complains because it compares with `main`: confirm with `git merge-base --is-ancestor <branch> integration`, then `-D`).
+
+### What remains after the run, in order
+
+1. **Close the run** as above; update State and Next of this document.
+2. **`review`, `research` and `council` on the engine** (a large plan for Codex, written like `harness-groups`: goal, a plan with one brief per unit, each with a `gate` block and a failure demonstration). Read `scripts/review-run.sh`, `research-run.sh`, `council-run.sh` and `phase-codex.sh` first. Their tests are thin (board tests, and the review gate), so each unit must write its own fake-`codex` tests: they are the specification. The engine already has the parallel-agents step (`engine/agentstep.run_agents`) and the unit loop; what these workflows add is their own phases and files. At the end `lib-codex.sh` keeps only wrappers of the harness CLI, and the `*-run.sh` and `phase-codex.sh` become wrappers or go.
+3. **Workflows become skills** (design below). Done by hand with Haiku for the bulk renames; do it after step 2, because the scripts and tests of step 2 name the guide paths.
+4. **Claude backend.** Verified so far (`claude` 2.1.310): `claude -p --output-format stream-json --verbose --no-session-persistence --model <m> --permission-mode <mode>` takes the prompt on stdin and ends with a `result` event (`subtype`, `result` text, `is_error`, `total_cost_usd`); a `rate_limit_event` carries `rate_limit_info` (`status`, `resetsAt`, `rateLimitType`), which is the quota signal; `--effort` takes low to max; `--bare` needs `ANTHROPIC_API_KEY` (it never reads the login), so it does not fit; `--safe-mode` disables hooks, CLAUDE.md and skills but was not tried; `--restricted` confines the file tools to the working directories but removes Bash. Not verified: write confinement for an implementer that needs Bash (try `--settings` with a `sandbox` section, or `--permission-mode dontAsk` with `--allowedTools`, on a throwaway directory with a Haiku model: it costs little), and what the events of a hit usage limit look like (the `rate_limit_event` with a status other than `allowed`). Then implement the backend class in `harness/harness/agent.py` (`arguments`, `quota_text`; the base class already exists), test it with a fake `claude`, and rename `dispatch-codex` to `dispatch-agents` (a mechanical rename that touches the installed skill link only on `main`, so it waits).
+5. **Shrink `dispatch-codex/SKILL.md`** (about 3,400 words, mostly command reference the engine makes redundant) once every workflow runs on the engine.
+6. **Tests with real sessions**, by the user at the end: one request of each kind with `retrieval-chat-audit`, and a small real plan.
+7. **Main.** Ask the user. Before any merge into `main`, read the first row of the worktree table above.
+
+### Workflows become skills: the design
+
+Today: `agent-skills/library/workflow-types/<plan|code-review|council|research>/` holds a coordinator guide (`plan.md`, ...) and role guides (`plan-implementation.md`, ...), each a tracked BKF document with `tags`; `agent-skills/library/modules/` holds four modules, all tagged `injected`; the skills `work-in-stages` (a menu of plan, code review and council, built with a generated tagged list) and `do-research` (research) list the coordinator guides by tag and inject `coordinate-a-run`.
+
+Target: one skill per workflow, whose `SKILL.md` is the coordinator guide, with its role guides next to it.
+
+```
+agent-skills/
+  modules/                     (was library/modules: coordinate-a-run, core-code-principles, gate, intent)
+  skills/
+    plan/          SKILL.md  (was plan.md; injects coordinate-a-run)   roles/plan-implementation.md, plan-review.md, plan-integration.md
+    code-review/   SKILL.md  roles/code-review-axis.md, code-review-check.md
+    council/       SKILL.md  roles/council-advisor.md, council-reviewer.md, council-completeness.md
+    research/      SKILL.md  (replaces do-research)   roles/research-collection.md, research-digest.md, research-review-*.md
+    dispatch-codex/  (scripts, harness, workflows definitions; later dispatch-agents)
+```
+
+Decisions: keep the role guide file names (the scripts and prompts name them); `work-in-stages` goes, because each workflow skill's description already routes (a menu that only repeats descriptions routes nothing), and its "resume a stopped run" line moves into the workflow skills; the tag system goes (no skill selects by tag once the workflow skills link their roles directly): drop `tags` from the module frontmatter, the tagged-list feature of `bkf inventory --skills` and its tests, the tag vocabulary of the library map, and the words "entry skills" in the tooling and docs; the role guides lose their BKF `tags`/frontmatter requirements as they leave the tracked bundle (a skill package is routed by its own metadata, not by a map), but keep a short description line in the guide itself if the scripts read it (check first). The script defaults for the guides folders (`PLAN_GUIDES`, `REVIEW_GUIDES`, `COUNCIL_GUIDES`, `RESEARCH_GUIDES`, in `plan_inputs.guides_path` and the `*-run.sh`) and the injection lines inside the guides (relative paths to `modules/`) change with the move. Files naming the old paths (found with `grep -rln "workflow-types\|library/modules\|agent-skills/library"`): `INSTALL.md`, `README.md`, `agent-skills/MAP.md`, `library/MAP.md`, the skills `align-intent`, `code-work`, `delegate-work`, `dispatch-codex`, `do-research`, `repo-library`, `skill-authoring`, `work-in-stages`, `scripts/*-run.sh`, `scripts/test-inject.sh`, `workflows/plan_inputs.py` and its test, `bkf/format/glossary.md`, `bkf/manual/what-is-bkf.md`, `bkf/tooling/commands.md`, `generate_inventory.py` and the tests `test_skill_inventory.py` and `test_repo_library_links.py`. `records/` is history: leave it. Check at every step with `bkf skills`, `bkf validate .` and the tooling and harness tests.
+
+### Things that are the user's, or settled
+
+- `~/.agent-hooks/rules.md` is the user's file; the three new session rules were appended on 2026-10-25 (backup `rules.md.bak-20261025`).
+- The `guard` hook also applies to Codex agents; that is intended (an agent inside a run should not launch runs).
+- The `desmor-hub` task route "Preparar e validar uma release" is that repo's to fix.
+- The user wants, at the end, to test the whole flow with real sessions; until then no live test.
+
