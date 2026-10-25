@@ -155,6 +155,9 @@ defaults to the current directory and must contain `agent-skills/library` and
 inventories and skill tagged lists, then validates skill metadata and links,
 runtime metadata, and whether `agent-skills/SKILL-ARCHITECTURE.md` is current.
 It prints both check results and exits non-zero if either check fails.
+A `SKILL.md` or `openai.yaml` value without quotes that YAML would reject (it
+contains `: `, ends with `:` or starts with `@`, a backtick, `%`, `&`, `*` or
+`!`) is a `FRONTMATTER_INVALID` error: quote the value.
 
 `--write` refreshes library map inventories and tagged lists, then writes the
 generated skill catalog. Use it after changing a skill or a library module
