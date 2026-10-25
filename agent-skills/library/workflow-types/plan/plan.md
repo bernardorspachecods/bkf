@@ -49,8 +49,9 @@ keep what the reasons protect.
 
 ## 1. The goal and the units
 
-Write the goal in a few lines, in one place, and have the user confirm it. It
-says what exists at the end, who uses it and what is out of scope. Do not
+Write the goal in one place and have the user confirm it. It is the intent as
+`align-intent` defines it: what is wanted and why, what exists when it is done,
+what is out of scope, what is already decided, and when to stop and ask. Do not
 describe the units there.
 
 **Split the goal into units** with the user. A good split follows the seams of
