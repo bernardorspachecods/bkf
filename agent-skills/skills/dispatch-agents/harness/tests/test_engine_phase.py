@@ -29,6 +29,7 @@ class PhaseTests(unittest.TestCase):
         self.review_brief.write_text("review brief\n", encoding="utf-8")
         self.verdicts = {}
         self.calls = {}
+        self.web_flags = []
         self.active = 0
         self.max_active = 0
         self.lock = threading.Lock()
@@ -39,8 +40,9 @@ class PhaseTests(unittest.TestCase):
         self.temp.cleanup()
 
     def fake_agent(self, run, label, directory, prompt_file, out_prefix, model,
-                   effort, sandbox, tier, reason, backend):
+                   effort, sandbox, tier, reason, backend, web=False):
         name = label
+        self.web_flags.append((label, web))
         with self.lock:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
@@ -95,6 +97,14 @@ class PhaseTests(unittest.TestCase):
         self.assertEqual("output.md\n", (self.phase / "outfile").read_text())
         joined = pathlib.Path(join_phase(self.phase))
         self.assertEqual("# one\n\nwork one 1\n\n\n", joined.read_text())
+
+    def test_web_goes_to_the_author_and_never_to_the_reviewer(self):
+        self.call(web=True)
+        self.assertEqual([("one", True)], self.web_flags)
+
+    def test_web_is_off_by_default(self):
+        self.call()
+        self.assertEqual([("one", False)], self.web_flags)
 
     def test_back_then_pass_preserves_prior_problem_in_next_agent_prompt(self):
         self.verdicts["one"] = ["back", "pass"]

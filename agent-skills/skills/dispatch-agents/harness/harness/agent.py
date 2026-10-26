@@ -47,7 +47,7 @@ class Backend:
 
     executable = None
 
-    def arguments(self, directory, model, effort, sandbox, tier, last_message):
+    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False):
         raise NotImplementedError
 
     def quota_text(self, events_path) -> Optional[str]:
@@ -73,7 +73,7 @@ class CodexBackend(Backend):
 
     executable = "codex"
 
-    def arguments(self, directory, model, effort, sandbox, tier, last_message):
+    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False):
         command = ["exec"]
         if tier:
             command.extend(["-c", 'service_tier="{0}"'.format(tier)])
@@ -133,16 +133,19 @@ class ClaudeBackend(Backend):
 
     executable = "claude"
 
-    def arguments(self, directory, model, effort, sandbox, tier, last_message):
+    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False):
         command = [
             "-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence",
             "--model", model, "--effort", effort, "--permission-mode", "dontAsk",
         ]
         if sandbox == "workspace-write":
             command.extend(["--settings", _CLAUDE_SANDBOX])
-            command.extend(["--allowedTools", "Read,Glob,Grep,Write(./**),Edit(./**),Bash"])
+            tools = "Read,Glob,Grep,Write(./**),Edit(./**),Bash"
         else:
-            command.extend(["--allowedTools", "Read,Glob,Grep"])
+            tools = "Read,Glob,Grep"
+        if web:
+            tools += ",WebFetch,WebSearch"
+        command.extend(["--allowedTools", tools])
         return command
 
     def finish(self, events_path, last_message_path):
@@ -242,6 +245,7 @@ def run_agent(
     sandbox="workspace-write",
     tier=None,
     backend=None,
+    web=False,
 ):
     """Inject prompt rules, run a backend in the foreground, and return its status."""
     backend_class = get_backend(backend)
@@ -262,7 +266,7 @@ def run_agent(
     stderr_path = out_prefix + ".stderr.log"
     last_message_path = out_prefix + ".last-message.md"
     command = [backend_class.executable] + backend_class().arguments(
-        directory, model, effort, sandbox, tier, last_message_path
+        directory, model, effort, sandbox, tier, last_message_path, web
     )
     try:
         with open(prompt_file, "rb") as prompt, open(events_path, "wb") as events, open(

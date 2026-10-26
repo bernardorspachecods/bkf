@@ -1,7 +1,7 @@
 """Run or resume a parallel review phase.
 
     run_phase(run, phase_dir, agents, model, effort, tier=None, outfile="output.md",
-              max_rounds=0, min_checked=0, backend=None)
+              max_rounds=0, min_checked=0, backend=None, web=False)
     join_phase(phase_dir)
     clean_phase(phase_dir)
 
@@ -58,7 +58,7 @@ def _failed(run, phase_path, name, round_number, reason):
 
 
 def _agent(run, phase_path, name, agent_brief, review_brief, model, effort, tier,
-           outfile, max_rounds, min_checked, backend):
+           outfile, max_rounds, min_checked, backend, web=False):
     directory = phase_path / name
     work = directory / "work"
     review = directory / "review"
@@ -94,7 +94,7 @@ def _agent(run, phase_path, name, agent_brief, review_brief, model, effort, tier
         step = run_agent_step(
             run, name, str(work), str(prompt_path), str(round_path / "agent"),
             model, effort, "workspace-write", tier,
-            "{0}: agent exit=<exit> (see {1}/agent.stderr.log)".format(name, round_path), backend,
+            "{0}: agent exit=<exit> (see {1}/agent.stderr.log)".format(name, round_path), backend, web,
         )
         if not step.ok:
             return _failed(run, phase_path, name, round_number, step.reason)
@@ -149,7 +149,7 @@ def _agent(run, phase_path, name, agent_brief, review_brief, model, effort, tier
 
 
 def run_phase(run, phase_dir, agents, model, effort, tier=None, outfile="output.md",
-              max_rounds=0, min_checked=0, backend=None):
+              max_rounds=0, min_checked=0, backend=None, web=False):
     """Run a named parallel phase, resuming agents whose status is not passed."""
     agents = list(agents)
     names = [item[0] for item in agents]
@@ -171,7 +171,7 @@ def run_phase(run, phase_dir, agents, model, effort, tier=None, outfile="output.
         _write(phase_path / "log.tsv", "")
     with ThreadPoolExecutor(max_workers=max(1, len(agents))) as executor:
         futures = [executor.submit(_agent, run, phase_path, name, agent_brief, review_brief,
-                                   model, effort, tier, outfile, max_rounds, min_checked, backend)
+                                   model, effort, tier, outfile, max_rounds, min_checked, backend, web)
                    for name, agent_brief, review_brief in agents]
         results = [future.result() for future in futures]
     failures = [result for result in results if not result.ok]

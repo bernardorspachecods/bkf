@@ -181,7 +181,8 @@ class ResearchWorkflow(Workflow):
         (directory / "work").mkdir(parents=True, exist_ok=True)
         step = run_agent_step(ctx.run, "map", str(directory / "work"), str(directory / "prompt.md"),
                               str(directory / "run"), ctx.settings.model, ctx.settings.effort,
-                              "workspace-write", None, "map agent exit=<exit> (see {0}/run.stderr.log)".format(directory))
+                              "workspace-write", None, "map agent exit=<exit> (see {0}/run.stderr.log)".format(directory),
+                              web=True)
         if not step.ok:
             raise Stop(step.reason)
         additions = directory / "work" / "additions.md"
@@ -241,7 +242,7 @@ class ResearchWorkflow(Workflow):
             try:
                 result_holder.append(run_phase(
                     ctx.run, phase, agents, ctx.settings.model, ctx.settings.effort,
-                    outfile="sources.md", max_rounds=_limits()[0], min_checked=_limits()[1]
+                    outfile="sources.md", max_rounds=_limits()[0], min_checked=_limits()[1], web=True
                 ))
             except Exception as error:
                 result_holder.append(error)

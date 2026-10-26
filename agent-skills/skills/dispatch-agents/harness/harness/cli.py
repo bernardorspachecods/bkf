@@ -40,6 +40,7 @@ def _parser():
     agent_run_parser.add_argument("--sandbox", default="workspace-write")
     agent_run_parser.add_argument("--tier")
     agent_run_parser.add_argument("--backend")
+    agent_run_parser.add_argument("--web", action="store_true")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("definition_path")
     run_parser.add_argument("arguments", nargs=argparse.REMAINDER)
@@ -61,6 +62,7 @@ def main(argv=None):
             sandbox=args.sandbox,
             tier=args.tier,
             backend=args.backend,
+            web=args.web,
         )
     if args.area == "inject":
         try:

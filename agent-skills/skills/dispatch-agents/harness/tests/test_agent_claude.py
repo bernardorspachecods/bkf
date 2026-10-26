@@ -43,7 +43,7 @@ class ClaudeBackendTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_agent(self, sandbox, events, exit_status=0):
+    def run_agent(self, sandbox, events, exit_status=0, extra=()):
         env = dict(
             os.environ,
             PATH=str(self.bin) + os.pathsep + os.environ["PATH"],
@@ -56,7 +56,7 @@ class ClaudeBackendTests(unittest.TestCase):
         return subprocess.run(
             [sys.executable, "-m", "harness", "agent", "run", "--dir", str(self.work), "--prompt", str(self.prompt),
              "--out-prefix", str(self.work / "run"), "--model", "haiku", "--effort", "high",
-             "--sandbox", sandbox, "--backend", "claude"],
+             "--sandbox", sandbox, "--backend", "claude", *extra],
             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
 
@@ -78,6 +78,21 @@ class ClaudeBackendTests(unittest.TestCase):
         arguments = agent.ClaudeBackend().arguments("/d", "haiku", "high", "read-only", None, "/m")
         self.assertEqual(arguments[arguments.index("--allowedTools") + 1], "Read,Glob,Grep")
         self.assertNotIn("--settings", arguments)
+
+    def test_web_adds_only_the_two_web_tools_and_is_off_by_default(self):
+        backend = agent.ClaudeBackend()
+        plain = backend.arguments("/d", "haiku", "high", "workspace-write", None, "/m")
+        self.assertNotIn("WebFetch", plain[plain.index("--allowedTools") + 1])
+        for sandbox, base in (("workspace-write", "Read,Glob,Grep,Write(./**),Edit(./**),Bash"), ("read-only", "Read,Glob,Grep")):
+            arguments = backend.arguments("/d", "haiku", "high", sandbox, None, "/m", web=True)
+            self.assertEqual(arguments[arguments.index("--allowedTools") + 1], base + ",WebFetch,WebSearch")
+
+    def test_the_web_flag_reaches_the_claude_command(self):
+        events = [json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "x"})]
+        result = self.run_agent("workspace-write", events, extra=("--web",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = json.loads(self.arg_log.read_text(encoding="utf-8"))
+        self.assertTrue(arguments[arguments.index("--allowedTools") + 1].endswith(",WebFetch,WebSearch"))
 
     def test_the_prompt_goes_on_stdin_and_the_result_becomes_the_last_message(self):
         events = [

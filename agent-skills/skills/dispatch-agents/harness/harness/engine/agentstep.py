@@ -32,9 +32,10 @@ def run_agent_step(
     tier,
     reason_when_not_quota,
     backend=None,
+    web=False,
 ):
     status = agent.run_agent(
-        directory, prompt_file, out_prefix, model, effort, sandbox, tier, backend
+        directory, prompt_file, out_prefix, model, effort, sandbox, tier, backend, web
     )
     if status == 0:
         return StepResult(True, "", None)
