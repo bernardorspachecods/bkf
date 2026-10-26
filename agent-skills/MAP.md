@@ -16,7 +16,7 @@ refresh the injected text and catalog.
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
 | What it is | Document |
 | --- | --- |
-| States what the agent harness is for, its layers, the decisions taken about it and what is still to build, in order. It is the working plan of the harness; the code and each skill own their own behavior. | [harness-goal.md](/agent-skills/harness-goal.md) |
+| States what the agent harness is for, its layers, the decisions taken about it and what is still to verify or build. The code and each skill own their own behavior. | [harness-goal.md](/agent-skills/harness-goal.md) |
 | Owns the shared rule modules whose text the workflow and work skills inject into their bodies; the skills themselves live outside this bundle. | [MAP.md](/agent-skills/modules/MAP.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 
