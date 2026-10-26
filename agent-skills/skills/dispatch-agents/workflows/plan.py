@@ -16,6 +16,7 @@ from harness.engine.workflow import Step, Stop, Workflow
 from harness.engine.run import RunError
 
 import plan_inputs
+import plan_rehearse
 import plan_board
 import plan_integration
 
@@ -301,6 +302,7 @@ class PlanWorkflow(Workflow):
     def commands(self):
         return {
             "gates": plan_inputs.gates_command,
+            "rehearse": plan_rehearse.rehearse_command,
             "rebase-integration": plan_integration.rebase_integration,
             "accept-integration": plan_integration.accept_integration,
         }

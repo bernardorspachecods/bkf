@@ -9,7 +9,9 @@ from typing import NamedTuple
 
 from .agentstep import run_agent_step
 from .diffbase import make_patch, snapshot_base
+from .converge import gate_signature, problem_files
 from .loop import run_gate_round, run_review_round
+from ..verdict import read_blocked
 
 
 class IntegrationResult(NamedTuple):
@@ -82,6 +84,8 @@ def run_integration(
     gate_fails = 0
     previous_problems = ""
     previous_handoff = ""
+    previous_gate_signature = None
+    previous_review_files = set()
     while True:
         round_number += 1
         round_dir = rounds_path / str(round_number)
@@ -122,6 +126,15 @@ def run_integration(
             handoff = round_dir / "handoff.md"
             shutil.copyfile(message, handoff)
             shutil.copyfile(handoff, directory / "handoff.md")
+            blocked_reason = read_blocked(handoff)
+            if blocked_reason is not None:
+                reason = "{0}: blocked by the implementer: {1} (see {2})".format(
+                    label, blocked_reason, handoff
+                )
+                _write(directory / "status", "blocked\n")
+                hooks.progress("S{0} integração · ronda {1} · bloqueada".format(step, round_number))
+                run.note(reason)
+                return IntegrationResult(False, reason)
             for unit in units:
                 (directory / (".applied-" + unit)).touch()
 
@@ -137,7 +150,9 @@ def run_integration(
             passed, gate_fails, reason = run_gate_round(
                 run, label, repo, round_dir, commands, hooks, limits, gate_fails,
                 "S{0} integração · ronda {1}".format(step, round_number),
+                previous_gate_signature,
             )
+            previous_gate_signature = gate_signature(_read(gate_file)) if not passed else None
             if not passed:
                 if reason:
                     return IntegrationResult(False, reason)
@@ -161,10 +176,31 @@ def run_integration(
             _write(directory / "status", "escalated\n")
             hooks.progress("S{0} integração · ronda {1} · escalada".format(step, round_number))
             return IntegrationResult(False, "{0}: the reviewer escalated (see {1})".format(label, round_dir / "problems.md"))
+        if verdict == "brief":
+            _write(directory / "status", "escalated\n")
+            hooks.progress("S{0} integração · ronda {1} · escalada".format(step, round_number))
+            return IntegrationResult(
+                False,
+                "{0}: the reviewer says the brief is the problem (see {1})".format(
+                    label, round_dir / "problems.md"
+                ),
+            )
         hooks.progress("S{0} integração · ronda {1} · devolvida".format(step, round_number))
+        current_review_files = problem_files(_read(round_dir / "problems.md"))
+        if current_review_files and current_review_files == previous_review_files:
+            _write(directory / "status", "escalated\n")
+            files = ", ".join(sorted(current_review_files))
+            return IntegrationResult(
+                False,
+                "{0}: the reviewer sent the unit back twice for the same files ({1}); "
+                "the brief may be the cause (see {2})".format(
+                    label, files, round_dir / "problems.md"
+                ),
+            )
         if reviews >= limits.max_rounds:
             _write(directory / "status", "escalated\n")
             hooks.progress("S{0} integração · ronda {1} · escalada".format(step, round_number))
             return IntegrationResult(False, "{0}: round cap {1} reached (see {2})".format(label, limits.max_rounds, round_dir / "problems.md"))
         previous_problems = str(round_dir / "problems.md")
         previous_handoff = str(round_dir / "handoff.md")
+        previous_review_files = current_review_files

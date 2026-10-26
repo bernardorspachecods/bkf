@@ -51,6 +51,9 @@ looks fine.
 Propose a fix only for what is clearly wrong against the brief. Taste and style
 that the brief did not ask for are not problems.
 
+When the diff is fine but the brief asks for something contradictory or
+impossible, you may end with `VERDICT: brief`.
+
 <!-- inject: ../../../modules/core-code-principles.md -->
 <!-- inject: ../../../modules/gate.md -->
 **A check written by a model can be empty.** The rules of `core-code-principles` and `gate` end your

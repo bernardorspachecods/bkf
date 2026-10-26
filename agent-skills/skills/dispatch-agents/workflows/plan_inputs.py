@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from harness.engine.run import RunError
+import plan_lint
 
 
 _UNIT_NAME = re.compile(r"[A-Za-z0-9._-]+\Z")
@@ -137,6 +138,7 @@ def gates_command(args):
     if not files:
         raise RunError("no unit")
     missing = False
+    has_errors = False
     for brief_path in files:
         print(brief_path.name[:-3] if brief_path.name.endswith(".md") else brief_path.name)
         commands = gate_commands([brief_path])
@@ -146,8 +148,13 @@ def gates_command(args):
         else:
             print("  NO GATE: only a reviewer checks this unit")
             missing = True
+        for level, message in plan_lint.lint_brief(brief_path, Path.cwd()):
+            prefix = "! error" if level == "error" else "? warning"
+            print("  {0}: {1}".format(prefix, message))
+            if level == "error":
+                has_errors = True
         print()
-    return 1 if missing else 0
+    return 1 if missing or has_errors else 0
 
 
 def brief_current(run_path, unit):
@@ -229,6 +236,7 @@ def integrate_prompt(guides, brief, failed_patches, previous_problems, previous_
             "\nA reviewer found problems in the combined result. Fix those and only those, then verify again.\n\n"
             "Problems from the review:\n\n{0}\n\nYour handoff from the previous round, for you to resume from:\n\n{1}\n"
         ).format(_read_text(previous_problems), handoff)
+    text += "\nIf the brief cannot be followed because a command cannot pass at this step or a rule forbids what the result requires, make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt.\n"
     return text
 
 
@@ -262,6 +270,7 @@ def implement_prompt(guides, brief, round_number, resumed, previous_problems, pr
             "Problems from the gate or the review:\n\n{0}\n\n"
             "Your handoff from the previous round, for you to resume from:\n\n{1}\n"
         ).format(_read_text(previous_problems), _read_text(previous_handoff))
+    text += "\nIf the brief cannot be followed because a command cannot pass at this step or a rule forbids what the result requires, make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt.\n"
     return text
 
 
@@ -286,6 +295,7 @@ def review_prompt(guides, brief, patch, previous_problems, attempt, gate_file):
     )
     if attempt > 1:
         text += 'Your previous attempt left no usable review (no "## What I checked" section, or no verdict line). Follow the form this time.\n'
+    text += "The reviewer may end with `VERDICT: brief` when the diff is fine but the brief asks for something contradictory or impossible.\n"
     return text
 
 

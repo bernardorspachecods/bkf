@@ -36,7 +36,7 @@ class ReviewTests(unittest.TestCase):
         self.codex.write_text("#!/usr/bin/env python3\n" + script, encoding="utf-8")
         self.codex.chmod(0o755)
 
-    def call_review(self, builder=None, min_checked=2):
+    def call_review(self, builder=None, min_checked=2, allow_brief=False):
         attempts = []
 
         def build_prompt(attempt):
@@ -53,6 +53,7 @@ class ReviewTests(unittest.TestCase):
             "high",
             "priority",
             min_checked,
+            allow_brief=allow_brief,
         )
         return result, attempts
 
@@ -92,6 +93,26 @@ class ReviewTests(unittest.TestCase):
                     self.run.path.joinpath("status.log").read_text().splitlines()[-1].split("\t", 1)[1],
                     "unit-a: round {0}: verdict {1}".format(verdict, verdict),
                 )
+
+    def test_brief_verdict_requires_explicit_opt_in(self):
+        self.install_codex(
+            "import pathlib, sys\n"
+            "cwd = pathlib.Path(sys.argv[sys.argv.index('-C') + 1])\n"
+            "(cwd / sys.argv[sys.argv.index('-o') + 1]).write_text(" + repr(self.review_text("brief")) + ")\n"
+        )
+
+        result, attempts = self.call_review()
+
+        self.assertIsNone(result.verdict)
+        self.assertEqual(attempts, [1, 2, 3])
+        self.assertFalse((self.round_dir / "problems.md").exists())
+
+        self.round_dir = self.root / "rounds" / "plan"
+        self.round_dir.mkdir(parents=True)
+        result, attempts = self.call_review(allow_brief=True)
+
+        self.assertEqual((result.verdict, result.reason), ("brief", ""))
+        self.assertEqual(attempts, [1])
 
     def test_unusable_first_attempt_is_noted_then_usable_attempt_succeeds(self):
         self.install_codex(

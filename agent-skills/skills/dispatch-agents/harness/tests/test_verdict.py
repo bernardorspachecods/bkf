@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from harness import cli
-from harness.verdict import checked_ok, read_verdict
+from harness.verdict import checked_ok, read_blocked, read_verdict
 
 
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,7 +36,7 @@ class VerdictTests(unittest.TestCase):
         )
 
     def test_each_valid_verdict(self):
-        for word in ("pass", "back", "escalate"):
+        for word in ("pass", "back", "escalate", "brief"):
             with self.subTest(word=word):
                 self.assertEqual(read_verdict(self.write("VERDICT:" + word + "\n")), word)
                 result = self.run_cli("read", self.path)
@@ -49,6 +49,13 @@ class VerdictTests(unittest.TestCase):
     def test_verdict_whitespace_and_wrong_word(self):
         self.assertEqual(read_verdict(self.write(" VER\tDICT: pass \n")), "pass")
         self.assertIsNone(read_verdict(self.write("VERDICT:unknown\n")))
+
+    def test_read_blocked_returns_reason_from_last_nonempty_line(self):
+        self.assertEqual(read_blocked(self.write("BLOCKED: conflicting command\n\n \t\n")), "conflicting command")
+        self.assertIsNone(read_blocked(self.write("BLOCKED: conflict\nmore text\n")))
+        self.assertIsNone(read_blocked(self.write(" BLOCKED: conflict\n")))
+        self.assertIsNone(read_blocked(self.write("\n \t\n")))
+        self.assertIsNone(read_blocked(os.path.join(self.temp_dir.name, "missing")))
 
     def test_carriage_return_only_line_is_nonempty(self):
         path = self.write("VERDICT:pass\n\r\n")

@@ -132,6 +132,8 @@ read the commands that decide each unit; you do. Before `start`, and again whene
 you add or change a unit, run the script's `gates` command and read the list. Every
 unit has a command that fails if it is wrong, or a reason, written in the plan, for
 why none can exist. A unit with neither is not ready to run.
+The `gates` output also shows brief lint, and `plan-run.sh rehearse <plan.txt>`
+runs the plan's gates informally before `start`.
 
 **Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
 and ask the user, when you agree the split, who the pauses are for: only for you to check the step
@@ -234,6 +236,9 @@ Parallel group:  unit A ─► review ─┐
 
 Rules that hold whatever the number of agents:
 
+- **Brief problems go to the coordinator.** An implementer may stop with
+  `BLOCKED:`, and a reviewer may return `VERDICT: brief`; both signal that the
+  brief may be wrong.
 - **The gate is run by the script, not by an agent,** and a review does not
   replace it. A unit passes when the gate is green and the reviewer passes.
 - **The reviewer does not see the implementer's reasoning or handoff.** The brief, the diff and the gate result are

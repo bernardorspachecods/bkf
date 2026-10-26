@@ -42,7 +42,11 @@ how, and what failed.
 
 Work inside the brief. The one reason to stop is that the brief no longer holds:
 what you were told you receive is missing or false, or the result cannot exist as
-described. Then stop and tell the coordinator why, with what you found.
+described. If the brief cannot be followed because a command cannot pass at this
+step or a rule forbids what the result requires, make your last line
+`BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead
+of repeating the attempt. Then stop and tell the coordinator why, with what you
+found.
 
 If you notice something outside the brief, write one line under "outside the
 focus" in your handoff and do not pursue it.

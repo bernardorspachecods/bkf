@@ -123,6 +123,45 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("Goal note", (self.run.path / "S1-integration" / "brief.md").read_text(encoding="utf-8"))
         self.assertIn("``` gate", (self.run.path / "S1-integration" / "brief.md").read_text(encoding="utf-8"))
 
+    def test_blocked_integrator_stops_before_diff_gate_and_review(self):
+        (self.run.path / "01-unit" / "final.patch").write_text("not a patch\n", encoding="utf-8")
+
+        def integrator(run, label, directory, prompt_file, out_prefix, *args):
+            Path(out_prefix + ".last-message.md").write_text(
+                "BLOCKED: the combined brief requires an impossible command\n", encoding="utf-8"
+            )
+            return StepResult(True, "", None)
+
+        with patch("harness.engine.integration.run_agent_step", side_effect=integrator) as agent, patch(
+            "harness.engine.integration.run_review_round"
+        ) as reviewer:
+            result = self.run_loop()
+
+        directory = self.run.path / "S1-integration"
+        round_dir = directory / "rounds" / "1"
+        handoff = round_dir / "handoff.md"
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "S1-integration: blocked by the implementer: the combined brief requires an impossible command (see {0})".format(handoff))
+        self.assertEqual((directory / "status").read_text(), "blocked\n")
+        self.assertFalse((round_dir / "diff.patch").exists())
+        self.assertFalse((round_dir / "gate.md").exists())
+        self.assertFalse((round_dir / "review-prompt.md").exists())
+        self.assertIn(result.reason, (self.run.path / "status.log").read_text(encoding="utf-8"))
+        self.assertEqual(self.hooks.progress_lines[-1], "S1 integração · ronda 1 · bloqueada")
+        agent.assert_called_once()
+        reviewer.assert_not_called()
+
+    def test_brief_verdict_escalates_with_brief_reason(self):
+        with patch("harness.engine.integration.run_review_round", return_value=("brief", "")):
+            result = self.run_loop()
+
+        directory = self.run.path / "S1-integration"
+        problems = directory / "rounds" / "1" / "problems.md"
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "S1-integration: the reviewer says the brief is the problem (see {0})".format(problems))
+        self.assertEqual((directory / "status").read_text(), "escalated\n")
+        self.assertEqual(self.hooks.progress_lines[-1], "S1 integração · ronda 1 · escalada")
+
     def test_goal_is_snapshotted_before_integrator_runs(self):
         goal = self.run.path / "00-input" / "goal.md"
         goal.write_text("START-GOAL\n", encoding="utf-8")
@@ -298,6 +337,99 @@ class IntegrationTests(unittest.TestCase):
             "S1 integração · ronda 2 · integrar",
             "S1 integração · ronda 2 · gate PASS",
         ])
+
+    def _integrator(self, run, label, directory, prompt_file, out_prefix, *args):
+        (self.repo / "integrated.txt").write_text(Path(prompt_file).read_text() + "\n", encoding="utf-8")
+        Path(out_prefix + ".last-message.md").write_text("handoff\n", encoding="utf-8")
+        return StepResult(True, "", None)
+
+    def _reviewer(self, files="none", verdict="back"):
+        def review(run, label, checkout, round_dir, hooks, settings, tier,
+                   limits, previous, gate_file, progress):
+            Path(round_dir, "problems.md").write_text(
+                "## What I checked\n- diff\n\n## Problems\n" + files + "\n",
+                encoding="utf-8",
+            )
+            Path(round_dir, "verdict").write_text(verdict + "\n", encoding="utf-8")
+            return verdict, ""
+        return review
+
+    def test_flaky_gate_passes_on_one_repeat(self):
+        self.hooks.commands = [
+            "n=$(cat .gate-count 2>/dev/null || echo 0); n=$((n+1)); echo $n >.gate-count; "
+            "if [ $n -eq 1 ]; then echo 'FAIL 1 /tmp/a'; exit 1; fi"
+        ]
+        with patch("harness.engine.integration.run_review_round", return_value=("pass", "")):
+            result = self.run_loop()
+        self.assertTrue(result.ok)
+        notes = (self.run.path / "status.log").read_text(encoding="utf-8")
+        self.assertIn("gate was red once and green on repeat (flaky): " + self.hooks.commands[0], notes)
+        self.assertTrue((self.run.path / "S1-integration/rounds/1/gate-repeat/gate.md").is_file())
+
+    def test_same_gate_failure_twice_stops_early(self):
+        self.hooks.commands = ["echo 'ERROR test_a.py:123'; exit 1"]
+        with patch("harness.engine.integration.run_agent_step", side_effect=self._integrator):
+            result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertIn("gate fails the same way in two rounds in a row", result.reason)
+        self.assertEqual((self.run.path / "S1-integration/status").read_text(), "escalated\n")
+
+    def test_different_gate_failures_do_not_stop_as_repeated(self):
+        class TwoGateRounds(Limits):
+            max_gate_rounds = 2
+        self.hooks.commands = [
+            "n=$(cat .gate-count 2>/dev/null || echo 0); n=$((n+1)); echo $n >.gate-count; "
+            "if [ $n -le 2 ]; then echo 'ERROR test_a.py'; else echo 'ERROR test_b.py'; fi; exit 1"
+        ]
+        with patch("harness.engine.integration.run_agent_step", side_effect=self._integrator):
+            result = run_integration(
+                self.run, self.repo, 1, ["01-unit"], hooks=self.hooks,
+                settings=self.run.settings, tier="fast", limits=TwoGateRounds(),
+                goal_path=self.run.path / "00-input" / "goal.md",
+                brief_check=plan_inputs.check_briefs, brief_differs=plan_inputs.brief_differs,
+                gate_differs=plan_inputs.gate_differs,
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("gate still fails after 2 rounds", result.reason)
+        self.assertNotIn("same way", result.reason)
+
+    def test_same_review_files_twice_stops(self):
+        class ThreeRounds(Limits):
+            max_rounds = 3
+        with patch("harness.engine.integration.run_agent_step", side_effect=self._integrator), patch(
+            "harness.engine.integration.run_review_round", side_effect=self._reviewer("- Fix `src/a.py`")
+        ):
+            result = run_integration(
+                self.run, self.repo, 1, ["01-unit"], hooks=self.hooks,
+                settings=self.run.settings, tier="fast", limits=ThreeRounds(),
+                goal_path=self.run.path / "00-input" / "goal.md",
+                brief_check=plan_inputs.check_briefs, brief_differs=plan_inputs.brief_differs,
+                gate_differs=plan_inputs.gate_differs,
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("reviewer sent the unit back twice for the same files (src/a.py)", result.reason)
+
+    def test_different_review_files_do_not_stop_as_repeated(self):
+        class TwoRounds(Limits):
+            max_rounds = 2
+        calls = []
+        def changing_reviewer(*args):
+            calls.append(len(calls))
+            files = "- Fix `src/a.py`" if len(calls) == 1 else "- Fix `src/b.py`"
+            return self._reviewer(files)(*args)
+        with patch("harness.engine.integration.run_agent_step", side_effect=self._integrator), patch(
+            "harness.engine.integration.run_review_round", side_effect=changing_reviewer
+        ):
+            result = run_integration(
+                self.run, self.repo, 1, ["01-unit"], hooks=self.hooks,
+                settings=self.run.settings, tier="fast", limits=TwoRounds(),
+                goal_path=self.run.path / "00-input" / "goal.md",
+                brief_check=plan_inputs.check_briefs, brief_differs=plan_inputs.brief_differs,
+                gate_differs=plan_inputs.gate_differs,
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("round cap 2 reached", result.reason)
+        self.assertNotIn("same files", result.reason)
 
 
 if __name__ == "__main__":

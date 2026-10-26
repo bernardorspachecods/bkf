@@ -145,22 +145,24 @@ gamma
             "- Do not run git commands that change state (no commit, stage, stash, reset, clean, checkout).\n"
             "- Do not write the handoff to a file. Your final message is the handoff, in the form the guide gives, and nothing else.\n"
         )
-        self.assertEqual(plan_inputs.implement_prompt("/guides", brief, 1, False, "", ""), expected_base)
+        blocked_sentence = "\nIf the brief cannot be followed because a command cannot pass at this step or a rule forbids what the result requires, make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt.\n"
+        self.assertEqual(plan_inputs.implement_prompt("/guides", brief, 1, False, "", ""), expected_base + blocked_sentence)
         self.assertNotIn(".plan-porteiro/ponte", plan_inputs.implement_prompt("/guides", brief, 1, False, "", ""))
         self.assertEqual(
             plan_inputs.implement_prompt("/guides", gate_brief, 1, False, "", ""),
             expected_base.replace("Do the work.\n", "Do the work.\n```gate\ncheck\n```\n")
-            + "- The brief has a `gate`. After you finish, the script runs those commands itself and sends the work back, without a review, if any fails. Run them yourself first when you can.\n",
+            + "- The brief has a `gate`. After you finish, the script runs those commands itself and sends the work back, without a review, if any fails. Run them yourself first when you can.\n"
+            + blocked_sentence,
         )
         self.assertEqual(
             plan_inputs.implement_prompt("/guides", brief, 1, True, "", ""),
-            expected_base + "\nAn earlier attempt at this unit was stopped. The checkout may already hold its work. Judge it against the brief, keep what is right and fix the rest.\n",
+            expected_base + "\nAn earlier attempt at this unit was stopped. The checkout may already hold its work. Judge it against the brief, keep what is right and fix the rest.\n" + blocked_sentence,
         )
         problems = self.write("problems.md", "Fix this.\n")
         handoff = self.write("handoff.md", "I changed it.\n")
         self.assertEqual(
             plan_inputs.implement_prompt("/guides", brief, 2, False, problems, handoff),
-            expected_base + "\nThe script's gate or a reviewer sent your work back. The work from the earlier round is in the checkout. Fix the problems below and only those, keeping what was fine, and verify again.\n\nProblems from the gate or the review:\n\nFix this.\n\n\nYour handoff from the previous round, for you to resume from:\n\nI changed it.\n\n",
+            expected_base + "\nThe script's gate or a reviewer sent your work back. The work from the earlier round is in the checkout. Fix the problems below and only those, keeping what was fine, and verify again.\n\nProblems from the gate or the review:\n\nFix this.\n\n\nYour handoff from the previous round, for you to resume from:\n\nI changed it.\n\n" + blocked_sentence,
         )
 
     def test_review_prompt_matches_bash(self):
@@ -176,8 +178,24 @@ gamma
             "\n---\nYour final message is the review, and nothing else. Begin it with a section headed \"## What I checked\": one line per thing you went through and where you found it. Then list the problems. Its last line must be exactly one of:\n"
             "VERDICT: pass\nVERDICT: back\nVERDICT: escalate\n"
             'Your previous attempt left no usable review (no "## What I checked" section, or no verdict line). Follow the form this time.\n'
+            "The reviewer may end with `VERDICT: brief` when the diff is fine but the brief asks for something contradictory or impossible.\n"
         )
         self.assertEqual(plan_inputs.review_prompt("/guides", brief, "/patch", previous, 2, "/gate.md"), expected)
+
+    def test_blocked_and_brief_sentences_are_in_unit_and_integration_prompts(self):
+        brief = self.write("brief.md", "Do the work.\n")
+        blocked = "make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt."
+        brief_verdict = "The reviewer may end with `VERDICT: brief` when the diff is fine but the brief asks for something contradictory or impossible."
+
+        unit_implement = plan_inputs.implement_prompt("/guides", brief, 1, False, "", "")
+        integration_implement = plan_inputs.integrate_prompt("/guides", brief, "", "", "")
+        unit_review = plan_inputs.review_prompt("/guides", brief, "/patch", "", 1, "")
+        integration_review = plan_inputs.integration_review_prompt("/guides", brief, "/patch", "", 1, "")
+
+        self.assertIn(blocked, unit_implement)
+        self.assertIn(blocked, integration_implement)
+        self.assertIn(brief_verdict, unit_review)
+        self.assertIn(brief_verdict, integration_review)
 
     def test_report_prompt_matches_bash(self):
         run = self.root / "run"

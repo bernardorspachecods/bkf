@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from typing import NamedTuple
 
 from ..gate import run_gate
+from ..verdict import read_blocked
+from .converge import gate_signature, problem_files
 from .agentstep import run_agent_step
 from .diffbase import make_patch, snapshot_base
 from .metrics import record_metrics
@@ -61,7 +63,7 @@ def _gate_problems(round_dir):
 
 
 def run_gate_round(run, label, checkout, round_dir, commands, hooks, limits,
-                   gate_fails, progress_prefix):
+                   gate_fails, progress_prefix, previous_signature=None):
     """Run one shared gate stage and return (passed, failures, reason)."""
     _write(os.path.join(os.path.dirname(os.path.dirname(round_dir)), "status"),
            "gate round {0}\n".format(os.path.basename(round_dir)))
@@ -72,6 +74,28 @@ def run_gate_round(run, label, checkout, round_dir, commands, hooks, limits,
         hooks.progress("{0} · gate PASS".format(progress_prefix))
         run.note("{0} round {1}: gate passed".format(label, os.path.basename(round_dir)))
         return True, gate_fails, ""
+    failed_commands = [item["command"] for item in result["commands"] if item["exit_code"] != 0]
+    repeat_dir = os.path.join(round_dir, "gate-repeat")
+    repeated = run_gate(checkout, limits.gate_timeout, repeat_dir, failed_commands)
+    if repeated["red"] == 0:
+        round_number = os.path.basename(round_dir)
+        command_text = ", ".join(failed_commands)
+        with open(gate_file, "a", encoding="utf-8", newline="") as output:
+            output.write("\nRepeat result: the failed commands passed on one repeat; this round is flaky.\n")
+        run.note("{0} round {1}: gate was red once and green on repeat (flaky): {2}".format(
+            label, round_number, command_text
+        ))
+        hooks.progress("{0} · gate PASS".format(progress_prefix))
+        run.note("{0} round {1}: gate passed".format(label, round_number))
+        return True, gate_fails, ""
+    signature = gate_signature(_read(gate_file))
+    if signature == previous_signature:
+        _write(os.path.join(os.path.dirname(os.path.dirname(round_dir)), "status"), "escalated\n")
+        failed_text = ", ".join(signature[0])
+        return False, gate_fails, (
+            "{0}: the gate fails the same way in two rounds in a row ({1}); "
+            "the brief may ask for something that cannot pass at this step (see {2})"
+        ).format(label, failed_text, gate_file)
     _write(os.path.join(round_dir, "problems.md"), _gate_problems(round_dir))
     _write(os.path.join(round_dir, "verdict"), "back\n")
     hooks.progress("{0} · gate FAIL".format(progress_prefix))
@@ -103,6 +127,7 @@ def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
         run, label, checkout, round_dir, build_prompt, settings.model,
         settings.review_effort, tier, limits.min_checked,
         previous_problems or None,
+        allow_brief=True,
     )
     return result.verdict, result.reason
 
@@ -130,6 +155,8 @@ def run_unit_loop(
     resumed = 0
     previous_problems = ""
     previous_handoff = ""
+    previous_gate_signature = None
+    previous_review_files = set()
     step_prefix = "S{0}".format(step if step is not None else 0)
 
     os.makedirs(directory, exist_ok=True)
@@ -182,6 +209,17 @@ def run_unit_loop(
         round_handoff = os.path.join(round_dir, "handoff.md")
         shutil.copyfile(handoff_result, round_handoff)
         shutil.copyfile(round_handoff, os.path.join(directory, "handoff.md"))
+        blocked_reason = read_blocked(round_handoff)
+        if blocked_reason is not None:
+            reason = "{0}: blocked by the implementer: {1} (see {2})".format(
+                unit, blocked_reason, round_handoff
+            )
+            _write(os.path.join(directory, "status"), "blocked\n")
+            hooks.progress("{0} unidade {1} · ronda {2} · bloqueada".format(
+                step_prefix, unit, round_count
+            ))
+            run.note(reason)
+            return LoopResult(False, reason)
         diff_path = os.path.join(round_dir, "diff.patch")
         make_patch(directory, diff_path, checkout)
         record_metrics(run.path, unit, round_count, round_dir, start_epoch)
@@ -197,7 +235,9 @@ def run_unit_loop(
             passed, gate_fails, reason = run_gate_round(
                 run, unit, checkout, round_dir, commands, hooks, limits,
                 gate_fails, "{0} unidade {1} · ronda {2}".format(step_prefix, unit, round_count),
+                previous_gate_signature,
             )
+            previous_gate_signature = gate_signature(_read(gate_file)) if not passed else None
             if not passed:
                 if reason:
                     return LoopResult(False, reason)
@@ -222,8 +262,28 @@ def run_unit_loop(
             _write(os.path.join(directory, "status"), "escalated\n")
             hooks.progress("{0} unidade {1} · ronda {2} · escalada".format(step_prefix, unit, round_count))
             return LoopResult(False, "{0}: the reviewer escalated (see {1})".format(unit, os.path.join(round_dir, "problems.md")))
+        if verdict == "brief":
+            _write(os.path.join(directory, "status"), "escalated\n")
+            hooks.progress("{0} unidade {1} · ronda {2} · escalada".format(step_prefix, unit, round_count))
+            return LoopResult(
+                False,
+                "{0}: the reviewer says the brief is the problem (see {1})".format(
+                    unit, os.path.join(round_dir, "problems.md")
+                ),
+            )
 
         hooks.progress("{0} unidade {1} · ronda {2} · devolvida".format(step_prefix, unit, round_count))
+        current_review_files = problem_files(_read(os.path.join(round_dir, "problems.md")))
+        if current_review_files and current_review_files == previous_review_files:
+            _write(os.path.join(directory, "status"), "escalated\n")
+            files = ", ".join(sorted(current_review_files))
+            return LoopResult(
+                False,
+                "{0}: the reviewer sent the unit back twice for the same files ({1}); "
+                "the brief may be the cause (see {2})".format(
+                    unit, files, os.path.join(round_dir, "problems.md")
+                ),
+            )
         if reviews >= limits.max_rounds:
             _write(os.path.join(directory, "status"), "escalated\n")
             hooks.progress("{0} unidade {1} · ronda {2} · escalada".format(step_prefix, unit, round_count))
@@ -233,3 +293,4 @@ def run_unit_loop(
             )
         previous_problems = os.path.join(round_dir, "problems.md")
         previous_handoff = round_handoff
+        previous_review_files = current_review_files

@@ -127,7 +127,7 @@ check "gate red then fixed: round 2 implementer saw the failing command" 'grep -
 # 4. Gate always red: the reviewer can never pass it. The unit stops after PLAN_MAX_GATE_ROUNDS.
 new_case alwaysred 'false' 'echo change >>a.txt'
 FAKE_VERDICT=pass run alwaysred PLAN_MAX_GATE_ROUNDS=2
-check "gate always red: stopped" '[ "$code" -ne 0 ] && grep -q "gate still fails after 2 rounds" "$case_dir/runs/r/status.log"'
+check "gate always red: stopped" '[ "$code" -ne 0 ] && grep -q "gate fails the same way in two rounds in a row" "$case_dir/runs/r/status.log"'
 check "gate always red: no reviewer was called, even one that would say pass" '[ "$(reviews)" -eq 0 ]'
 
 # 5. A reviewer 'back' is still counted apart from gate failures.
