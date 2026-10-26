@@ -18,8 +18,24 @@ def read_verdict(path):
         "VERDICT:pass": "pass",
         "VERDICT:back": "back",
         "VERDICT:escalate": "escalate",
+        "VERDICT:brief": "brief",
     }
     return verdicts.get(value)
+
+
+def read_blocked(path):
+    """Return the reason on a last non-empty BLOCKED line, or None."""
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as source:
+            last = None
+            for line in source:
+                if line.strip(" \t\n"):
+                    last = line
+    except OSError:
+        return None
+    if last is None or not last.startswith("BLOCKED:"):
+        return None
+    return last[len("BLOCKED:"):].strip()
 
 
 def _checked_ok(path, minimum):

@@ -24,6 +24,7 @@ def run_review(
     tier,
     min_checked,
     previous_problems=None,
+    allow_brief=False,
 ):
     """Run up to three reviewer attempts and persist a usable review."""
     round_path = os.fspath(round_dir)
@@ -58,6 +59,8 @@ def run_review(
             return ReviewResult(None, step.reason)
 
         verdict = read_verdict(message_path)
+        if verdict == "brief" and not allow_brief:
+            verdict = None
         usable = (
             os.path.isfile(message_path)
             and os.path.getsize(message_path) > 0

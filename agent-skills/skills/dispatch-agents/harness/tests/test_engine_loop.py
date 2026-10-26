@@ -22,6 +22,7 @@ class Hooks:
         self.entered = []
         self.implement_calls = []
         self.review_calls = []
+        self.commands = None
 
     def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff):
         self.implement_calls.append((round_number, resumed, previous_problems, previous_handoff))
@@ -32,6 +33,8 @@ class Hooks:
         return "# Review\nREVIEW attempt={0} gate={1}\n".format(attempt, gate_file)
 
     def gate_commands(self, brief):
+        if self.commands is not None:
+            return self.commands
         return ["test -f ready"] if "gate" in Path(brief).read_text() else []
 
     def progress(self, text):
@@ -113,7 +116,7 @@ class UnitLoopTests(unittest.TestCase):
             " if os.environ.get('FAKE_REVIEW') == 'unusable': output.write_text('no review\\n')\n"
             " else:\n"
             "  checked = '## What I checked\\n- diff\\n\\n'\n"
-            "  output.write_text(checked + 'VERDICT: ' + verdict + '\\n')\n"
+            "  output.write_text(checked + '## Problems\\n' + os.environ.get('FAKE_PROBLEM_FILES', 'none') + '\\n\\nVERDICT: ' + verdict + '\\n')\n"
             "else:\n"
             " if not (cwd / '.around-implement').exists(): sys.exit(91)\n"
             " match = re.search(r'IMPLEMENT ([0-9]+)', prompt)\n"
@@ -123,7 +126,7 @@ class UnitLoopTests(unittest.TestCase):
             "  if os.environ.get('FAKE_QUOTA') == '1': print('{\"message\":\"hit your usage limit; try again at tomorrow\"}')\n"
             "  sys.exit(7)\n"
             " if mode != 'no-handoff':\n"
-            "  output.write_text('handoff round ' + str(n) + '\\n')\n"
+            "  output.write_text('BLOCKED: ' + os.environ['FAKE_BLOCKED'] + '\\n' if os.environ.get('FAKE_BLOCKED') else 'handoff round ' + str(n) + '\\n')\n"
             " if mode == 'change': (cwd / 'tracked.txt').write_text('changed\\n')\n"
             " if os.environ.get('FAKE_GATE_READY_ROUND') and n >= int(os.environ['FAKE_GATE_READY_ROUND']) > 0: (cwd / 'ready').write_text('ok')\n"
             "sys.exit(0)\n",
@@ -164,6 +167,33 @@ class UnitLoopTests(unittest.TestCase):
             "S1 unidade 01-unit · ronda 1 · passou",
         ])
         self.assertEqual(self.hooks.entered, [("enter", "01-unit"), ("exit", "01-unit")])
+
+    def test_blocked_handoff_stops_before_diff_gate_and_review(self):
+        self.source_brief.write_text("# Unit\n```gate\nfalse\n```\n", encoding="utf-8")
+        os.environ["FAKE_BLOCKED"] = "the gate command cannot pass here"
+        self.addCleanup(lambda: os.environ.pop("FAKE_BLOCKED", None))
+        result = self.run_loop()
+        round_dir = self.unit_dir / "rounds" / "1"
+        handoff = round_dir / "handoff.md"
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "01-unit: blocked by the implementer: the gate command cannot pass here (see {0})".format(handoff))
+        self.assertEqual((self.unit_dir / "status").read_text(), "blocked\n")
+        self.assertFalse((round_dir / "diff.patch").exists())
+        self.assertFalse((round_dir / "gate.md").exists())
+        self.assertFalse((round_dir / "review-prompt.md").exists())
+        self.assertIn(result.reason, (self.run.path / "status.log").read_text())
+        self.assertEqual(self.hooks.progress_lines[-1], "S1 unidade 01-unit · ronda 1 · bloqueada")
+
+    def test_brief_verdict_escalates_with_brief_reason(self):
+        os.environ["FAKE_VERDICT"] = "brief"
+        result = self.run_loop()
+        problems = self.unit_dir / "rounds" / "1" / "problems.md"
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "01-unit: the reviewer says the brief is the problem (see {0})".format(problems))
+        self.assertEqual((self.unit_dir / "status").read_text(), "escalated\n")
+        self.assertEqual(self.hooks.progress_lines[-1], "S1 unidade 01-unit · ronda 1 · escalada")
 
     def test_gate_failure_then_pass_counts_separately_and_keeps_gate_problems_text(self):
         self.source_brief.write_text("# Unit\n gate\n", encoding="utf-8")
@@ -206,7 +236,7 @@ class UnitLoopTests(unittest.TestCase):
         os.environ["FAKE_GATE_READY_ROUND"] = "0"
         result = self.run_loop(TwoCaps())
         self.assertFalse(result.ok)
-        self.assertEqual(result.reason, "01-unit: the gate still fails after 2 rounds (see {0})".format(self.unit_dir / "rounds" / "2" / "gate.md"))
+        self.assertEqual(result.reason, "01-unit: the gate fails the same way in two rounds in a row (test -f ready); the brief may ask for something that cannot pass at this step (see {0})".format(self.unit_dir / "rounds" / "2" / "gate.md"))
         self.assertEqual(len(list((self.unit_dir / "rounds").iterdir())), 2)
 
     def test_gate_always_red_escalates_at_gate_cap_without_reviewing(self):
@@ -219,6 +249,79 @@ class UnitLoopTests(unittest.TestCase):
         self.assertEqual(result.reason, "01-unit: the gate still fails after 1 rounds (see {0})".format(self.unit_dir / "rounds" / "1" / "gate.md"))
         self.assertEqual((self.unit_dir / "status").read_text(), "escalated\n")
         self.assertFalse((self.unit_dir / "rounds" / "1" / "review-prompt.md").exists())
+
+    def test_flaky_gate_passes_on_one_repeat(self):
+        self.source_brief.write_text("# Unit\n gate\n", encoding="utf-8")
+        self.hooks.commands = [
+            "n=$(cat .gate-count 2>/dev/null || echo 0); n=$((n+1)); echo $n >.gate-count; "
+            "if [ $n -eq 1 ]; then echo 'FAIL 123 /tmp/run-123/test.py'; exit 1; fi"
+        ]
+        result = self.run_loop()
+        self.assertTrue(result.ok)
+        self.assertEqual(len(list((self.unit_dir / "rounds").iterdir())), 1)
+        self.assertTrue((self.unit_dir / "rounds" / "1" / "gate-repeat" / "gate.md").exists())
+        self.assertTrue(any(
+            "gate was red once and green on repeat (flaky): " + self.hooks.commands[0] in note
+            for note in self.notes()
+        ))
+
+    def test_flaky_gate_does_not_count_as_previous_failed_round(self):
+        self.source_brief.write_text("# Unit\n gate\n", encoding="utf-8")
+        os.environ["FAKE_VERDICTS"] = "back,back"
+        self.hooks.commands = [
+            "n=$(cat .gate-count 2>/dev/null || echo 0); n=$((n+1)); echo $n >.gate-count; "
+            "if [ $n -eq 4 ]; then exit 0; fi; "
+            "echo 'FAIL 123 /tmp/same'; exit 1"
+        ]
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertIn("gate fails the same way in two rounds in a row", result.reason)
+        self.assertIn(str(self.unit_dir / "rounds" / "4" / "gate.md"), result.reason)
+        self.assertEqual(len(list((self.unit_dir / "rounds").iterdir())), 4)
+
+    def test_same_gate_failure_twice_escalates_early(self):
+        self.source_brief.write_text("# Unit\n gate\n", encoding="utf-8")
+        self.hooks.commands = ["echo 'FAIL test_a.py:123'; exit 1"]
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertIn("fails the same way in two rounds in a row (" + self.hooks.commands[0] + ")", result.reason)
+        self.assertEqual(len(list((self.unit_dir / "rounds").iterdir())), 2)
+        self.assertEqual((self.unit_dir / "status").read_text(), "escalated\n")
+
+    def test_different_gate_failures_in_two_rounds_do_not_stop_as_repeated(self):
+        class TwoGateRounds(Limits):
+            max_gate_rounds = 2
+
+        self.source_brief.write_text("# Unit\n gate\n", encoding="utf-8")
+        self.hooks.commands = [
+            "n=$(cat .gate-count 2>/dev/null || echo 0); n=$((n+1)); echo $n >.gate-count; "
+            "if [ $n -le 2 ]; then echo 'FAIL test_a.py'; else echo 'FAIL test_b.py'; fi; exit 1"
+        ]
+        result = self.run_loop(TwoGateRounds())
+        self.assertFalse(result.ok)
+        self.assertIn("gate still fails after 2 rounds", result.reason)
+        self.assertNotIn("fails the same way", result.reason)
+
+    def test_same_review_files_twice_escalates(self):
+        os.environ["FAKE_VERDICTS"] = "back,back"
+        os.environ["FAKE_PROBLEM_FILES"] = "- Fix `src/a.py`"
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertIn("reviewer sent the unit back twice for the same files (src/a.py)", result.reason)
+        self.assertEqual((self.unit_dir / "status").read_text(), "escalated\n")
+
+    def test_different_review_files_do_not_stop_as_repeated(self):
+        os.environ["FAKE_VERDICTS"] = "back,back,back"
+        os.environ["FAKE_PROBLEM_FILES"] = "- Fix `src/a.py`"
+        # The fake reviewer changes the file on each call when requested.
+        self.fake.write_text(self.fake.read_text().replace(
+            "os.environ.get('FAKE_PROBLEM_FILES', 'none')",
+            "os.environ.get('FAKE_PROBLEM_FILES', 'none').replace('src/a.py', 'src/' + str(n) + '.py')"
+        ), encoding="utf-8")
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertIn("round cap 3 reached", result.reason)
+        self.assertNotIn("same files", result.reason)
 
     def test_reviewer_back_then_pass_preserves_previous_problem_paths(self):
         os.environ["FAKE_VERDICTS"] = "back,pass"
