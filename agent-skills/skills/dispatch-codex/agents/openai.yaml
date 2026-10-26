@@ -1,5 +1,0 @@
-interface:
-  display_name: "Dispatch Codex"
-  short_description: "Launch Codex CLI tasks and inspect run diffs"
-policy:
-  allow_implicit_invocation: false

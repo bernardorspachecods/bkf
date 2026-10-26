@@ -1,0 +1,3 @@
+interface:
+  display_name: "Repo maintenance"
+  short_description: "Rules for keeping, organizing and writing a repo's documents under BKF"

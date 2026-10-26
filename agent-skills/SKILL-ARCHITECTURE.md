@@ -4,6 +4,15 @@
 This document is generated from the non-empty packages under `agent-skills/skills/`.
 It contains only package metadata and supported runtime metadata derived from the repository.
 
+## align-intent
+
+- Description: Use at the start of any task that is more than a small change: settle with the user what is wanted and why, and when it is done, before working. Do not use inside a plan, a delegated task or a review: the brief already carries the intent.
+- Package: [`agent-skills/skills/align-intent`](skills/align-intent/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Align intent
+  - `short_description`: Settle what is wanted and why before working, so the agent can work alone
+
 ## brainstorm
 
 - Description: Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions.
@@ -12,6 +21,24 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Brainstorm
   - `short_description`: Think through ideas and decisions together
+
+## code-review
+
+- Description: Use when the user asks for a code review of a branch, pull request, revision range or working tree run by separate agents, or a stopped review run to resume. Looking over your own change while you work is part of code-work.
+- Package: [`agent-skills/skills/code-review`](skills/code-review/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Code review
+  - `short_description`: Review a diff on two axes with agents that check each other
+
+## code-work
+
+- Description: Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules.
+- Package: [`agent-skills/skills/code-work`](skills/code-work/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Code work
+  - `short_description`: Principles for writing and fixing code, and for verifying it
 
 ## conversation-transcript
 
@@ -22,6 +49,15 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Conversation Transcript
   - `short_description`: Clean exported session transcripts
 
+## council
+
+- Description: Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume.
+- Package: [`agent-skills/skills/council`](skills/council/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Council
+  - `short_description`: Five advisors and five reviewers on one question
+
 ## delegate-work
 
 - Description: Hand one short, objective task to another agent, either a Claude subagent or a Codex CLI run, and check what comes back. Use when the user asks to delegate, or when a self-contained task suits a cheaper or parallel agent; do not use for work with several stages, a plan or a branch review (use work-in-stages), or to continue in a new chat (use handoff).
@@ -31,24 +67,15 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Delegate Work
   - `short_description`: Hand a short, objective task to a Claude subagent or a Codex run
 
-## dispatch-codex
+## dispatch-agents
 
-- Description: Run multi-phase workflows (plan, research, council, code review) as Codex CLI scripts that chain agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
-- Package: [`agent-skills/skills/dispatch-codex`](skills/dispatch-codex/SKILL.md)
+- Description: Run multi-phase workflows (plan, research, council, code review) as scripts that chain Codex or Claude agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
+- Package: [`agent-skills/skills/dispatch-agents`](skills/dispatch-agents/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
-  - `display_name`: Dispatch Codex
-  - `short_description`: Launch Codex CLI tasks and inspect run diffs
+  - `display_name`: Dispatch agents
+  - `short_description`: Run multi-agent workflows on Codex or Claude and inspect the results
 - Runtime policy: `explicit invocation required`
-
-## do-research
-
-- Description: Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail.
-- Package: [`agent-skills/skills/do-research`](skills/do-research/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Do research
-  - `short_description`: Rules for sourced research, evidence, and conclusions
 
 ## git-worktree-cleanup
 
@@ -70,14 +97,14 @@ It contains only package metadata and supported runtime metadata derived from th
   - `short_description`: Continue the current task in a fresh Claude session
 - Runtime policy: `explicit invocation required`
 
-## maintain-knowledge
+## plan
 
-- Description: Use when creating, placing, or reorganizing project documentation, glossaries, or decision records, or when asked to organize a repository's documents, including under BKF.
-- Package: [`agent-skills/skills/maintain-knowledge`](skills/maintain-knowledge/SKILL.md)
+- Description: Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script runs, or a stopped plan run to resume. A single task is not a plan.
+- Package: [`agent-skills/skills/plan`](skills/plan/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
-  - `display_name`: Maintain knowledge
-  - `short_description`: Rules for documentation, repo organization, glossaries, decisions
+  - `display_name`: Plan
+  - `short_description`: Plan a goal as reviewed units run by agents
 
 ## prototype
 
@@ -90,21 +117,49 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## repo-library
 
-- Description: Use at the start of any task in a repository, and whenever a repo-specific procedure or rule may apply, to find the repository's own procedures and modules in its repo-library.
+- Description: Use when adding or reviewing an entry of a repository's repo-library: a procedure or rule set that the repository applies repeatedly.
 - Package: [`agent-skills/skills/repo-library`](skills/repo-library/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Repo library
-  - `short_description`: Find and follow a repository's own procedures and modules
+  - `short_description`: Add or review an entry of a repository's repo-library, and make it reachable
 
-## repo-read-audit
+## repo-maintenance
 
-- Description: Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses.
-- Package: [`agent-skills/skills/repo-read-audit`](skills/repo-read-audit/SKILL.md)
+- Description: Use when your change affects a repository's documents, when organizing or restructuring them, or when writing or revising a document that other agents will act on, mostly under BKF.
+- Package: [`agent-skills/skills/repo-maintenance`](skills/repo-maintenance/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
-  - `display_name`: Repository Read Audit
+  - `display_name`: Repo maintenance
+  - `short_description`: Rules for keeping, organizing and writing a repo's documents under BKF
+
+## research
+
+- Description: Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail; or a stopped research run to resume.
+- Package: [`agent-skills/skills/research`](skills/research/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Research
+  - `short_description`: Sourced research from objective to delivery
+
+## retrieval-chat-audit
+
+- Description: Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses.
+- Package: [`agent-skills/skills/retrieval-chat-audit`](skills/retrieval-chat-audit/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Retrieval Chat Audit
   - `short_description`: Audit repository reading and retrieval
+- Runtime policy: `explicit invocation required`
+
+## run-to-completion
+
+- Description: The user's last contact before a long plan or task runs unattended. Checks that the goal, artifacts and limits are aligned, gets one explicit go, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end.
+- Package: [`agent-skills/skills/run-to-completion`](skills/run-to-completion/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Run to completion
+  - `short_description`: Final check with the user, then work alone until the plan is done
 - Runtime policy: `explicit invocation required`
 
 ## skill-authoring
@@ -121,30 +176,3 @@ It contains only package metadata and supported runtime metadata derived from th
 - Description: Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or local WhisperX / cloud Whisper fallback), and hands the result to the agent so it can answer questions about what's in the video. With a Gemini API key, Google's agentic video model watches the full video instead.
 - Package: [`agent-skills/skills/watch`](skills/watch/SKILL.md)
 - Runtime metadata: `missing`
-
-## work-in-stages
-
-- Description: Use when work has several stages or roles, hands work to other agents, needs a plan, a council or a code review, or resumes a stopped run.
-- Package: [`agent-skills/skills/work-in-stages`](skills/work-in-stages/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Work in stages
-  - `short_description`: Rules for planning, delegating, and reviewing multi-step work
-
-## work-with-code
-
-- Description: Use when building a feature, fixing a bug, or reviewing code changes (source code and tests).
-- Package: [`agent-skills/skills/work-with-code`](skills/work-with-code/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Work with code
-  - `short_description`: Rules for building, fixing, and reviewing code
-
-## write-text
-
-- Description: Use whenever the main output is a document, guide, report, prompt, handoff, or instruction, including one written inside a repository, or when revising or shortening one that another reader will act on.
-- Package: [`agent-skills/skills/write-text`](skills/write-text/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Write text
-  - `short_description`: Rules for writing and revising documents and prompts

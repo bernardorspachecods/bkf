@@ -1,0 +1,14 @@
+== . ==
+Result: CONFORMANT with BKF 0.1
+== agent-skills/library ==
+Result: CONFORMANT with BKF 0.1
+== agent-skills/library/workflow-types/code-review ==
+Result: CONFORMANT with BKF 0.1
+== agent-skills/library/workflow-types/council ==
+Result: CONFORMANT with BKF 0.1
+== agent-skills/library/workflow-types/plan ==
+Result: CONFORMANT with BKF 0.1
+== agent-skills/library/workflow-types/research ==
+Result: CONFORMANT with BKF 0.1
+== bkf ==
+Result: CONFORMANT with BKF 0.1

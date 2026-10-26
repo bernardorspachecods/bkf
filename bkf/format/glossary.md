@@ -65,15 +65,9 @@ See the [format specification](/format/format-specification.md#34-ideas-file).
 
 ## Layer
 
-A part of BKF's organization; its five layers are format, library, entry skills, repo library, and workflows.
+A part of BKF's organization; its five layers are format, modules, skills, repo library, and workflows.
 
 See [what BKF is](/manual/what-is-bkf.md#the-layers).
-
-## Library
-
-The shared collection of rule modules and workflow type definitions selected by entry skills for daily use, kept in `agent-skills/library/`.
-
-See [the layers](/manual/what-is-bkf.md#the-layers); `agent-skills/library/MAP.md`.
 
 ## Link
 
@@ -101,9 +95,9 @@ See the [format specification](/format/format-specification.md#31-map-files-and-
 
 ## Module
 
-A reusable task rule in `agent-skills/library/modules/`, written once and selected for a task.
+A reusable task rule in `agent-skills/modules/`, written once; skills inject its text.
 
-See [the layers](/manual/what-is-bkf.md#the-layers); `agent-skills/library/MAP.md`.
+See [the layers](/manual/what-is-bkf.md#the-layers); `agent-skills/modules/MAP.md`.
 
 ## Nested bundle
 
@@ -159,8 +153,8 @@ A multi-stage piece of work in which a coordinator works with the user at the st
 
 ## Workflow type
 
-A bundle of guides in `agent-skills/library/workflow-types/` that defines a workflow: one guide for the coordinator and one for each role.
+A skill in `agent-skills/skills/` (`plan`, `code-review`, `council`, `research`) that defines a workflow: its `SKILL.md` is the guide for the coordinator and its `roles/` folder holds one guide for each role.
 
 Term to avoid: "workflow shape".
 
-See [the layers](/manual/what-is-bkf.md#the-layers); `agent-skills/library/MAP.md`.
+See [the layers](/manual/what-is-bkf.md#the-layers); `agent-skills/skills/`.

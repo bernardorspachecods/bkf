@@ -24,9 +24,9 @@ from bkf_common import (
     body_size,
     discover_maps,
     find_bundles,
-    in_nested_bundle,
     inventory_entries,
     needs_navigation_map,
+    nested_bundle_roots,
     parse_markdown,
     render_inventory_entry,
     tracking_state,
@@ -38,6 +38,12 @@ SUPPORTED_VERSION = (0, 1)
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)$")
 DOCUMENT_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 PERCENT_ESCAPE_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+REPO_LIBRARY_PATH_RE = re.compile(
+    r"/"
+    + "".join(f"(?:{re.escape(char)}|%{ord(char):02x})" for char in "repo-library")
+    + r"(?:/|%2f)",
+    re.IGNORECASE,
+)
 MARKDOWN = MarkdownIt("commonmark")
 START_MARKER = "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->"
 END_MARKER = "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->"
@@ -67,6 +73,8 @@ class Validator:
         self.root = root
         self.findings: list[Finding] = []
         self.member_documents: dict[Path, ParsedMarkdown] = {}
+        self.parsed_markdown_files: dict[Path, ParsedMarkdown] = {}
+        self.markdown_files: list[Path] = []
         self._ext_validator: Draft202012Validator | None = None
         self._ext_schema_reported = False
 
@@ -89,6 +97,7 @@ class Validator:
             self.error("ROOT_MAP_MISSING", root_map, "bundle root must contain MAP.md")
             return
 
+        self.markdown_files = self._discover_markdown_files()
         maps = discover_maps(self.root)
         version = self._validate_root_map(root_map)
         self._check_version(version, root_map)
@@ -107,6 +116,65 @@ class Validator:
                 continue
             self._validate_links(map_path, body)
 
+        self._validate_repo_library_links()
+
+    def _validate_repo_library_links(self) -> None:
+        repo_library = self.root / "repo-library"
+        if not repo_library.is_dir():
+            return
+
+        entries = [
+            path
+            for path in repo_library.rglob("*")
+            if path.is_file() and path.suffix.lower() == ".md" and path.name != MAP_NAME
+        ]
+        if not entries:
+            return
+        entry_targets = {entry.resolve() for entry in entries}
+
+        linked_entries: set[Path] = set()
+        for source in self.markdown_files:
+            if source.is_relative_to(repo_library):
+                continue
+            parsed = self.parsed_markdown_files.get(source)
+            if parsed is None:
+                try:
+                    parsed = parse_markdown(source)
+                except BKFInputError:
+                    continue
+            markdown = parsed.body
+            if REPO_LIBRARY_PATH_RE.search(markdown) is None:
+                continue
+            for destination in self._link_destinations(markdown):
+                try:
+                    parsed = urlsplit(destination)
+                    if (
+                        parsed.scheme
+                        or parsed.netloc
+                        or not parsed.path.startswith("/")
+                        or destination.startswith("//")
+                        or any(character.isspace() for character in destination)
+                        or PERCENT_ESCAPE_RE.search(parsed.path)
+                        or any(character.isspace() or ord(character) > 127 for character in parsed.path)
+                    ):
+                        continue
+                    decoded = unquote(parsed.path, encoding="utf-8", errors="strict")
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                target = (self.root / decoded.lstrip("/")).resolve()
+                if target.is_relative_to(self.root) and target in entry_targets:
+                    linked_entries.add(target)
+
+        for entry in sorted(entries, key=lambda path: path.relative_to(self.root).as_posix()):
+            if entry.resolve() in linked_entries:
+                continue
+            self.warning(
+                "REPO_LIBRARY_ENTRY_UNLINKED",
+                entry,
+                "No document outside repo-library/ links to this entry, so nothing sends an agent to it. "
+                "Link it from the document where this activity starts, or from a task route in the nearest map.",
+            )
+
     def _parse(self, path: Path):
         try:
             return parse_markdown(path)
@@ -118,6 +186,7 @@ class Validator:
         parsed = self._parse(path)
         if parsed is None:
             return None
+        self.parsed_markdown_files[path] = parsed
         fields = set(parsed.frontmatter)
         if not {"bkf_version"} <= fields or not fields <= {"bkf_version", "description"}:
             self.error(
@@ -204,6 +273,7 @@ class Validator:
         except (BKFInputError, OSError, UnicodeError) as exc:
             self.error("MAP_INVALID", path, str(exc))
             return
+        self.parsed_markdown_files[path] = parsed
 
         if path != root_map:
             if set(parsed.frontmatter) != {"description"}:
@@ -420,15 +490,19 @@ class Validator:
                 self.error("MAP_ARTIFACT_TARGET", source, "artifact reference crosses a child map boundary")
                 return
 
-    def _validate_documents(self) -> None:
-        markdown_files = sorted(
+    def _discover_markdown_files(self) -> list[Path]:
+        nested_roots = nested_bundle_roots(self.root)
+        return sorted(
             (
                 path for path in self.root.rglob("*")
                 if path.is_file() and path.suffix.lower() == ".md"
-                and not in_nested_bundle(self.root, path)
+                and not any(path.is_relative_to(nested_root) for nested_root in nested_roots)
             ),
             key=lambda path: path.relative_to(self.root).as_posix(),
         )
+
+    def _validate_documents(self) -> None:
+        markdown_files = self.markdown_files
         for path in markdown_files:
             if path.name == MAP_NAME:
                 continue
@@ -440,6 +514,7 @@ class Validator:
             parsed = self._parse(path)
             if parsed is None:
                 continue
+            self.parsed_markdown_files[path] = parsed
             metadata = parsed.frontmatter
             try:
                 tracked = tracking_state(metadata, path=path.relative_to(self.root).as_posix())

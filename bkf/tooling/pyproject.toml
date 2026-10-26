@@ -25,6 +25,7 @@ py-modules = [
     "bkf_common",
     "generate_inventory",
     "hook_events",
+    "launch_guard",
     "log_entry",
     "navigation_map",
     "orient",

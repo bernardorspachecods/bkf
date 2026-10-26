@@ -5,6 +5,10 @@
 # CODEX_RERUN=1 is the intended value to allow reusing a run folder with a status file.
 set -euo pipefail
 
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=/dev/null
+. "$here/../../dispatch-agents/scripts/lib-codex.sh"
+
 name=${1:?task name}
 brief=${2:?brief file}
 base=${3:-HEAD}
@@ -48,16 +52,12 @@ else
 fi
 
 set +e
-codex exec \
-  -C "$worktree" \
-  -m "$model" \
-  -c "model_reasoning_effort=\"$effort\"" \
-  -s workspace-write \
-  --json \
-  -o "$runs/last-message.md" \
-  - <"$runs/brief.md" >"$runs/events.jsonl" 2>"$runs/stderr.log"
+codex_run "$worktree" "$runs/brief.md" "$runs/run" workspace-write
 code=$?
 set -e
+for f in events.jsonl stderr.log last-message.md; do
+  [ ! -e "$runs/run.$f" ] || mv "$runs/run.$f" "$runs/$f"
+done
 
 if [ -n "${CODEX_IN_PLACE:-}" ]; then
   git -C "$worktree" diff --stat "$base" >"$runs/diffstat.txt" 2>&1 || true

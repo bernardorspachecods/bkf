@@ -5,9 +5,7 @@ description: Create and maintain agent skills.
 
 # Skill mechanics
 
-Use [Writing principles](../../library/modules/writing-principles.md) when selecting content,
-drafting, and reviewing skill instructions and references. This skill owns
-skill packaging, invocation, and resource boundaries.
+This skill owns skill packaging, invocation, and resource boundaries.
 
 ### Invocation
 
@@ -54,9 +52,9 @@ repeating them across files. Link every authored package file from `SKILL.md`,
 with a clear condition for reading it and the point in the workflow when it is
 needed.
 
-### Skills that select library modules
+### Skills that share a module
 
-An entry skill selects modules from the shared library by tag. Its list sits between `<!-- BKF:GENERATED-TAGGED-LIST tags: ... -->` and `<!-- BKF:GENERATED-TAGGED-LIST-END -->`, with the tags it selects on the opening line. Use only the tags in the [library map](../../library/MAP.md#tag-vocabulary). Do not write the list by hand: [`bkf skills`](../../../bkf/tooling/commands.md#bkf-skills) checks it, and `bkf skills --write` regenerates it and the skill catalog. Run it after adding or editing an entry skill, or after changing a module a skill lists.
+A rule that several skills need lives once in `agent-skills/modules/`. A module that every run of the skill needs, and that is short, is better injected than linked: an agent that is only told to read a file may not. Write `<!-- inject: ../../modules/name.md -->` on a line of its own where the text belongs; [`bkf skills`](../../../bkf/tooling/commands.md#bkf-skills) reports the block stale when the module changes and `bkf skills --write` fills it (frontmatter left out, headings one level lower) and regenerates the skill catalog. Link a module instead when only some uses of the skill need it, or when it is long. A role guide inside a skill (`roles/`) injects with the same line, with the path relative to the guide.
 
 ### Bundled scripts
 
