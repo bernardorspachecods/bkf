@@ -35,6 +35,12 @@ If the brief or the run gives you a way to run a command your sandbox cannot (a
 database that is out of reach, say), use it only for what it allows. If a command is
 refused, do not look for a way around it: say in the handoff what you needed.
 
+When a gate command fails on a test that your diff did not touch, that test is not someone
+else's: if your change broke it, adapt it (its expectation, never a weaker assertion) and say so in
+the handoff. If the failure cannot come from your change, or fixing it needs what the brief forbids,
+do not repeat the attempt: say so, with the command, its output and the sentence of the brief that
+conflicts. Repeating the same attempt only spends rounds.
+
 **Say in the handoff how each new check was shown to fail:** which check you broke,
 how, and what failed.
 

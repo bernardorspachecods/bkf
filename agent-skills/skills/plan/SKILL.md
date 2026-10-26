@@ -140,6 +140,16 @@ reporting unless a fundamental decision changes), or also for the user to read
 it. Write the answer in the plan and follow it. Step numbers count the lines of
 `plan.txt`; when you add or move a unit, recompute them before you resume.
 
+**Pilot by kind of unit.** Pause after the first unit of each kind (moving files, changing a
+rule, a migration, an interface), read it, and only then release the rest of that kind. A kind that
+is new to the plan fails in ways the briefs cannot predict, and fails once instead of in every unit.
+
+**Have the briefs read before they run.** A cheap agent (a Haiku subagent is enough) that reads
+every brief and answers only two questions catches most contradictions: are there two sentences
+that cannot both be obeyed, and is there a criterion that someone holding only the diff and the
+gate result cannot judge? It is a probabilistic check, so it adds to reading the gates, never
+replaces it.
+
 **Agree the plan before anything runs.** Present the finished plan: the split with
 the reason for each cut, the order, the pauses and the model. You suggest the pauses
 and say what each costs; the user decides the pauses and the model. Wait for their
@@ -204,7 +214,17 @@ Unit brief
   record the limits it is known to have. A reviewer who finds a new case reports
   it with a command that fails, to be added to the gate, instead of sending the
   unit back for a case the brief never asked for.
-- **Out of scope is as important as the result.** It keeps a diff small enough to review.
+- **Out of scope is as important as the result.** It keeps a diff small enough to review. Write it by
+  exclusion: say what must not be touched (HTTP routes, migrations, other apps), and do not list
+  the only files that may change, because the radius of a change is never known beforehand. Add the
+  clause every unit needs: tests and documents that the change makes wrong belong to this unit and
+  are adapted, without weakening an assertion. A brief that forbids the one file its own required
+  behavior breaks makes the unit loop until the cap.
+- **State what each step leaves true.** A gate or a criterion written with the end state of the plan
+  in mind is false half way: a command that checks a rule a later unit closes cannot pass now, and a
+  rule such as "this number only changes in X" is wrong when the step creates a temporary exception.
+  Run every gate line against the state the unit will find, and write the exceptions into the brief
+  and into the unit that closes them.
 
 ## 3. Delegating
 
