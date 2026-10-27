@@ -46,27 +46,22 @@ Altitude fits when there is a real outcome and the work would normally need meet
 **8. Look for what nobody knows yet**
 - Heuristic: Once the model is deep in the data, has it been asked for blind spots: a simulation that reproduces the past year, the earliest signal not yet known, a test on unseen data?
 
-**9. Never let the model be its own judge**
-- Heuristic: What outside the model decides whether this is right? Can the model run it and get feedback at once?
-- Why: A model grading its own work shares the blind spots that made the work wrong.
-- Anchor: A test suite, a benchmark, a reference dataset, a reviewer who did not do the work.
-
 ## Range: more fields than was practical
 
-**10. Replace the nouns with verbs**
+**9. Replace the nouns with verbs**
 - Heuristic: What must the deliverable do, stated as verbs? Which fields are good at each verb?
 - Anchor: "A deck" becomes "persuade busy people to believe a cause-and-effect story and decide under uncertainty in thirty minutes". Persuading brings in an editor, believing a cause brings in an analyst, deciding under uncertainty brings in a forecaster.
 
-**11. Assemble the crew**
+**10. Assemble the crew**
 - Heuristic: For each verb, who in the real world does it best, and can that work run as its own agent or thread in parallel?
 - Anchor: For a deck: analyst, journalist, editor; if it is presented, motion and audio design; for adversarial review, a short seller and a forensic accountant.
 
-**12. Ask for the field's work, not for its voice**
+**11. Ask for the field's work, not for its voice**
 - Heuristic: Is an agent told to be someone, or told to do what that person does?
 - Why: A persona changes the tone of the transcript, not the method behind it.
 - Anchor: Not "write like a short seller" but "do what a short seller does to research a position: find the claims that cannot be reconciled and check each against the filings".
 
-**13. Borrow tools across fields**
+**12. Borrow tools across fields**
 - Heuristic: Which tool built for another field would solve part of this? Can the model install it and reach the data it needs?
 - Anchor: A 3D renderer built for interior design can build the environment of a web page.
 
