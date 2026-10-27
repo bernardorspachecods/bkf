@@ -32,12 +32,12 @@ class LaunchGuardTests(unittest.TestCase):
             "review-run.sh start r main...x",
             "council-run.sh start r brief.md",
             "research-run.sh resume r",
-            "run-codex.sh name brief.md",
+            "delegate-run.sh name brief.md",
             "codex exec -m m -",
-            "~/.claude/skills/dispatch-agents/scripts/plan-run.sh start r g p",
+            "~/.claude/skills/plan/scripts/plan-run.sh start r g p",
             "cd /repo && /abs/plan-run.sh resume -p none r",
             "FOO=1 bash scripts/review-run.sh start a b",
-            "CODEX_IN_PLACE=1 run-codex.sh n b",
+            "DELEGATE_IN_PLACE=1 delegate-run.sh n b",
         ):
             with self.subTest(command=command):
                 self.assertBlocked(command)
@@ -45,8 +45,8 @@ class LaunchGuardTests(unittest.TestCase):
     def test_a_background_call_is_allowed(self):
         for command in (
             "plan-run.sh start r g p",
-            "cd /repo && ~/.claude/skills/dispatch-agents/scripts/plan-run.sh resume -p none r",
-            "run-codex.sh n b integration gpt-6-luna high",
+            "cd /repo && ~/.claude/skills/plan/scripts/plan-run.sh resume -p none r",
+            "delegate-run.sh n b integration gpt-6-luna high",
             "codex exec -m m -",
         ):
             with self.subTest(command=command):
@@ -65,7 +65,7 @@ class LaunchGuardTests(unittest.TestCase):
             "plan-run.sh gates plan.txt",
             "plan-run.sh finish r",
             "grep -rn plan-run.sh .",
-            "cat scripts/run-codex.sh",
+            "cat scripts/delegate-run.sh",
             "ls -la | grep review-run.sh",
             "tail -f /tmp/x.log",
             "echo 'plan-run.sh start r'",

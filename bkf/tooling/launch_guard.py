@@ -11,7 +11,7 @@ LAUNCHERS = {
     "review-run.sh": {"start", "resume"},
     "council-run.sh": {"start", "resume"},
     "research-run.sh": {"start", "resume"},
-    "run-codex.sh": None,
+    "delegate-run.sh": None,
 }
 WRAPPERS = {"bash", "sh", "zsh", "env", "nohup", "time", "exec", "command", "setsid"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
