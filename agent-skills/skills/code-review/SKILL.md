@@ -120,4 +120,25 @@ the commits, the criteria, the gate results), `01-review`, `02-check` and
 `report.md` at the top. A review is usually read and dropped. When it is done, the user chooses: keep the
 record, copied into `records/reviews/` in the repository, or delete the run.
 
+## Run commands
+
+<!-- inject: ../../modules/run-commands.md -->
+<!-- BKF:GENERATED-INJECTED -->
+## Run commands
+
+The scripts of the plan, research, council and code-review skills run on one engine, `agent-skills/harness`. Each takes the same commands: `<script> start ...`, `resume`, `status <name>`, `board <name>` and `finish <name>`. Start each `start` and `resume` with Bash `run_in_background: true` and stay quiet until it ends; the `guard` hook of `bkf hooks` refuses a launch in the foreground or one backgrounded by hand, including from an agent inside a run.
+
+- **Backend.** Agents are Codex by default. `HARNESS_BACKEND=claude` runs a whole run on `claude -p`: give `-m` a Claude model such as `sonnet` and `-e` an effort from `low` to `max`. Write access is then confined to the agent's working directory, a reviewer can only read, and the quota signal is Claude's `rate_limit_event`. Set the variable on every `resume` too, or the run goes back to Codex. A run refuses to start when the backend's command is not installed.
+- **State** is in `~/.<workflow>-runs/<name>/` (`~/.plan-runs`, `~/.research-runs`, `~/.council-runs`, `~/.review-runs`); `<WORKFLOW>_RUNS_DIR` or `HARNESS_RUNS_DIR` sets another root, and `<WORKFLOW>_GUIDES` replaces the folder of role guides (by default the `roles/` folder of the skill). `start` creates the folder and fails if it exists: do not create it by hand. It is never under `/tmp`, which the sandbox leaves writable.
+- **Progress.** `status.log` is the event history; `status` prints it and `board` prints a board of the steps and their agents, which is also saved as `board.txt`. Progress lines go to stderr.
+- **A run that stops** (an agent failed, a review escalated, the account ran out of quota) writes `STOPPED` in `status.log` with the reason. Read the rounds in the run folder, fix the cause (usually the brief or the inputs, under `00-input/`), then `resume <name>`: finished steps stay done and the unfinished one runs again. A run that was killed is detected on `resume` and continues the same way.
+- **Usage limit.** The run stops with the reason `usage limit reached` and `status.log` gets `QUOTA: <the text after "try again at">`, as the agent wrote it, not parsed. `resume` after that time.
+- **Lock.** A live script holds `<run>/.lock`; a second `resume`, a `finish` or a recovery command refuses while it does. A lock whose process is gone is replaced.
+- **When it prints `READY`** the result is in the run folder. `finish <name>` copies the record to `records/<plans|reviews|councils|research>/<name>/` in the repository, checks the copy and removes the run folder; `finish --discard <name>` deletes the run.
+- **Limits** (environment variables): a review is capped at `<WORKFLOW>_MAX_ROUNDS` rounds (default 3), and must give at least `<WORKFLOW>_MIN_CHECKED` lines (default 3) under `## What I checked`, or it is repeated and then fails. Counts start again at every `resume`.
+- **Sandbox.** Runs use the `workspace-write` sandbox. It confines writes to the agent's folder, but an agent can still read files outside the checkout, such as the login sessions of CLI tools in the home folder, and reach HTTPS, so it can use any session left open. The repository's own rules say what to keep logged out.
+<!-- BKF:GENERATED-INJECTED-END -->
+
+The script is [review-run.sh](scripts/review-run.sh). `review-run.sh start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>`, where the target is `working-tree` or a revision range such as `main...feature`. Each `-g` command runs in the repository before the reviewers start, with its command, output and exit code saved in `00-input/gate.md` and shown in the report; a red check stays visible and no checks is reported as a gap. `REVIEW_GATE_TIMEOUT` (default 900 seconds) limits each. `-2` adds a second reviewer per axis. The result is `report.md` in the run folder. Its workflow definition is [review.py](scripts/review.py); its tests are [test_review.py](tests/test_review.py), [test-review-run-board.sh](tests/test-review-run-board.sh) and [test-review-run-gate.sh](tests/test-review-run-gate.sh).
+
 This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

@@ -60,22 +60,12 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## delegate-work
 
-- Description: Hand one short, objective task to another agent, either a Claude subagent or a Codex CLI run, and check what comes back. Use when the user asks to delegate, or when a self-contained task suits a cheaper or parallel agent; do not use for work with several stages, a plan or a branch review (use work-in-stages), or to continue in a new chat (use handoff).
+- Description: Hand one short, objective task to another agent, either a Claude subagent or a run of the harness on Codex or Claude, and check what comes back. Use when the user asks to delegate, or when a self-contained task suits a cheaper or parallel agent; do not use for work with several stages, a plan or a branch review (use plan, research, council or code-review), or to continue in a new chat (use handoff).
 - Package: [`agent-skills/skills/delegate-work`](skills/delegate-work/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Delegate Work
   - `short_description`: Hand a short, objective task to a Claude subagent or a Codex run
-
-## dispatch-agents
-
-- Description: Run multi-phase workflows (plan, research, council, code review) as scripts that chain Codex or Claude agents, review them and record the run. Use when a workflow guide sends you to its script; for a single short task, use delegate-work.
-- Package: [`agent-skills/skills/dispatch-agents`](skills/dispatch-agents/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Dispatch agents
-  - `short_description`: Run multi-agent workflows on Codex or Claude and inspect the results
-- Runtime policy: `explicit invocation required`
 
 ## git-worktree-cleanup
 

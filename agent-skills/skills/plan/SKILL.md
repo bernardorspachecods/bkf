@@ -99,7 +99,7 @@ pattern already settled across many files is mechanical and fast. So:
 
 Long rounds also carry a much larger context, which slows every step further. The run
 records the size of each implementation round; read it after a plan and correct these
-limits. The measurements so far are in the `dispatch-agents` skill.
+limits. The measurements so far are in [run-reference.md](run-reference.md#running-a-plan).
 
 **When the split depends on something you do not yet know,** such as how many
 modules cross a boundary or what a move would break, do not write a unit for
@@ -234,9 +234,9 @@ Each agent gets a short brief. The method lives in the guide for its role, so
 the brief points to it and never explains it. The briefs are the same shape every
 time, so they are built from fixed templates: you write only the goal, the unit
 briefs and their order, and a script builds the agent briefs, runs each unit and
-stops when a review escalates. That script is `plan-run.sh`, owned by the
-`dispatch-agents` skill (`scripts/plan-run.sh`); load that skill for its usage. It runs
-Codex agents, not Claude ones.
+stops when a review escalates. That script is [plan-run.sh](scripts/plan-run.sh); [run-reference.md](run-reference.md)
+has its options, the gate, the repeated-failure stop, `gates` (brief lint), `rehearse`, the bridge
+and the commands to repair a stopped run. Read it before the first `start`.
 
 | Role | Does | Receives |
 | --- | --- | --- |
@@ -297,9 +297,30 @@ its handoff, so the user can open one unit and see only it. The plan's goal, the
 of the units and a status log sit at the top. A plan that is ready but not yet launched
 is kept as its source files (the goal, the order and the briefs) outside the run folder,
 and the run is started when it is time. Where the folder is, and how it is created, is
-in the `dispatch-agents` skill.
+in the Run commands section below.
 
 When the plan is done, the user chooses: keep the record, which is copied into
 `records/plans/` in the repository, or delete the run. Until they choose, it stays where it is.
+
+## Run commands
+
+<!-- inject: ../../modules/run-commands.md -->
+<!-- BKF:GENERATED-INJECTED -->
+## Run commands
+
+The scripts of the plan, research, council and code-review skills run on one engine, `agent-skills/harness`. Each takes the same commands: `<script> start ...`, `resume`, `status <name>`, `board <name>` and `finish <name>`. Start each `start` and `resume` with Bash `run_in_background: true` and stay quiet until it ends; the `guard` hook of `bkf hooks` refuses a launch in the foreground or one backgrounded by hand, including from an agent inside a run.
+
+- **Backend.** Agents are Codex by default. `HARNESS_BACKEND=claude` runs a whole run on `claude -p`: give `-m` a Claude model such as `sonnet` and `-e` an effort from `low` to `max`. Write access is then confined to the agent's working directory, a reviewer can only read, and the quota signal is Claude's `rate_limit_event`. Set the variable on every `resume` too, or the run goes back to Codex. A run refuses to start when the backend's command is not installed.
+- **State** is in `~/.<workflow>-runs/<name>/` (`~/.plan-runs`, `~/.research-runs`, `~/.council-runs`, `~/.review-runs`); `<WORKFLOW>_RUNS_DIR` or `HARNESS_RUNS_DIR` sets another root, and `<WORKFLOW>_GUIDES` replaces the folder of role guides (by default the `roles/` folder of the skill). `start` creates the folder and fails if it exists: do not create it by hand. It is never under `/tmp`, which the sandbox leaves writable.
+- **Progress.** `status.log` is the event history; `status` prints it and `board` prints a board of the steps and their agents, which is also saved as `board.txt`. Progress lines go to stderr.
+- **A run that stops** (an agent failed, a review escalated, the account ran out of quota) writes `STOPPED` in `status.log` with the reason. Read the rounds in the run folder, fix the cause (usually the brief or the inputs, under `00-input/`), then `resume <name>`: finished steps stay done and the unfinished one runs again. A run that was killed is detected on `resume` and continues the same way.
+- **Usage limit.** The run stops with the reason `usage limit reached` and `status.log` gets `QUOTA: <the text after "try again at">`, as the agent wrote it, not parsed. `resume` after that time.
+- **Lock.** A live script holds `<run>/.lock`; a second `resume`, a `finish` or a recovery command refuses while it does. A lock whose process is gone is replaced.
+- **When it prints `READY`** the result is in the run folder. `finish <name>` copies the record to `records/<plans|reviews|councils|research>/<name>/` in the repository, checks the copy and removes the run folder; `finish --discard <name>` deletes the run.
+- **Limits** (environment variables): a review is capped at `<WORKFLOW>_MAX_ROUNDS` rounds (default 3), and must give at least `<WORKFLOW>_MIN_CHECKED` lines (default 3) under `## What I checked`, or it is repeated and then fails. Counts start again at every `resume`.
+- **Sandbox.** Runs use the `workspace-write` sandbox. It confines writes to the agent's folder, but an agent can still read files outside the checkout, such as the login sessions of CLI tools in the home folder, and reach HTTPS, so it can use any session left open. The repository's own rules say what to keep logged out.
+<!-- BKF:GENERATED-INJECTED-END -->
+
+The plan's own options and commands, and the list of its script and test files, are in [run-reference.md](run-reference.md).
 
 This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).
