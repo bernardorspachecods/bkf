@@ -84,6 +84,76 @@ class PlanLintTests(unittest.TestCase):
             [("warning", "does not exist now: a unit before this one must create it")],
         )
 
+    def test_gate_that_runs_a_file_the_unit_removes_is_an_error(self):
+        (self.root / "scripts").mkdir()
+        (self.root / "scripts" / "old.mjs").touch()
+        brief = self.brief(
+            "## Removes\n- `scripts/old.mjs`\n"
+            "## Gate\n```gate\nnode scripts/old.mjs\nnode ./scripts/old.mjs --x\n```\n"
+        )
+        self.assertEqual(
+            plan_lint.lint_brief(brief, self.root),
+            [("error", "gate uses scripts/old.mjs, which this plan removes before the gate runs")],
+        )
+
+    def test_removal_by_an_earlier_step_reaches_later_gates_and_creation_undoes_it(self):
+        brief = self.brief("## Gate\n```gate\nbash tools/check.sh\n```\n")
+        (self.root / "tools").mkdir()
+        (self.root / "tools" / "check.sh").touch()
+        gone = frozenset(["tools/check.sh"])
+        self.assertEqual(
+            plan_lint.lint_brief(brief, self.root, gone=gone),
+            [("error", "gate uses tools/check.sh, which this plan removes before the gate runs")],
+        )
+        recreated = self.brief(
+            "## Creates\n- `tools/check.sh`\n## Gate\n```gate\nbash tools/check.sh\n```\n"
+        )
+        self.assertEqual(plan_lint.lint_brief(recreated, self.root, gone=gone), [])
+
+    def test_removed_folder_covers_the_files_under_it(self):
+        brief = self.brief(
+            "## Removes\n- `legacy/`\n## Gate\n```gate\nnode legacy/run.js\n```\n"
+        )
+        self.assertEqual(
+            plan_lint.lint_brief(brief, self.root),
+            [("error", "gate uses legacy/run.js, which this plan removes before the gate runs")],
+        )
+
+    def test_file_created_by_an_earlier_unit_is_not_missing(self):
+        brief = self.brief("## Gate\n```gate\nnode new/check.js\n```\n")
+        self.assertEqual(
+            plan_lint.lint_brief(brief, self.root),
+            [("warning", "does not exist now: a unit before this one must create it")],
+        )
+        self.assertEqual(
+            plan_lint.lint_brief(brief, self.root, made=frozenset(["new/check.js"])), []
+        )
+
+    def test_gates_applies_removals_by_step_in_plan_order(self):
+        (self.root / "a.md").write_text(
+            "## Removes\n- `x.mjs`\n## Gate\n```gate\necho a\n```\n", encoding="utf-8"
+        )
+        (self.root / "b.md").write_text(
+            "## Gate\n```gate\nnode x.mjs\n```\n", encoding="utf-8"
+        )
+        (self.root / "c.md").write_text(
+            "## Gate\n```gate\nnode x.mjs\n```\n", encoding="utf-8"
+        )
+        (self.root / "x.mjs").touch()
+        plan = self.root / "plan.txt"
+        plan.write_text("a.md b.md\nc.md\n", encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.chdir(self.root):
+            status = plan_inputs.gates_command([str(plan)])
+        self.assertEqual(status, 1)
+        self.assertEqual(
+            output.getvalue(),
+            "a\n  $ echo a\n\n"
+            "b\n  $ node x.mjs\n\n"
+            "c\n  $ node x.mjs\n"
+            "  ! error: gate uses x.mjs, which this plan removes before the gate runs\n\n",
+        )
+
     def test_out_of_scope_prefers_exclusion_over_only_allowed_files(self):
         passing = self.brief("## Out of scope\n- Do not touch generated files.\n")
         self.assertEqual(plan_lint.lint_brief(passing, self.root), [])

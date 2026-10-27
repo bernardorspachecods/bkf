@@ -42,6 +42,32 @@ class AgentStepTests(unittest.TestCase):
         quota_text.assert_called_once_with(str(events))
         run.note.assert_called_once_with("QUOTA: retry tomorrow")
 
+    def test_run_agent_step_names_a_stalled_agent(self):
+        run = mock.Mock()
+        with mock.patch(
+            "harness.engine.agentstep.agent.run_agent", return_value=agentstep.agent.STALLED_EXIT
+        ), mock.patch.dict(os.environ, {"HARNESS_AGENT_STALL_TIMEOUT": "600"}):
+            result = agentstep.run_agent_step(
+                run, "review", str(self.root), "brief.md", str(self.root / "run"),
+                "model", "high", "read-only", "fast", "review exit=<exit>",
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("review: STALLED", result.reason)
+        self.assertIn("10 minutes", result.reason)
+        self.assertIn("run.events.jsonl", result.reason)
+        run.note.assert_called_once_with(result.reason)
+
+    def test_run_agents_names_a_stalled_agent(self):
+        folder = self.root / "1"
+        folder.mkdir()
+        (folder / "brief.md").write_text("brief", encoding="utf-8")
+        with mock.patch(
+            "harness.engine.agentstep.agent.run_agent", return_value=agentstep.agent.STALLED_EXIT
+        ):
+            result = agentstep.run_agents(self.root, "out.md", ["1"], "model", "high", "fast")
+        self.assertFalse(result.ok)
+        self.assertIn("1: STALLED", result.reason)
+
     def test_run_agent_step_replaces_exit_placeholder(self):
         run = mock.Mock()
         with mock.patch("harness.engine.agentstep.agent.run_agent", return_value=7), mock.patch(

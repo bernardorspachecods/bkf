@@ -129,7 +129,12 @@ class PlanWorkflow(Workflow):
         if not os.path.isfile(plan) or os.path.getsize(plan) == 0:
             raise RunError("missing or empty plan: {0}".format(plan))
         steps = plan_inputs.parse_plan(plan)
-        del steps
+        errors = plan_inputs.lint_errors(steps, Path.cwd())
+        if errors and not os.environ.get("PLAN_ALLOW_LINT_ERRORS"):
+            raise RunError(
+                "brief lint found {0} error(s); fix them, or set PLAN_ALLOW_LINT_ERRORS=1 if the lint is wrong:\n  {1}".format(
+                    len(errors), "\n  ".join(errors))
+            )
         require_backend()
         guides = plan_inputs.guides_path(os.environ)
         if not os.path.isdir(guides):

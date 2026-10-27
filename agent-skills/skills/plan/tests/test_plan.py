@@ -163,6 +163,20 @@ class PlanWorkflowTests(unittest.TestCase):
         self.assertEqual(len(bases), 2)
         self.assertEqual(bases[0], bases[1])
 
+    def test_start_refuses_brief_lint_errors_unless_allowed(self):
+        self.fixture.add_brief(
+            "unit", "## Criteria\n- The handoff proves it worked.\n## Gate\n```gate\necho ok\n```\n"
+        )
+        plan = self.fixture.write_plan("unit.md")
+        code, _, errors = self.call("start", "lint", str(self.fixture.goal), str(plan))
+        self.assertEqual(code, 1)
+        self.assertIn("brief lint found 1 error(s)", errors)
+        self.assertIn("unit: Criteria must not use the handoff as proof", errors)
+        from harness.engine.pipeline import _load_workflow
+        workflow = _load_workflow(_WORKFLOW)
+        with patch.dict("os.environ", {"PLAN_ALLOW_LINT_ERRORS": "1"}):
+            workflow.validate_start([str(self.fixture.goal), str(plan)])
+
     def test_validate_start_messages(self):
         self.fixture.add_brief("unit")
         plan = self.fixture.write_plan("unit.md")

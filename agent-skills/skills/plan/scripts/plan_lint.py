@@ -2,7 +2,8 @@
 
 The checks can misread prose that mentions handoffs or file boundaries, miss
 commands hidden behind shell wrappers or variables, and warn about files that
-another command creates earlier in the same gate. Python options with separate
+another command creates earlier in the same gate, unless a unit declares it
+under Creates. Python options with separate
 values are recognized for -W and -X; other options that take separate values
 can still be mistaken for the script path. They are hints for a coordinator,
 not proof that a brief is valid.
@@ -23,6 +24,8 @@ _HANDOFF_PROHIBITION = re.compile(
 )
 _FILE_COMMANDS = {"bash", "sh", "node", "python", "python3"}
 _MISSING_FILE_MESSAGE = "does not exist now: a unit before this one must create it"
+_REMOVED_MESSAGE = "gate uses {0}, which this plan removes before the gate runs"
+_BACKTICKED = re.compile(r"`([^`]+)`")
 
 
 def _sections(text):
@@ -39,6 +42,36 @@ def _sections(text):
             lines.append(line)
     if section is not None:
         yield section, lines
+
+
+def declared_paths(text, section):
+    """Return the backticked paths listed in a brief's Removes or Creates section."""
+    paths = []
+    for name, lines in _sections(text):
+        if name == section:
+            for line in lines:
+                paths.extend(_normalize(path) for path in _BACKTICKED.findall(line))
+    return paths
+
+
+def _normalize(path):
+    path = path.strip()
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def _covers(entries, path):
+    return any(path == entry or (entry.endswith("/") and path.startswith(entry)) for entry in entries)
+
+
+def apply_declarations(gone, made, text):
+    """Return (gone, made) after a brief's Removes and Creates."""
+    removes = declared_paths(text, "removes")
+    creates = declared_paths(text, "creates")
+    gone = frozenset(path for path in gone if path not in creates) | frozenset(removes)
+    made = frozenset(path for path in made if not _covers(removes, path)) | frozenset(creates)
+    return gone, made
 
 
 def _gate_commands(text):
@@ -129,21 +162,32 @@ def _package_scripts(repo):
     return scripts if isinstance(scripts, dict) else {}
 
 
-def _gate_has_missing_target(command, repo, scripts):
+def _gate_problems(command, repo, scripts, gone, made):
+    problems = []
     for tokens in _command_segments(command):
         if not tokens:
             continue
+        for token in tokens[1:]:
+            path = _normalize(token)
+            if _covers(gone, path) and ("removed", path) not in problems:
+                problems.append(("removed", path))
         target = _script_path(tokens, repo)
-        if target is not None and not (Path(repo) / target).is_file():
-            return True
+        if target is not None:
+            target = _normalize(target)
+            if not _covers(gone, target) and target not in made and not (Path(repo) / target).is_file():
+                problems.append(("missing", target))
         script = _package_script(tokens, scripts)
         if script is not None and scripts is not None and script not in scripts:
-            return True
-    return False
+            problems.append(("missing", script))
+    return problems
 
 
-def lint_brief(path, repo):
-    """Return heuristic (level, message) diagnostics for a plan brief."""
+def lint_brief(path, repo, gone=frozenset(), made=frozenset()):
+    """Return heuristic (level, message) diagnostics for a plan brief.
+
+    gone and made are the paths that earlier steps of the plan removed and
+    created; the brief's own Removes and Creates apply before its gate is read.
+    """
     text = Path(path).read_text(encoding="utf-8")
     diagnostics = []
     for section, lines in _sections(text):
@@ -157,8 +201,12 @@ def lint_brief(path, repo):
                 if re.search(r"\bonly\s+touch(?:es)?\b|\bthe\s+diff\s+only\b|\bmay\s+only\s+change\b", line, re.IGNORECASE):
                     diagnostics.append(("error", "write the scope by exclusion"))
                     break
+    gone, made = apply_declarations(gone, made, text)
     scripts = _package_scripts(repo)
     for command in _gate_commands(text):
-        if _gate_has_missing_target(command, repo, scripts):
-            diagnostics.append(("warning", _MISSING_FILE_MESSAGE))
+        for kind, name in _gate_problems(command, repo, scripts, gone, made):
+            if kind == "removed":
+                diagnostics.append(("error", _REMOVED_MESSAGE.format(name)))
+            else:
+                diagnostics.append(("warning", _MISSING_FILE_MESSAGE))
     return list(dict.fromkeys(diagnostics))

@@ -132,8 +132,8 @@ read the commands that decide each unit; you do. Before `start`, and again whene
 you add or change a unit, run the script's `gates` command and read the list. Every
 unit has a command that fails if it is wrong, or a reason, written in the plan, for
 why none can exist. A unit with neither is not ready to run.
-The `gates` output also shows brief lint, and `plan-run.sh rehearse <plan.txt>`
-runs the plan's gates informally before `start`.
+The `gates` output also shows brief lint, and `start` refuses a plan whose briefs have lint
+errors. `plan-run.sh rehearse <plan.txt>` runs the plan's gates informally before `start`.
 
 **Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
 and ask the user, when you agree the split, who the pauses are for: only for you to check the step
@@ -173,6 +173,8 @@ Unit brief
 ├─ Result        what exists when it is done, and when to stop
 ├─ Receives      what it can rely on from other units (a fact, not "look at what they did")
 ├─ Leaves ready  what other units may rely on from it
+├─ Removes       paths it deletes or moves away, in backticks, one per line (a folder ends in `/`)
+├─ Creates       paths it adds or moves to that a gate runs, in backticks, one per line
 ├─ Out of scope  what it must not touch
 ├─ Gate          the commands the script runs; the unit cannot pass if one fails
 └─ Criteria      what the reviewer judges that no command checks
@@ -225,8 +227,15 @@ Unit brief
 - **State what each step leaves true.** A gate or a criterion written with the end state of the plan
   in mind is false half way: a command that checks a rule a later unit closes cannot pass now, and a
   rule such as "this number only changes in X" is wrong when the step creates a temporary exception.
-  Run every gate line against the state the unit will find, and write the exceptions into the brief
-  and into the unit that closes them.
+  Check every gate line against two states: the one the unit finds, for what the gate checks before
+  the work, and the one the unit leaves, since the script runs the gate after the implementer
+  finished. A gate that runs a file the same unit removes passes the rehearsal, which runs at the
+  start state, and fails the unit. Write the exceptions into the brief and into the unit that closes
+  them. List what the unit deletes or moves under Removes and what it adds under Creates: `gates`
+  follows them step by step and reports as an error a gate that uses a path the plan has removed.
+  Units on the same line do not see each other's changes. A tool that only bridges the transition
+  names, in the brief of the unit that creates it, the unit that removes it and the gate that
+  replaces it.
 
 ## 3. Delegating
 
@@ -317,6 +326,7 @@ The scripts of the plan, research, council and code-review skills run on one eng
 - **A worktree of its own.** A run whose agents read or write the repository (a plan, a code review) gets a git worktree at `<run>/tree`, so the repository's checkout stays as it is; its skill says on which branch or revision and how to opt out (`--in-place`). `finish` removes the worktree, and `finish --discard` also deletes the plan's branch.
 - **Progress.** `status.log` is the event history; `status` prints it and `board` prints a board of the steps and their agents, which is also saved as `board.txt`. Progress lines go to stderr.
 - **A run that stops** (an agent failed, a review escalated, the account ran out of quota) writes `STOPPED` in `status.log` with the reason. Read the rounds in the run folder, fix the cause (usually the brief or the inputs, under `00-input/`), then `resume <name>`: finished steps stay done and the unfinished one runs again. A run that was killed is detected on `resume` and continues the same way.
+- **A stalled agent.** An agent that writes nothing to its events and stderr files for `HARNESS_AGENT_STALL_TIMEOUT` seconds (default 1200, 0 turns it off) is ended and the run stops with `STALLED` in `status.log`, so the script exits and the coordinator is told. An agent that keeps writing is not ended, however slow. Fix the cause (a login, the network), then `resume`.
 - **Usage limit.** The run stops with the reason `usage limit reached` and `status.log` gets `QUOTA: <the text after "try again at">`, as the agent wrote it, not parsed. `resume` after that time.
 - **Lock.** A live script holds `<run>/.lock`; a second `resume`, a `finish` or a recovery command refuses while it does. A lock whose process is gone is replaced.
 - **When it prints `READY`** the result is in the run folder. `finish <name>` copies the record to `records/<plans|reviews|councils|research>/<name>/` in the repository, checks the copy and removes the run folder; `finish --discard <name>` deletes the run.

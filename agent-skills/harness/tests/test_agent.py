@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -31,7 +32,12 @@ class AgentCliTests(unittest.TestCase):
             "    json.dump(arguments, output)\n"
             "with open(os.environ['INPUT_LOG'], 'wb') as output:\n"
             "    output.write(sys.stdin.buffer.read())\n"
-            "import time; time.sleep(float(os.environ.get('FAKE_SLEEP', '0')))\n"
+            "import time\n"
+            "end = time.monotonic() + float(os.environ.get('FAKE_SLEEP', '0'))\n"
+            "while time.monotonic() < end:\n"
+            "    time.sleep(0.1)\n"
+            "    if os.environ.get('FAKE_TICK'):\n"
+            "        sys.stdout.write('{\\\"type\\\":\\\"tick\\\"}\\n'); sys.stdout.flush()\n"
             "with open(arguments[arguments.index('-o') + 1], 'w') as output:\n"
             "    output.write('last message')\n"
             "sys.stdout.write('{\\\"type\\\":\\\"event\\\"}\\n')\n"
@@ -196,6 +202,20 @@ class AgentCliTests(unittest.TestCase):
             else:
                 self.assertEqual(self.run_in_process(), 0)
         return calls[0]
+
+    def test_agent_that_writes_nothing_for_the_stall_timeout_is_ended(self):
+        started = time.monotonic()
+        result = self.run_in_process(FAKE_SLEEP="30", HARNESS_AGENT_STALL_TIMEOUT="1")
+        self.assertEqual(result, agent.STALLED_EXIT)
+        self.assertLess(time.monotonic() - started, 15)
+
+    def test_agent_that_keeps_writing_is_not_ended_by_the_stall_timeout(self):
+        result = self.run_in_process(FAKE_SLEEP="3", FAKE_TICK="1", HARNESS_AGENT_STALL_TIMEOUT="1")
+        self.assertEqual(result, 0)
+
+    def test_zero_stall_timeout_waits_for_the_agent(self):
+        result = self.run_in_process(FAKE_SLEEP="2", HARNESS_AGENT_STALL_TIMEOUT="0")
+        self.assertEqual(result, 0)
 
     def test_main_thread_masks_signals_while_the_agent_registers(self):
         self.assertIn("preexec_fn", self.spawn_kwargs(in_thread=False))

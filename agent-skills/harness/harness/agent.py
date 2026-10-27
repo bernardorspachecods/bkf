@@ -14,6 +14,10 @@ from .inject import InjectionError, inject_rules
 
 _LIVE_PROCESSES = set()
 
+# Returned by run_agent for an agent that wrote nothing for the stall timeout and was ended (the exit code of a timeout).
+STALLED_EXIT = 124
+_DEFAULT_STALL_SECONDS = 1200.0
+
 # Set while a handled signal is cleaning up, so an agent that was starting in a worker thread ends too.
 stopping = threading.Event()
 
@@ -40,6 +44,57 @@ def terminate_children(grace=2.0):
             process.wait()
         finally:
             _LIVE_PROCESSES.discard(process)
+
+
+def stall_seconds(environ=None):
+    """The silence that ends an agent, from HARNESS_AGENT_STALL_TIMEOUT in seconds; 0 turns it off."""
+    environment = os.environ if environ is None else environ
+    try:
+        value = float(environment.get("HARNESS_AGENT_STALL_TIMEOUT", _DEFAULT_STALL_SECONDS))
+    except ValueError:
+        return _DEFAULT_STALL_SECONDS
+    return value if value >= 0 else _DEFAULT_STALL_SECONDS
+
+
+def _activity(paths):
+    total = 0
+    for path in paths:
+        try:
+            total += os.path.getsize(path)
+        except OSError:
+            pass
+    return total
+
+
+def _wait(process, watched, stall):
+    """Wait for the agent; end it when the files it writes stay the same size for `stall` seconds.
+
+    Returns (status, stalled). The size of the events and stderr files is the sign of life: both backends
+    write an event per message or tool call, so a stretch with none is an agent waiting on something that
+    will not come (a login, a dead connection), not one that is slow. A tool the agent started keeps running
+    only until the process ends.
+    """
+    if stall <= 0:
+        return process.wait(), False
+    poll = min(5.0, stall / 2)
+    seen = _activity(watched)
+    moved = time.monotonic()
+    while True:
+        try:
+            return process.wait(timeout=poll), False
+        except subprocess.TimeoutExpired:
+            pass
+        now = _activity(watched)
+        if now != seen:
+            seen, moved = now, time.monotonic()
+        elif time.monotonic() - moved >= stall:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            return STALLED_EXIT, True
 
 
 class Backend:
@@ -274,13 +329,20 @@ def run_agent(
         ) as errors:
             process = _spawn(command, directory, prompt, events, errors)
             try:
-                status = process.wait()
+                status, stalled = _wait(process, (events_path, stderr_path), stall_seconds())
             finally:
                 _LIVE_PROCESSES.discard(process)
+            if stalled:
+                print(
+                    "harness: the agent wrote nothing for {0:g}s and was ended".format(stall_seconds()),
+                    file=sys.stderr,
+                )
     except OSError as error:
         print("harness: {0}".format(error), file=sys.stderr)
         return 2
     backend_class().finish(events_path, last_message_path)
+    if stalled:
+        return STALLED_EXIT
     if status < 0:
         return 128 + -status
     return status

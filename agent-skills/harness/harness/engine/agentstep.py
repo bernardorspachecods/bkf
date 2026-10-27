@@ -40,8 +40,15 @@ def run_agent_step(
     if status == 0:
         return StepResult(True, "", None)
 
-    backend_class = agent.get_backend(backend)
     events_path = out_prefix + ".events.jsonl"
+    if status == agent.STALLED_EXIT:
+        reason = "{0}: STALLED: the agent wrote nothing for {1:g} minutes and was ended (see {2})".format(
+            label, agent.stall_seconds() / 60, events_path
+        )
+        run.note(reason)
+        return StepResult(False, reason, None)
+
+    backend_class = agent.get_backend(backend)
     quota = backend_class().quota_text(events_path) if backend_class is not None else None
     if quota is not None:
         quota = quota.rstrip("\r\n")
@@ -80,13 +87,14 @@ def run_agents(phase_dir, output_file, folders, model, effort, tier, backend=Non
         )
         if status != 0:
             failed_path = os.path.join(directory, "failed")
-            with open(failed_path, "w", encoding="utf-8", newline="") as failed:
-                failed.write(
-                    "exit={0} (see {1})".format(
-                        status, os.path.join(directory, "run.stderr.log")
-                    )
-                    + "\n"
+            if status == agent.STALLED_EXIT:
+                failure = "STALLED: the agent wrote nothing for {0:g} minutes and was ended (see {1})".format(
+                    agent.stall_seconds() / 60, os.path.join(directory, "run.events.jsonl")
                 )
+            else:
+                failure = "exit={0} (see {1})".format(status, os.path.join(directory, "run.stderr.log"))
+            with open(failed_path, "w", encoding="utf-8", newline="") as failed:
+                failed.write(failure + "\n")
 
     with ThreadPoolExecutor(max_workers=max(1, len(pending))) as executor:
         futures = [executor.submit(run_folder, folder) for folder in pending]

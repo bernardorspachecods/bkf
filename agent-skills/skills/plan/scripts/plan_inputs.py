@@ -110,6 +110,29 @@ def _current_repo():
     return result.stdout.rstrip("\n") if result.returncode == 0 else None
 
 
+def lint_plan(steps, repo):
+    """Yield (brief path, diagnostics) in plan order; each step sees what the earlier steps remove and create."""
+    gone, made = frozenset(), frozenset()
+    for step in steps:
+        next_gone, next_made = gone, made
+        for brief_path in step:
+            yield brief_path, plan_lint.lint_brief(brief_path, repo, gone, made)
+            next_gone, next_made = plan_lint.apply_declarations(
+                next_gone, next_made, _read_text(brief_path)
+            )
+        gone, made = next_gone, next_made
+
+
+def lint_errors(steps, repo):
+    """Return 'unit: message' for every lint error in a parsed plan."""
+    return [
+        "{0}: {1}".format(Path(brief_path).stem, message)
+        for brief_path, diagnostics in lint_plan([[Path(path) for _, path in step] for step in steps], repo)
+        for level, message in diagnostics
+        if level == "error"
+    ]
+
+
 def gates_command(args):
     """Print gates for a plan path or named run; return the shell command status."""
     if isinstance(args, str):
@@ -117,19 +140,22 @@ def gates_command(args):
     if len(args) != 1:
         raise RunError("usage: gates <plan.txt|name>")
     target = args[0]
-    files = []
+    steps = []
     if os.path.isfile(target):
         plan_path = Path(target)
         plan_dir = plan_path.parent.absolute()
         with open(plan_path, "r", encoding="utf-8", newline="") as source:
             for line in source:
+                step = []
                 for word in _words(line.split("#", 1)[0]):
                     brief_path = Path(word)
                     if not brief_path.is_absolute():
                         brief_path = plan_dir / brief_path
                     if not brief_path.is_file() or brief_path.stat().st_size == 0:
                         raise RunError("missing or empty unit brief: {0}".format(word))
-                    files.append(brief_path)
+                    step.append(brief_path)
+                if step:
+                    steps.append(step)
     else:
         if not _valid_name(target):
             raise RunError("bad run name: {0}".format(target))
@@ -140,12 +166,13 @@ def gates_command(args):
         with open(run_path / "00-input" / "order", "r", encoding="utf-8", newline="") as source:
             for line in source:
                 name = line.rstrip("\r\n").split()
-                files.extend(units_path / (unit + ".md") for unit in name)
-    if not files:
+                if name:
+                    steps.append([units_path / (unit + ".md") for unit in name])
+    if not steps:
         raise RunError("no unit")
     missing = False
     has_errors = False
-    for brief_path in files:
+    for brief_path, diagnostics in lint_plan(steps, Path.cwd()):
         print(brief_path.name[:-3] if brief_path.name.endswith(".md") else brief_path.name)
         commands = gate_commands([brief_path])
         if commands:
@@ -154,7 +181,7 @@ def gates_command(args):
         else:
             print("  NO GATE: only a reviewer checks this unit")
             missing = True
-        for level, message in plan_lint.lint_brief(brief_path, Path.cwd()):
+        for level, message in diagnostics:
             prefix = "! error" if level == "error" else "? warning"
             print("  {0}: {1}".format(prefix, message))
             if level == "error":
