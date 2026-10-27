@@ -3,6 +3,7 @@ import io
 import json
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 from unittest.mock import patch
 
 from harness.engine.run import RunError
@@ -176,6 +177,25 @@ class PlanWorkflowTests(unittest.TestCase):
         workflow = _load_workflow(_WORKFLOW)
         with patch.dict("os.environ", {"PLAN_ALLOW_LINT_ERRORS": "1"}):
             workflow.validate_start([str(self.fixture.goal), str(plan)])
+
+    def test_resume_refuses_a_corrected_brief_that_has_a_lint_error(self):
+        from harness.engine.pipeline import _load_workflow
+        workflow = _load_workflow(_WORKFLOW)
+        run = self.fixture.root / "run"
+        units = run / "00-input" / "units"
+        units.mkdir(parents=True)
+        (run / "00-input" / "order").write_text("01-unit\n", encoding="utf-8")
+        (units / "01-unit.md").write_text(
+            "## Criteria\n- The handoff proves it worked.\n", encoding="utf-8"
+        )
+        run_dir = mock.Mock(path=run, checkout=str(self.fixture.root))
+        with self.assertRaises(RunError) as error:
+            workflow.validate_resume(run_dir)
+        self.assertIn("01-unit: Criteria must not use the handoff as proof", str(error.exception))
+        with patch.dict("os.environ", {"PLAN_ALLOW_LINT_ERRORS": "1"}):
+            workflow.validate_resume(run_dir)
+        (run / ".done-01-unit").touch()
+        workflow.validate_resume(run_dir)
 
     def test_validate_start_messages(self):
         self.fixture.add_brief("unit")

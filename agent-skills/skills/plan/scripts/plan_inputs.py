@@ -123,14 +123,27 @@ def lint_plan(steps, repo):
         gone, made = next_gone, next_made
 
 
-def lint_errors(steps, repo):
-    """Return 'unit: message' for every lint error in a parsed plan."""
+def lint_errors(steps, repo, skip=()):
+    """Return 'unit: message' for every lint error in a parsed plan, except in the units named in skip."""
     return [
         "{0}: {1}".format(Path(brief_path).stem, message)
         for brief_path, diagnostics in lint_plan([[Path(path) for _, path in step] for step in steps], repo)
         for level, message in diagnostics
-        if level == "error"
+        if level == "error" and Path(brief_path).stem not in skip
     ]
+
+
+def run_lint_errors(run_path, repo):
+    """Lint the current briefs of a run; a unit that already passed keeps its place in the plan but is not reported."""
+    run_path = Path(run_path)
+    units_path = run_path / "00-input" / "units"
+    steps = []
+    for line in _read_text(run_path / "00-input" / "order").splitlines():
+        step = [(unit, units_path / (unit + ".md")) for unit in line.split()]
+        if step:
+            steps.append(step)
+    done = {unit for step in steps for unit, _ in step if (run_path / (".done-" + unit)).exists()}
+    return lint_errors(steps, repo, done)
 
 
 def gates_command(args):

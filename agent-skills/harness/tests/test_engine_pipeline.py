@@ -37,6 +37,10 @@ class PipelineTests(unittest.TestCase):
                     if args and args[0] == "bad":
                         from harness.engine.run import RunError
                         raise RunError("bad argument")
+                def validate_resume(self, run):
+                    if (run.path / "refuse-resume").exists():
+                        from harness.engine.run import RunError
+                        raise RunError("resume refused")
                 def start(self, ctx, args):
                     (ctx.run.path / "input").write_text("\\n".join(args) + "\\n")
                     if args == ["crash"]:
@@ -165,6 +169,15 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("already being worked on", err)
         (run / ".lock").unlink()
+
+    def test_resume_asks_the_workflow_to_validate_before_it_continues(self):
+        self.call("start", "refused", "stop")
+        (self.runs / "refused" / "refuse-resume").touch()
+        before = (self.runs / "refused" / "status.log").read_text()
+        code, _, err = self.call("resume", "refused")
+        self.assertEqual(code, 1)
+        self.assertIn("resume refused", err)
+        self.assertEqual((self.runs / "refused" / "status.log").read_text(), before)
 
     def test_step_stop_is_not_marked_done(self):
         self.call("start", "stopped", "stop")

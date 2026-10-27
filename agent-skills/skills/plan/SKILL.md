@@ -133,7 +133,7 @@ you add or change a unit, run the script's `gates` command and read the list. Ev
 unit has a command that fails if it is wrong, or a reason, written in the plan, for
 why none can exist. A unit with neither is not ready to run.
 The `gates` output also shows brief lint, and `start` refuses a plan whose briefs have lint
-errors. `plan-run.sh rehearse <plan.txt>` runs the plan's gates informally before `start`.
+errors, and `resume` refuses a run whose current briefs have them. `plan-run.sh rehearse <plan.txt>` runs the plan's gates informally before `start`.
 
 **Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
 and ask the user, when you agree the split, who the pauses are for: only for you to check the step

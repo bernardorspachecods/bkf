@@ -129,16 +129,21 @@ class PlanWorkflow(Workflow):
         if not os.path.isfile(plan) or os.path.getsize(plan) == 0:
             raise RunError("missing or empty plan: {0}".format(plan))
         steps = plan_inputs.parse_plan(plan)
-        errors = plan_inputs.lint_errors(steps, Path.cwd())
+        self._refuse_lint_errors(plan_inputs.lint_errors(steps, Path.cwd()))
+        require_backend()
+        guides = plan_inputs.guides_path(os.environ)
+        if not os.path.isdir(guides):
+            raise RunError("no role guides at {0} (set PLAN_GUIDES)".format(guides))
+
+    def _refuse_lint_errors(self, errors):
         if errors and not os.environ.get("PLAN_ALLOW_LINT_ERRORS"):
             raise RunError(
                 "brief lint found {0} error(s); fix them, or set PLAN_ALLOW_LINT_ERRORS=1 if the lint is wrong:\n  {1}".format(
                     len(errors), "\n  ".join(errors))
             )
-        require_backend()
-        guides = plan_inputs.guides_path(os.environ)
-        if not os.path.isdir(guides):
-            raise RunError("no role guides at {0} (set PLAN_GUIDES)".format(guides))
+
+    def validate_resume(self, run):
+        self._refuse_lint_errors(plan_inputs.run_lint_errors(run.path, run.checkout))
 
     def _isolate(self, ctx):
         """Give the run a worktree of its own, on the branch plan/<name>, and set it up as the repository says."""

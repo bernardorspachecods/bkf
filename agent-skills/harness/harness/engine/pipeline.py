@@ -296,6 +296,7 @@ def _resume(workflow, args):
         )
         if _repo() != run.repo:
             raise RunError("run resume inside the {0}'s repository: {1}".format(workflow.name, run.repo))
+        workflow.validate_resume(run)
         run.save_settings(settings)
         ctx.settings = settings
         _resume_detection(run)

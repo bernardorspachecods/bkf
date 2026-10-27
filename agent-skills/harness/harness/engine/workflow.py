@@ -72,6 +72,9 @@ class Workflow:
     def validate_start(self, args):
         raise NotImplementedError
 
+    def validate_resume(self, run):
+        """Refuse a resume with a RunError before the run is touched; the default accepts every resume."""
+
     def start(self, ctx, args):
         raise NotImplementedError
 

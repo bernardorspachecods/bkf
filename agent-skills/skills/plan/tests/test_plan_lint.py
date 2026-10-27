@@ -154,6 +154,29 @@ class PlanLintTests(unittest.TestCase):
             "  ! error: gate uses x.mjs, which this plan removes before the gate runs\n\n",
         )
 
+    def test_run_lint_errors_skip_units_that_already_passed(self):
+        run = self.root / "run"
+        units = run / "00-input" / "units"
+        units.mkdir(parents=True)
+        (run / "00-input" / "order").write_text("01-a\n02-b 02-c\n", encoding="utf-8")
+        (units / "01-a.md").write_text(
+            "## Removes\n- `x.mjs`\n## Criteria\n- The handoff proves it.\n", encoding="utf-8"
+        )
+        (units / "02-b.md").write_text("## Gate\n```gate\nnode x.mjs\n```\n", encoding="utf-8")
+        (units / "02-c.md").write_text("## Gate\n```gate\necho ok\n```\n", encoding="utf-8")
+        self.assertEqual(
+            plan_inputs.run_lint_errors(run, self.root),
+            [
+                "01-a: Criteria must not use the handoff as proof",
+                "02-b: gate uses x.mjs, which this plan removes before the gate runs",
+            ],
+        )
+        (run / ".done-01-a").touch()
+        self.assertEqual(
+            plan_inputs.run_lint_errors(run, self.root),
+            ["02-b: gate uses x.mjs, which this plan removes before the gate runs"],
+        )
+
     def test_out_of_scope_prefers_exclusion_over_only_allowed_files(self):
         passing = self.brief("## Out of scope\n- Do not touch generated files.\n")
         self.assertEqual(plan_lint.lint_brief(passing, self.root), [])
