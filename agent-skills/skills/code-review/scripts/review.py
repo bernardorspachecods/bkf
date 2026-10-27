@@ -10,6 +10,7 @@ from harness.engine.record import keep_record
 from harness.engine.run import RunError
 from harness.engine.stepboard import render_steps
 from harness.engine.workflow import Step, Stop, Workflow
+from harness.template import render_file
 from harness import agent
 from harness.gate import run_gate
 
@@ -65,6 +66,13 @@ def _pin_diff(repo, target):
         if result.returncode == 0:
             commits = result.stdout
     return diff, commits
+
+
+_BRIEFS = Path(__file__).resolve().parents[1] / "briefs"
+
+
+def _brief(template, /, **values):
+    return render_file(_BRIEFS / template, values)
 
 
 def _guides():
@@ -189,34 +197,13 @@ class ReviewWorkflow(Workflow):
         return {"standards": "Standards", "spec": "Spec"}[axis]
 
     def _axis_brief(self, ctx, axis):
-        run = ctx.run.path
-        repo = ctx.run.repo
-        guides = _guides()
-        lines = [
-            "# Brief: {0} review\n\n## What to review\nThe diff is `diff.patch` in the current directory (read-only)".format(self._axis_title(axis)),
-        ]
-        if (run / "00-input" / "commits.txt").is_file():
-            lines.append(", and the commits in `commits.txt`")
-        lines.append(".\n\n## Gate\nThe script ran the repository's own checks before you started: their commands, output and exit codes are in `gate.md` here (read-only). Take them as given.\n")
-        if axis == "standards":
-            lines.append("\n## Criteria\nThe documented standards are the files in `standards/` here (read-only).\n")
-        else:
-            lines.append("\n## Criteria\nThe originating spec is `spec.md` here (read-only).\n")
-        lines.append("\n## The repository\nIt is at {0}. Open it read-only to see the code around the diff. Change nothing in it.\n".format(repo))
-        lines.append("\n## Role\nOpen and follow the role guide: {0}/code-review-axis.md (read-only), the section \"{1}\". You are not the author of the change.\n".format(guides, self._axis_title(axis)))
-        lines.append("\n## Rules\n- Write your report to report.md in the current directory. Write nothing else.\n- Open only files in the current directory, the repository and the role guide. Other folders under the run folder are not for you.\n- Do not run git commands that change state.\n")
-        return "".join(lines)
+        commits = ", and the commits in `commits.txt`" if (ctx.run.path / "00-input" / "commits.txt").is_file() else ""
+        return _brief("axis.md", title=self._axis_title(axis), commits=commits,
+                      criteria=_brief("axis-criteria-" + axis + ".md"), repo=ctx.run.repo, guides=_guides())
 
     def _check_brief(self, ctx, axis):
-        title = self._axis_title(axis)
-        guides = _guides()
-        lines = ["# Brief: check of the {0} findings\n\n## Inputs (read-only, in the current directory)\n- diff.patch: the diff under review\n".format(title)]
-        lines.append("- standards/: the documented standards\n" if axis == "standards" else "- spec.md: the originating spec\n")
-        lines.append("- gate.md: the repository's own checks, run by the script before the review\n- reports/: the findings of the reviewer(s) of this axis\n")
-        lines.append("\n## The repository\nIt is at {0}. Open it read-only to see the code around a hunk. Change nothing in it.\n".format(ctx.run.repo))
-        lines.append("\n## Role\nOpen and follow the role guide: {0}/code-review-check.md (read-only). You are not the author of the findings.\n".format(guides))
-        lines.append("\n## Rules\n- Write your result to checked.md in the current directory. Write nothing else.\n- Open only files in the current directory, the repository and the role guide.\n- Do not run git commands that change state.\n")
-        return "".join(lines)
+        return _brief("check.md", title=self._axis_title(axis), criteria_input=_brief("check-input-" + axis + ".md"),
+                      repo=ctx.run.repo, guides=_guides())
 
     def _prepare_review(self, ctx):
         run = ctx.run.path

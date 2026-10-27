@@ -14,9 +14,11 @@ from harness.engine.run import RunDir, RunError, valid_name
 from harness.engine.stepboard import render_steps
 from harness.engine.workflow import Context, Step, Stop, Workflow
 from harness.engine.pipeline import _root
+from harness.template import render_file
 
 
 _PERSPECTIVES = ("contrarian", "first-principles", "expansionist", "outsider", "executor")
+_BRIEFS = Path(__file__).resolve().parents[1] / "briefs"
 _ADVISORS = "01-advisors"
 _PACKET = "02-packet"
 _REVIEWERS = "03-review"
@@ -31,6 +33,10 @@ def _env_int(name, default):
 
 def _guides():
     return os.environ.get("COUNCIL_GUIDES") or str(Path(__file__).resolve().parents[1] / "roles")
+
+
+def _brief(template, /, **values):
+    return render_file(_BRIEFS / template, values)
 
 
 def _brief_body(path):
@@ -66,23 +72,11 @@ class CouncilWorkflow(Workflow):
             "contrarian": "Contrarian", "first-principles": "First principles",
             "expansionist": "Expansionist", "outsider": "Outsider", "executor": "Executor",
         }[perspective]
-        return (
-            "# Brief: advice\n\n## The question\n{0}\n\n## Your perspective\n"
-            "{1}. Open and follow the role guide: {2}/council-advisor.md (read-only), and read the section of your perspective in it. Four other advisors have the same question with other perspectives; you do not see their work.\n"
-            "\n## Rules\n- Write your response to advice.md in the current directory, in the parts the guide gives. Write nothing else.\n"
-            "- Do not name your perspective in the text.\n"
-            "- Open only files in the current directory and what the guide points to. Other advisors work in sibling folders; do not look at them.\n"
-            "- Do not run git commands that change state.\n"
-        ).format(_brief_body(ctx.run.path / "00-input" / "brief.md"), title, _guides())
+        return _brief("advisor.md", question=_brief_body(ctx.run.path / "00-input" / "brief.md"),
+                      perspective=title, guides=_guides())
 
     def _reviewer_brief(self, ctx):
-        return (
-            "# Brief: review of the responses\n\n## Input\nThe file packet.md in the current directory: the question and five responses under labels A to E (read-only).\n"
-            "\n## Role\nOpen and follow the role guide: {0}/council-reviewer.md (read-only). Do not try to find out who wrote which response.\n"
-            "\n## Rules\n- Write your review to review.md in the current directory. Write nothing else.\n"
-            "- Open only files in the current directory and the role guide. Other files under the run folder, such as other reviews and the key, are not for you.\n"
-            "- Do not run git commands that change state.\n"
-        ).format(_guides())
+        return _brief("reviewer.md", guides=_guides())
 
     def _run_advisors(self, ctx):
         directory = ctx.run.path / _ADVISORS
@@ -261,13 +255,7 @@ class CouncilWorkflow(Workflow):
         previous = round_root / str(number - 1) / "problems.md" if number > 1 else None
         if previous is not None and previous.is_file():
             shutil.copyfile(str(previous), str(review_dir / "previous-problems.md"))
-        guides = _guides()
-        brief = (
-            "# Brief: completeness check of the report\n\n## Inputs (read-only, in your working directory)\n"
-            "- question.md: the question\n- advice-<perspective>.md: the five responses; key.md maps the labels the reviews use to perspectives\n"
-            "- review-1.md to review-5.md: the five reviews\n- report.md: the chairman's report to check\n"
-            "\n## Role\nOpen and follow the role guide: {0}/council-completeness.md (read-only). You are not the author of any of these files.\n"
-        ).format(guides)
+        brief = _brief("completeness.md", guides=_guides())
         (round_dir / "review-brief.md").write_text(brief, encoding="utf-8")
         min_checked = _env_int("COUNCIL_MIN_CHECKED", 3)
         previous_text = previous.read_text(encoding="utf-8") if previous is not None and previous.is_file() else ""
@@ -275,10 +263,10 @@ class CouncilWorkflow(Workflow):
         def build_prompt(attempt):
             parts = [brief]
             if previous_text:
-                parts.append("\nThe cuts you listed in the previous round are in previous-problems.md; the report was corrected, check whether they are gone.\n")
-            parts.append('\n---\nBegin problems.md with a section headed "## What I checked": one line per response or review you went through and where you found it in the report. Then list what was left out or cut. Write it to problems.md. Its last line must be exactly one of:\nVERDICT: pass\nVERDICT: back\nVERDICT: escalate\nDo not edit any other file.\n')
+                parts.append("\n" + _brief("completeness-previous.md"))
+            parts.append("\n---\n" + _brief("completeness-instructions.md"))
             if attempt > 1:
-                parts.append('Your previous attempt left no usable problems.md (missing, or without a "## What I checked" section). Write the file this time.\n')
+                parts.append(_brief("completeness-retry.md"))
             return "".join(parts)
 
         result = run_review(run, "council check", review_dir, round_dir, build_prompt,

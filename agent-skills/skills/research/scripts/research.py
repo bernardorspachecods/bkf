@@ -16,6 +16,7 @@ from harness.engine.review import run_review
 from harness.engine.run import RunError, valid_name
 from harness.engine.stepboard import render_steps
 from harness.engine.workflow import Context, Step, Stop, Workflow
+from harness.template import render_file
 
 
 def _limits():
@@ -25,6 +26,13 @@ def _limits():
     except ValueError as error:
         raise RunError("research round limits must be integers") from error
     return rounds, checked
+
+
+_BRIEFS = Path(__file__).resolve().parents[1] / "briefs"
+
+
+def _brief(template, /, **values):
+    return render_file(_BRIEFS / template, values)
 
 
 def _guides():
@@ -127,39 +135,23 @@ class ResearchWorkflow(Workflow):
         ctx.print_board(sys.stderr)
 
     def _brief_collector(self, ctx, name, niches):
-        return (
-            "# Brief: collection (collector {0})\n\n## Objective\n{1}\n"
-            "\n## Where to look\nThese are your niches. Another collector covers the rest, so stay inside these. "
-            "\"Counterweight\" means look here for evidence against the common view; \"(agent)\" only says who suggested the niche and does not change what you do.\n\n{2}"
-            "\n## Role\nOpen and follow the role guide: {3}/research-collection.md (read-only). It says how to collect, what to record and when to stop. The objective above is the filter for what is relevant.\n"
-            "\n## Rules\n- You need web access to open sources. If you cannot open web pages at all, stop and say so in your output; do not fill in from memory.\n"
-            "- Do not run git commands that change state, and do not edit any file other than your output file.\n"
-        ).format(name, _objective_body(ctx.run.path / "00-input" / "objective.md"), "".join(niches), _guides())
+        return _brief("collector.md", name=name, objective=_objective_body(ctx.run.path / "00-input" / "objective.md"),
+                      niches="".join(niches), guides=_guides())
 
     def _brief_collection_review(self, ctx, name, niches):
-        return (
-            "# Brief: review of the collection (collector {0})\n\n## Objective\n{1}\n"
-            "\n## Map of sources for the collector you review\nThese are the niches the collector was told to search. \"(agent)\" marks niches a cheap agent added to the map. \"Counterweight\" marks niches where evidence against the common view was to be sought.\n\n{2}"
-            "\n## Role\nOpen and follow the role guide: {3}/research-review-collection.md (read-only). You are not the author of the collected file. Do not reopen the sources to check whether findings are true; check the four questions against the objective.\n"
-        ).format(name, _objective_body(ctx.run.path / "00-input" / "objective.md"), "".join(niches), _guides())
+        return _brief("collection-review.md", name=name, objective=_objective_body(ctx.run.path / "00-input" / "objective.md"),
+                      niches="".join(niches), guides=_guides())
 
     def _brief_digest(self, ctx):
         run = ctx.run.path
-        return (
-            "# Brief: digest\n\n## Objective\n{0}\n"
-            "\n## Inputs (read-only)\n- The collected sources, joined in one file, one heading per collector: {1}\n"
-            "- The notes of the reviews of the collection: {2}\n  They record limits the reviewers accepted; carry them into the weak points.\n"
-            "\n## Role\nOpen and follow the role guide: {3}/research-digest.md (read-only). You do not search for new sources.\n"
-        ).format(_objective_body(run / "00-input" / "objective.md"), run / "02-collection" / "joined.md",
-                 run / "02-collection" / "review-notes.md", _guides())
+        return _brief("digest.md", objective=_objective_body(run / "00-input" / "objective.md"),
+                      joined=run / "02-collection" / "joined.md", review_notes=run / "02-collection" / "review-notes.md",
+                      guides=_guides())
 
     def _brief_digest_review(self, ctx):
         run = ctx.run.path
-        return (
-            "# Brief: review of the digest\n\n## Objective\n{0}\n"
-            "\n## Inputs (read-only)\n- The collected sources, joined in one file: {1}\n\n"
-            "## Role\nOpen and follow the role guide: {2}/research-review-digest.md (read-only). You are not the author of the digest. You do not search for new sources.\n"
-        ).format(_objective_body(run / "00-input" / "objective.md"), run / "02-collection" / "joined.md", _guides())
+        return _brief("digest-review.md", objective=_objective_body(run / "00-input" / "objective.md"),
+                      joined=run / "02-collection" / "joined.md", guides=_guides())
 
     def _map(self, ctx):
         run = ctx.run.path
@@ -169,12 +161,8 @@ class ResearchWorkflow(Workflow):
             raise Stop("sourcemap.md has no numbered niche lines")
         directory = run / "01-map"
         directory.mkdir(parents=True, exist_ok=True)
-        prompt = (
-            "# Brief: complete the source map\n\n## Objective\n{0}\n\n"
-            "## Input\nThe list so far (read-only): {1}\n\n"
-            "## Task\nComplete the list with more niches and example sites where the objective's question can be answered, without collecting findings. Bring counterweight: independent voices, critics, people who use the thing, issue trackers, since the list leans toward those who speak for themselves. Limit additions to what serves the priorities in the objective, or the list grows without end. Judge a source by the question it answers, not by type of site; leave out copies and derived content and point to origins. Do a few web searches only to check that a niche exists; do not read pages in depth.\n"
-            "\n---\nWrite only the new niches to additions.md in the current directory, one niche per line, numbered continuing from {2}, in the style of the list: a bold name, example sites, why it serves the objective, \"Counterweight.\" where it applies, and ending with \"(agent)\". No other text, no headings.\n"
-        ).format(_objective_body(run / "00-input" / "objective.md"), source_map, max(numbers) + 1)
+        prompt = _brief("map.md", objective=_objective_body(run / "00-input" / "objective.md"),
+                        source_map=source_map, next_number=max(numbers) + 1)
         _write(directory / "prompt.md", prompt)
         (directory / "work").mkdir(parents=True, exist_ok=True)
         step = run_agent_step(ctx.run, "map", str(directory / "work"), str(directory / "prompt.md"),
@@ -438,23 +426,18 @@ class ResearchWorkflow(Workflow):
             previous_path = previous
             _copy(previous, review / "previous-problems.md")
         objective = _objective_body(run.path / "00-input" / "objective.md")
-        review_brief = (
-            "# Brief: review of the delivery\n\n## Objective\n{0}\n"
-            "\n## Inputs (read-only, in your working directory)\n- digest.md: the digest the delivery was written from\n- delivery.md: the delivery to review\n"
-            "\n## Role\nOpen and follow the role guide: {1}/research-review-delivery.md (read-only). You are not the author of either file. Do not reopen the sources.\n"
-        ).format(objective, _guides())
+        review_brief = _brief("delivery-review.md", objective=objective, guides=_guides())
         _write(round_path / "review-brief.md", review_brief)
+
         def prompt(attempt):
             text = review_brief
             if previous_path is not None:
-                text += "\nThe cuts you listed in the previous round are in previous-problems.md; the delivery was corrected, check whether they are gone.\n"
-            text += (
-                "\n---\nBegin problems.md with a section headed \"## What I checked\": one line per part of the digest you went through and where you found it in the delivery. Then list what was left out or cut. Write it to problems.md. Its last line must be exactly one of:\n"
-                "VERDICT: pass\nVERDICT: back\nVERDICT: escalate\nDo not edit any other file.\n"
-            )
+                text += "\n" + _brief("delivery-review-previous.md")
+            text += "\n---\n" + _brief("delivery-review-instructions.md")
             if attempt > 1:
-                text += "Your previous attempt left no usable problems.md (missing, or without a \"## What I checked\" section). Write the file this time.\n"
+                text += _brief("delivery-review-retry.md")
             return text
+
         result = run_review(run, "delivery", str(review), str(round_path), prompt, model, effort,
                             None, _limits()[1], str(previous_path) if previous_path else None)
         ctx = Context(run, self)
