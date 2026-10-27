@@ -13,7 +13,7 @@ from harness.engine.review import run_review
 from harness.engine.run import RunDir, RunError, valid_name
 from harness.engine.stepboard import render_steps
 from harness.engine.workflow import Context, Step, Stop, Workflow
-from harness.engine.pipeline import _root
+from harness.engine.pipeline import load_run
 from harness.template import render_file
 
 
@@ -216,8 +216,7 @@ class CouncilWorkflow(Workflow):
             raise RunError("bad run name: {0}".format(name))
         if not os.path.isfile(report_path) or os.path.getsize(report_path) == 0:
             raise RunError("missing or empty report: {0}".format(report_path))
-        root = _root(self)
-        run = RunDir.load(root, name)
+        run = load_run(self, name)
         if not run.is_done("review"):
             raise RunError("the council has not reached READY")
         require_backend()

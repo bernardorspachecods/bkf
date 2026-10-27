@@ -9,9 +9,11 @@ from typing import NamedTuple
 from harness.engine.backend import require_backend
 from harness.engine.agentstep import run_agent_step
 from harness.engine.bridge import porteiro
+from harness.engine.checkout import commit_all, create_tree, prepare_tree, remove_tree, uncommitted
 from harness.engine.diffbase import make_patch, snapshot_base, snapshot_tree
 from harness.engine.group import remove_worktrees, run_group
 from harness.engine.integration import run_integration
+from harness.engine.layout import list_pending, pending_dir
 from harness.engine.loop import UnitHooks, run_unit_loop
 from harness.engine.workflow import Step, Stop, Workflow
 from harness.engine.run import RunError
@@ -102,8 +104,21 @@ class _IntegrationHooks(_UnitHooks):
 class PlanWorkflow(Workflow):
     name = "plan"
     command = "plan-run.sh"
-    usage_start = "usage: start [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> <goal.md> <plan.txt>"
+    usage_start = "usage: start [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> [<goal.md> <plan.txt>]"
     repo_hint = "run start inside the repository the plan changes"
+    start_flags = ("--in-place",)
+
+    def resolve_start_args(self, name, args, repo):
+        if args:
+            return args
+        if repo is None:
+            raise RunError(self.repo_hint)
+        folder = pending_dir("plan", repo, name)
+        if not (folder / "goal.md").is_file() or not (folder / "plan.txt").is_file():
+            raise RunError(
+                "no pending plan {0} for this repository (looked in {1}); `plan-run.sh pending` lists them".format(name, folder)
+            )
+        return [str(folder / "goal.md"), str(folder / "plan.txt")]
 
     def validate_start(self, args):
         if len(args) != 2:
@@ -120,13 +135,45 @@ class PlanWorkflow(Workflow):
         if not os.path.isdir(guides):
             raise RunError("no role guides at {0} (set PLAN_GUIDES)".format(guides))
 
+    def _isolate(self, ctx):
+        """Give the run a worktree of its own, on the branch plan/<name>, and set it up as the repository says."""
+        dirty = uncommitted(ctx.repo)
+        if dirty:
+            raise RunError(
+                "the checkout has {0} uncommitted change(s), so a worktree cut from HEAD would not hold them: "
+                "commit or stash them, or start with --in-place to work in the checkout. First: {1}".format(
+                    len(dirty), "; ".join(dirty[:3]))
+            )
+        branch = "plan/{0}".format(ctx.run.name)
+        tree = create_tree(ctx.run.path, ctx.repo, branch)
+        try:
+            ctx.note("worktree {0} on branch {1}".format(tree, branch))
+            for note in prepare_tree(ctx.run.path, ctx.repo, tree, float(os.environ.get("PLAN_PREPARE_TIMEOUT", "1800"))):
+                ctx.note(note)
+        except Exception:
+            remove_tree(ctx.run.path, ctx.repo, delete_branch=True)
+            raise
+
+    def _checkpoint(self, ctx, label):
+        """Commit what a unit or an integration left in the run's worktree, so each is one commit on the branch."""
+        if not (ctx.run.path / "tree").is_dir():
+            return
+        try:
+            if commit_all(ctx.checkout, "plan {0}: {1}".format(ctx.run.name, label)):
+                ctx.note("checkpoint commit: {0}".format(label))
+        except RunError as error:
+            ctx.note("checkpoint commit failed for {0}: {1}".format(label, error))
+
     def start(self, ctx, args):
         goal, plan = args
         steps = plan_inputs.parse_plan(plan)
+        if "--in-place" not in ctx.flags and not os.environ.get("PLAN_IN_PLACE"):
+            self._isolate(ctx)
         plan_inputs.write_inputs(ctx.run.path, goal, steps)
         base = ctx.run.path / "plan-base"
         base.mkdir(parents=True, exist_ok=True)
-        snapshot_base(base, ctx.repo)
+        snapshot_base(base, ctx.checkout)
+        self._consume_pending(ctx, goal)
         unit_count = sum(len(step) for step in steps)
         ctx.note(
             "start {0} ({1} {2}, review {3}, max {4} rounds, {5} step(s), {6} unit(s), repo {7})".format(
@@ -140,19 +187,28 @@ class PlanWorkflow(Workflow):
             if not plan_inputs.gate_commands([plan_inputs.brief_current(ctx.run.path, unit)]):
                 ctx.note("unit {0} has no gate: only a reviewer checks it".format(unit))
         config_at_head = subprocess.run(
-            ["git", "-C", os.fspath(ctx.repo), "cat-file", "-e", "HEAD:.plan-run.json"],
+            ["git", "-C", os.fspath(ctx.checkout), "cat-file", "-e", "HEAD:.plan-run.json"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
         ).returncode == 0
         if not config_at_head:
-            if (Path(ctx.repo) / ".plan-run.json").is_file():
+            if (Path(ctx.checkout) / ".plan-run.json").is_file():
                 ctx.note(".plan-run.json is not committed: commit it so changes to it are reviewed like code")
             else:
                 ctx.note(
                     "no .plan-run.json at HEAD: the bridge will run only gate commands unless an untracked copy "
                     "is in the checkout; commit it so changes to it are reviewed like code"
                 )
+
+    def _consume_pending(self, ctx, goal):
+        """Move the pending plan this run started from into the run, so one copy stays the current one."""
+        folder = pending_dir("plan", ctx.repo, ctx.run.name)
+        if not folder.is_dir() or Path(goal).resolve() != (folder / "goal.md").resolve():
+            return
+        destination = ctx.run.path / "00-input" / "source"
+        shutil.move(str(folder), str(destination))
+        ctx.note("the pending plan moved to {0}".format(destination))
 
     def steps(self, ctx):
         order_path = ctx.run.path / "00-input" / "order"
@@ -189,7 +245,7 @@ class PlanWorkflow(Workflow):
                     integration_marker = step_ctx.run.path / (".done-S{0}-integration".format(step_number))
                     if not integration_marker.exists():
                         result = run_integration(
-                            step_ctx.run, step_ctx.repo, step_number, step_members,
+                            step_ctx.run, step_ctx.checkout, step_number, step_members,
                             hooks=_IntegrationHooks(step_ctx, step_number),
                             settings=step_ctx.settings._replace(review_effort=_review_effort(step_ctx.settings)),
                             tier=_plan_tier(), limits=_limits(),
@@ -200,8 +256,9 @@ class PlanWorkflow(Workflow):
                         )
                         if not result.ok:
                             raise Stop(result.reason)
+                        self._checkpoint(step_ctx, "S{0} integration".format(step_number))
                         integration_marker.touch()
-                    remove_worktrees(step_ctx.run, step_ctx.repo)
+                    remove_worktrees(step_ctx.run, step_ctx.checkout)
                     return
 
                 step_unit = step_members[0]
@@ -219,7 +276,7 @@ class PlanWorkflow(Workflow):
                     if candidate.is_file() and base_format.is_file() and base_format.read_text(encoding="utf-8").strip() == "tree":
                         base_from = candidate
                 result = run_unit_loop(
-                    step_ctx.run, step_unit, step_ctx.repo,
+                    step_ctx.run, step_unit, step_ctx.checkout,
                     source_brief=plan_inputs.brief_current(step_ctx.run.path, step_unit),
                     hooks=_UnitHooks(step_ctx, step_number),
                     settings=step_ctx.settings._replace(
@@ -232,6 +289,7 @@ class PlanWorkflow(Workflow):
                 )
                 if not result.ok:
                     raise Stop(result.reason)
+                self._checkpoint(step_ctx, step_unit)
                 (step_ctx.run.path / (".done-" + step_unit)).touch()
 
             label = step_units[0] if len(step_units) == 1 else "paralelo · {0}".format(", ".join(step_units))
@@ -241,7 +299,7 @@ class PlanWorkflow(Workflow):
     def after_step(self, ctx, step):
         path = ctx.run.path / "state-after-S{0}".format(step.number)
         try:
-            tree = snapshot_tree(ctx.repo)
+            tree = snapshot_tree(ctx.checkout)
             path.write_text(tree + "\n", encoding="utf-8")
         except (OSError, RunError):
             try:
@@ -259,7 +317,7 @@ class PlanWorkflow(Workflow):
                 plan_inputs.check_briefs(run.path, units)
             except RunError as error:
                 raise Stop(str(error))
-            make_patch(run.path / "plan-base", run.path / "cumulative.patch", ctx.repo)
+            make_patch(run.path / "plan-base", run.path / "cumulative.patch", ctx.checkout)
             prompt = plan_inputs.report_prompt(
                 run.path,
                 os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ),
@@ -268,7 +326,7 @@ class PlanWorkflow(Workflow):
             with prompt_path.open("w", encoding="utf-8", newline="") as output:
                 output.write(prompt)
             result = run_agent_step(
-                run, "final review", ctx.repo, str(prompt_path), str(run.path / "report"),
+                run, "final review", ctx.checkout, str(prompt_path), str(run.path / "report"),
                 ctx.settings.model, _review_effort(ctx.settings), "read-only",
                 _plan_tier(),
                 "final review exit=<exit> (see {0}/report.stderr.log)".format(run.path),
@@ -299,8 +357,20 @@ class PlanWorkflow(Workflow):
     def finish(self, ctx):
         return plan_board.finish(ctx)
 
+    def _pending_command(self, args):
+        if args:
+            raise RunError("usage: pending")
+        repo = plan_inputs._current_repo()
+        if repo is None:
+            raise RunError(self.repo_hint)
+        names = list_pending("plan", repo)
+        for name in names:
+            print(name)
+        return 0
+
     def commands(self):
         return {
+            "pending": self._pending_command,
             "gates": plan_inputs.gates_command,
             "rehearse": plan_rehearse.rehearse_command,
             "rebase-integration": plan_integration.rebase_integration,

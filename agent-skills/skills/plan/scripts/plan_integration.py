@@ -163,12 +163,12 @@ def _rebase_without_paths(run, step, units, integration, current, head):
     if not applied:
         raise RunError("no unit of step {0} was applied to the checkout: nothing to subtract".format(step))
 
-    index_path, env = _temporary_index(run.repo)
+    index_path, env = _temporary_index(run.checkout)
     try:
-        _read_tree(run.repo, current, env, "cannot read the checkout tree")
+        _read_tree(run.checkout, current, env, "cannot read the checkout tree")
         for unit in reversed(applied):
             patch = run.path / unit / "final.patch"
-            result = _git(run.repo, ["apply", "-R", "--cached", os.fspath(patch)], env=env)
+            result = _git(run.checkout, ["apply", "-R", "--cached", os.fspath(patch)], env=env)
             if result.returncode:
                 detail = (result.stdout + result.stderr).strip()
                 raise RunError(
@@ -176,7 +176,7 @@ def _rebase_without_paths(run, step, units, integration, current, head):
                         unit, detail
                     )
                 )
-        tree = _write_tree(run.repo, env, "cannot write the new base")
+        tree = _write_tree(run.checkout, env, "cannot write the new base")
     finally:
         try:
             os.unlink(index_path)
@@ -243,18 +243,18 @@ def _rebase_paths(run, step, units, integration, old, current, head, paths):
             )
         )
 
-    index_path, env = _temporary_index(run.repo)
+    index_path, env = _temporary_index(run.checkout)
     try:
-        _read_tree(run.repo, old, env, "cannot read the base tree")
-        _update_base_paths(run.repo, old, current, paths, env)
-        tree = _write_tree(run.repo, env, "cannot write the new base")
+        _read_tree(run.checkout, old, env, "cannot read the base tree")
+        _update_base_paths(run.checkout, old, current, paths, env)
+        tree = _write_tree(run.checkout, env, "cannot write the new base")
     finally:
         try:
             os.unlink(index_path)
         except FileNotFoundError:
             pass
 
-    result = _git(run.repo, ["diff", "--name-only", old, tree])
+    result = _git(run.checkout, ["diff", "--name-only", old, tree])
     hidden = result.stdout.rstrip("\n")
     if result.returncode:
         raise RunError("cannot compare the old and new bases")
@@ -308,8 +308,8 @@ def rebase_integration(args, environ=None):
         raise RunError("the integration of step {0} keeps an old-format base: finish it as it is".format(step))
 
     old = base_path.read_text(encoding="utf-8").strip()
-    current = _checkout_tree(run.repo)
-    head_result = _git(run.repo, ["rev-parse", "--short", "HEAD"])
+    current = _checkout_tree(run.checkout)
+    head_result = _git(run.checkout, ["rev-parse", "--short", "HEAD"])
     head = head_result.stdout.strip() if head_result.returncode == 0 else ""
     if paths is None:
         _rebase_without_paths(run, step, units, integration, current, head)
@@ -348,11 +348,11 @@ def accept_integration(args, environ=None):
             raise RunError(
                 "the diff of unit {0} was never applied to the checkout: the integration cannot be closed over it".format(unit)
             )
-    head_result = _git(run.repo, ["rev-parse", "--short", "HEAD"])
+    head_result = _git(run.checkout, ["rev-parse", "--short", "HEAD"])
     head = head_result.stdout.strip() if head_result.returncode == 0 else ""
     (integration / "status").write_text("passed\n", encoding="utf-8")
     (run.path / (".done-S{0}-integration".format(step))).touch()
-    remove_worktrees(run, run.repo)
+    remove_worktrees(run, run.checkout)
     user_result = subprocess.run(
         ["id", "-un"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, check=False,

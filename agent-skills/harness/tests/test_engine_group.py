@@ -129,6 +129,7 @@ class GroupTests(unittest.TestCase):
                 self.lines = []
                 self.run = run
                 self.repo = repo
+                self.checkout = repo
 
             def progress(self, line):
                 self.lines.append(line)
@@ -153,6 +154,7 @@ class GroupTests(unittest.TestCase):
             def __init__(self, run, repo):
                 self.run = run
                 self.repo = repo
+                self.checkout = repo
 
             def progress(self, _line):
                 pass

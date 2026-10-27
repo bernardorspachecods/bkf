@@ -111,7 +111,7 @@ def run_group(ctx, step, units, unit_runner, environ=None):
     units = list(units)
     ctx.progress("S{0} início · paralelo · {1}".format(step, ", ".join(units)))
     run = ctx.run
-    reason = prepare_worktrees(run, ctx.repo, step, units, environ=environ)
+    reason = prepare_worktrees(run, ctx.checkout, step, units, environ=environ)
     if reason:
         run.note("S{0}: {1}".format(step, reason))
         return False, reason

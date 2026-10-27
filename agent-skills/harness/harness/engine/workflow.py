@@ -32,7 +32,12 @@ class Context:
         self.run = run
         self.settings = run.settings
         self.repo = run.repo
+        self.flags = frozenset()
         self.workflow = workflow
+
+    @property
+    def checkout(self):
+        return self.run.checkout
 
     def progress(self, text):
         print("[{0}] {1}\n".format(self.workflow.name, text), file=sys.stderr)
@@ -57,7 +62,12 @@ class Workflow:
     name = None
     command = None
     usage_start = None
+    start_flags = ()
     repo_hint = None
+
+    def resolve_start_args(self, name, args, repo):
+        """Complete the arguments of ``start`` when the workflow can find them itself (a pending plan)."""
+        return args
 
     def validate_start(self, args):
         raise NotImplementedError

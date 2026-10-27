@@ -11,6 +11,8 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 
+from .checkout import remove_tree
+from .layout import find_run, new_run_parent
 from .lock import acquire, is_active
 from .run import RunDir, RunError, Settings, valid_name, valid_pause
 from .workflow import Context, Stop
@@ -128,10 +130,10 @@ def _load_workflow(definition_path):
     return workflow
 
 
-def _root(workflow):
-    env_name = "{0}_RUNS_DIR".format(workflow.name.upper().replace("-", "_"))
-    root = os.environ.get("HARNESS_RUNS_DIR") or os.environ.get(env_name)
-    return Path(root) if root else Path.home() / ".{0}-runs".format(workflow.name)
+def load_run(workflow, name):
+    """The run called ``name`` of this workflow, looked up for the repository the command runs in."""
+    path = find_run(workflow.name, name, _repo())
+    return RunDir.load(path.parent, path.name)
 
 
 def _repo():
@@ -211,12 +213,16 @@ def _pipeline(ctx, workflow):
         return _record_crash(ctx, stage, error)
 
 
-def _options(args, defaults=None):
+def _options(args, defaults=None, flags=()):
     values = dict(defaults or {})
+    values["flags"] = set()
     index = 0
     while index < len(args) and args[index].startswith("-"):
         option = args[index]
-        if option in ("-m", "-e", "-r", "-p") and index + 1 < len(args):
+        if option in flags:
+            values["flags"].add(option)
+            index += 1
+        elif option in ("-m", "-e", "-r", "-p") and index + 1 < len(args):
             key = {"-m": "model", "-e": "effort", "-r": "review_effort", "-p": "pause"}[option]
             values[key] = args[index + 1]
             index += 2
@@ -231,36 +237,53 @@ def _check_pause(text):
 
 
 def _start(workflow, args):
-    options, rest = _options(args, {"model": "gpt-6-luna", "effort": "xhigh", "review_effort": "", "pause": ""})
+    options, rest = _options(args, {"model": "gpt-6-luna", "effort": "xhigh", "review_effort": "", "pause": ""},
+                             workflow.start_flags)
     if len(rest) < 1:
         raise RunError(workflow.usage_start)
     name, workflow_args = rest[0], rest[1:]
     if not valid_name(name):
         raise RunError("bad run name: {0}".format(name))
     _check_pause(options["pause"])
-    workflow.validate_start(workflow_args)
     repo = _repo()
+    workflow_args = workflow.resolve_start_args(name, workflow_args, repo)
+    workflow.validate_start(workflow_args)
     if repo is None:
         raise RunError(workflow.repo_hint)
-    path = _root(workflow) / name
-    if path.exists():
-        raise RunError("run already exists: {0} (finish it, or resume it)".format(path))
-    run = RunDir.create(_root(workflow), name, repo, Settings(
+    parent = new_run_parent(workflow.name, repo)
+    existing = find_run(workflow.name, name, repo)
+    if existing.exists():
+        raise RunError("run already exists: {0} (finish it, or resume it)".format(existing))
+    run = RunDir.create(parent, name, repo, Settings(
         options["model"], options["effort"], options["review_effort"]
     ), options["pause"])
 
+    failed = {"start": False}
+
     def start(ctx):
-        workflow.start(ctx, workflow_args)
+        ctx.flags = frozenset(options["flags"])
+        try:
+            workflow.start(ctx, workflow_args)
+        except RunError:
+            failed["start"] = True
+            raise
         ctx.print_board(sys.stderr)
         return _pipeline(ctx, workflow)
-    return _run_locked(run, workflow, start)
+    try:
+        return _run_locked(run, workflow, start)
+    except RunError:
+        if failed["start"]:
+            # A run that never began leaves nothing worth resuming: take its folder and worktree away.
+            remove_tree(run.path, repo, delete_branch=True)
+            shutil.rmtree(str(run.path), ignore_errors=True)
+        raise
 
 
 def _resume(workflow, args):
     options, rest = _options(args)
     if len(rest) != 1:
         raise RunError("usage: resume [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name>")
-    run = RunDir.load(_root(workflow), rest[0])
+    run = load_run(workflow, rest[0])
 
     def resume(ctx):
         if "pause" in options:
@@ -286,12 +309,15 @@ def _finish(workflow, args):
     rest = args[1:] if discard else args
     if len(rest) != 1:
         raise RunError("usage: finish [--discard] <name>")
-    run = RunDir.load(_root(workflow), rest[0])
+    run = load_run(workflow, rest[0])
     if is_active(run.path, "harness"):
         pid = (run.path / ".lock").read_text(encoding="ascii").rstrip("\n")
         raise RunError("run {0} is being worked on by pid {1}: finish it when it stops".format(rest[0], pid))
     if discard:
+        branch = remove_tree(run.path, run.repo, delete_branch=True)
         shutil.rmtree(run.path)
+        if branch:
+            print("Deleted branch {0}".format(branch))
         print("Removed {0}".format(run.path))
         return 0
     ctx = Context(run, workflow)
@@ -316,13 +342,13 @@ def main(definition_path, argv):
         if command == "status":
             if len(args) != 1:
                 raise RunError("usage: status <name>")
-            run = RunDir.load(_root(workflow), args[0])
+            run = load_run(workflow, args[0])
             sys.stdout.write((run.path / "status.log").read_text(encoding="utf-8"))
             return 0
         if command == "board":
             if len(args) != 1:
                 raise RunError("usage: board <name>")
-            run = RunDir.load(_root(workflow), args[0])
+            run = load_run(workflow, args[0])
             Context(run, workflow).print_board(sys.stdout)
             return 0
         if command == "finish":

@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 
 from harness.engine.backend import require_backend
+from harness.engine.checkout import create_tree, prepare_tree, remove_tree
+from harness.engine.diffbase import snapshot_commit
 from harness.engine.agentstep import run_agents, tier_from_environment
 from harness.engine.record import keep_record
 from harness.engine.run import RunError
@@ -83,6 +85,7 @@ class ReviewWorkflow(Workflow):
     name = "review"
     command = "review-run.sh"
     usage_start = "usage: start [-m model] [-e effort] [-2] [-s spec.md] [-d standards.md]... [-g command]... <name> <target>"
+    start_flags = ("--in-place",)
     repo_hint = "run start inside the repository under review"
 
     def __init__(self):
@@ -162,27 +165,58 @@ class ReviewWorkflow(Workflow):
             for path in data["standards"]:
                 shutil.copyfile(path, str(standards_dir / os.path.basename(path)))
         (run / "repo").write_text(str(data["repo"]) + "\n", encoding="utf-8")
+        if "--in-place" not in ctx.flags and not os.environ.get("REVIEW_IN_PLACE"):
+            self._isolate(ctx, data)
         (run / "second").write_text("{0}\n".format(int(data["second"])), encoding="utf-8")
         ctx.note("start {0} ({1} {2}, target {3}, second reviewer {4})".format(
             ctx.run.name, ctx.settings.model, ctx.settings.effort, data["target"],
             int(data["second"]),
         ))
         notes = []
+        in_tree = (run / "tree").is_dir()
         if data["gates"]:
             head = subprocess.run(
-                ["git", "-C", str(data["repo"]), "rev-parse", "--short", "HEAD"],
+                ["git", "-C", ctx.run.checkout, "rev-parse", "--short", "HEAD"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True,
                 check=False,
             ).stdout.strip() or "unknown"
-            notes.append("Gate target: HEAD {0} of the repository.".format(head))
-            if data["target"] != "working-tree":
-                notes.append("The target is a revision range, so the commands ran in the current checkout, which may not be the target.")
+            if in_tree:
+                notes.append("Gate target: {0}, in a worktree of the run.".format(head))
+            else:
+                notes.append("Gate target: HEAD {0} of the repository.".format(head))
+                if data["target"] != "working-tree":
+                    notes.append("The target is a revision range, so the commands ran in the current checkout, which may not be the target.")
         ctx.note("gate: {0} commands".format(len(data["gates"])))
         run_gate(
-            str(data["repo"]), os.environ.get("REVIEW_GATE_TIMEOUT", "900"),
+            ctx.run.checkout, os.environ.get("REVIEW_GATE_TIMEOUT", "900"),
             str(inputs), data["gates"], notes,
         )
         self._start_data = None
+
+    def _tip(self, repo, target):
+        """The commit the reviewers should see: the end of a revision range, else the files as they are now."""
+        if target == "working-tree" or ".." not in target:
+            return snapshot_commit(repo)
+        tip = target.split("...")[-1] if "..." in target else target.split("..")[-1]
+        result = subprocess.run(
+            ["git", "-C", os.fspath(repo), "rev-parse", "--verify", (tip or "HEAD") + "^{commit}"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True, check=False,
+        )
+        if result.returncode != 0:
+            raise RunError("cannot resolve the end of {0}".format(target))
+        return result.stdout.strip()
+
+    def _isolate(self, ctx, data):
+        """Give the run a detached worktree at the code under review, so the reviewers and the gate see it."""
+        commit = self._tip(data["repo"], data["target"])
+        tree = create_tree(ctx.run.path, data["repo"], commit=commit)
+        try:
+            ctx.note("worktree {0} at {1}".format(tree, commit[:12]))
+            for note in prepare_tree(ctx.run.path, data["repo"], tree, float(os.environ.get("REVIEW_PREPARE_TIMEOUT", "1800"))):
+                ctx.note(note)
+        except Exception:
+            remove_tree(ctx.run.path, data["repo"])
+            raise
 
     def _axes(self, ctx):
         inputs = ctx.run.path / "00-input"
@@ -199,11 +233,11 @@ class ReviewWorkflow(Workflow):
     def _axis_brief(self, ctx, axis):
         commits = ", and the commits in `commits.txt`" if (ctx.run.path / "00-input" / "commits.txt").is_file() else ""
         return _brief("axis.md", title=self._axis_title(axis), commits=commits,
-                      criteria=_brief("axis-criteria-" + axis + ".md"), repo=ctx.run.repo, guides=_guides())
+                      criteria=_brief("axis-criteria-" + axis + ".md"), repo=ctx.run.checkout, guides=_guides())
 
     def _check_brief(self, ctx, axis):
         return _brief("check.md", title=self._axis_title(axis), criteria_input=_brief("check-input-" + axis + ".md"),
-                      repo=ctx.run.repo, guides=_guides())
+                      repo=ctx.run.checkout, guides=_guides())
 
     def _prepare_review(self, ctx):
         run = ctx.run.path
@@ -403,9 +437,10 @@ class ReviewWorkflow(Workflow):
         current = _repository()
         if current is None or Path(current).resolve() != Path(ctx.run.repo).resolve():
             raise RunError("run finish inside the reviewed repository: {0}".format(ctx.run.repo))
+        remove_tree(ctx.run.path, ctx.run.repo)
         keep_record(ctx.run.path, ctx.run.repo, "reviews", ctx.run.name, exclusions=(
             "*.events.jsonl", "*.stderr.log", "*.last-message.md", ".*", "repo", "second",
-            "settings", "status.log", "pause",
+            "settings", "status.log", "pause", "tree",
         ))
 
 

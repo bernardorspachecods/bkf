@@ -7,6 +7,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/review-run-gate-test.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 fail=0
+# The cases here are about where the commands run in the checkout; the isolated run is tested in test_review_isolation.py.
+export REVIEW_IN_PLACE=1
 check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
 
 # A fake codex. A brief starting "# Brief: check" writes checked.md, any other brief writes report.md, both in the

@@ -25,7 +25,7 @@ class PlanWorkflowTests(unittest.TestCase):
     def test_one_unit_runs_to_final_report(self):
         self.fixture.add_brief("unit")
         plan = self.fixture.write_plan("unit.md")
-        code, out, err = self.call("start", "sample", str(self.fixture.goal), str(plan))
+        code, out, err = self.call("start", "--in-place", "sample", str(self.fixture.goal), str(plan))
         run = self.fixture.runs / "sample"
 
         self.assertEqual(code, 0)

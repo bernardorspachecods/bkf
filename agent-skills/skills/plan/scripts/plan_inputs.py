@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from harness.engine.layout import find_run
 from harness.engine.run import RunError
 import plan_lint
 
@@ -100,8 +101,13 @@ def gate_commands(brief_paths):
 
 
 def _run_path(name, environ=None):
-    environ = os.environ if environ is None else environ
-    return Path(environ.get("PLAN_RUNS_DIR", str(Path.home() / ".plan-runs"))) / name
+    return find_run("plan", name, _current_repo(), environ)
+
+
+def _current_repo():
+    result = subprocess.run(["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, universal_newlines=True, check=False)
+    return result.stdout.rstrip("\n") if result.returncode == 0 else None
 
 
 def gates_command(args):

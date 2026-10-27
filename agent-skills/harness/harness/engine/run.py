@@ -46,6 +46,12 @@ class RunDir:
         self.settings = settings
         self.pause = pause
 
+    @property
+    def checkout(self):
+        """Where the agents work: the run's own worktree when it has one, else the repository's checkout."""
+        tree = self.path / "tree"
+        return str(tree) if tree.is_dir() else self.repo
+
     @classmethod
     def create(cls, root, name, repo, settings, pause):
         if not valid_name(name):

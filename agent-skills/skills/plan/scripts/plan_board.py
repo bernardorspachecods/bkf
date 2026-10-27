@@ -7,11 +7,13 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from harness.engine.checkout import remove_tree
+
 
 _EXCLUDES = (
     "*.events.jsonl", "*.stderr.log", "*.last-message.md", ".*", "*.attempt-*",
     "untracked-*.txt", "base", "plan-base", "*.worktree.log", "repo", "pause",
-    "settings", "status", "status.log",
+    "settings", "status", "status.log", "tree",
 )
 
 
@@ -321,5 +323,8 @@ def finish(ctx):
     except OSError:
         from harness.engine.run import RunError
         raise RunError("copy to {0} failed; nothing deleted".format(destination))
+    branch = remove_tree(run_path, repo)
     shutil.rmtree(run_path)
     print("Kept in {0}; removed {1}".format(destination, run_path))
+    if branch:
+        print("The work is on branch {0}: review it and merge it.".format(branch))

@@ -7,6 +7,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/plan-run-gate-test.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 fail=0
+# These cases are about the checkout: an owner who edits it, a config left untracked, a rebase of the base. They run in place.
+export PLAN_IN_PLACE=1
 check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
 # A fake codex. The final review of the plan ("# Final review") just writes a report. Reviews (prompt starting "# Review") answer with $FAKE_VERDICT and count themselves in
 # $FAKE_STATE/reviews; implementations run $FAKE_IMPL in the checkout, with the call number in $FAKE_N.

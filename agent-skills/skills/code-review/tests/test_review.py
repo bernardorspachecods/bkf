@@ -78,6 +78,7 @@ class ReviewWorkflowTests(unittest.TestCase):
             "PATH": str(self.bin) + os.pathsep + self.env.get("PATH", ""),
             "REVIEW_RUNS_DIR": str(self.runs),
             "REVIEW_GUIDES": str(self.guides),
+            "REVIEW_IN_PLACE": "1",
             "FAKE_STATE": str(self.state),
         })
 

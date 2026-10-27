@@ -11,6 +11,7 @@ from pathlib import Path
 from harness.engine.backend import require_backend
 from harness.engine.agentstep import run_agent_step
 from harness.engine.phase import join_phase, run_phase
+from harness.engine.pipeline import load_run
 from harness.engine.record import RecordError, keep_record
 from harness.engine.review import run_review
 from harness.engine.run import RunError, valid_name
@@ -461,9 +462,7 @@ class ResearchWorkflow(Workflow):
         return 2
 
     def _load_run(self, name):
-        from harness.engine.run import RunDir
-        root = os.environ.get("HARNESS_RUNS_DIR") or os.environ.get("RESEARCH_RUNS_DIR") or str(Path.home() / ".research-runs")
-        return RunDir.load(root, name)
+        return load_run(self, name)
 
     def _finish(self, ctx, options):
         only, keep = options if options else (False, False)
