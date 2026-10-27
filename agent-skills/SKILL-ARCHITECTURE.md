@@ -13,6 +13,16 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Align intent
   - `short_description`: Settle what is wanted and why before working, so the agent can work alone
 
+## ambitious
+
+- Description: Push the ambition of a task the user names along three axes (altitude, depth, range) while discussing it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own or for small, well-bounded changes.
+- Package: [`agent-skills/skills/ambitious`](skills/ambitious/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Ambitious
+  - `short_description`: Raise the ambition of a task before running it
+- Runtime policy: `explicit invocation required`
+
 ## brainstorm
 
 - Description: Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions.
