@@ -17,7 +17,6 @@ refresh the injected text and catalog.
 | What it is | Document |
 | --- | --- |
 | States what the agent harness is for, its layers, the decisions taken about it and what is still to verify or build. The code and each skill own their own behavior. | [harness-goal.md](/agent-skills/harness-goal.md) |
-| Plan to move the harness engine out of the dispatch-agents skill and give each workflow skill its own scripts, definition and tests; the engine stays generic. Written and executed on 2026-10-26 and 2026-10-27. | [harness-refactor-plan.md](/agent-skills/harness-refactor-plan.md) |
 | Owns the shared rule modules whose text the workflow and work skills inject into their bodies; the skills themselves live outside this bundle. | [MAP.md](/agent-skills/modules/MAP.md) |
 | Lists what is still open after the 2026-10-26 audit of the skills against harness-goal.md and the refactor that moved the harness out of skills/: the choices that are the owner's and the small gaps left. Delete an item when it is settled. | [skills-audit.md](/agent-skills/skills-audit.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->

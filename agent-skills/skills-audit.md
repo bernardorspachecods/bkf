@@ -6,11 +6,7 @@ tags: [harness, skills]
 
 # Skills audit against harness-goal
 
-Audit of 2026-10-26, followed by the refactor in [harness-refactor-plan.md](/agent-skills/harness-refactor-plan.md). Read in full: `delegate-work`, `dispatch-agents` (since removed), `handoff`, `run-to-completion`, the modules, and the relevant parts of `plan`, `research`, `council` and `code-review`. **Not read:** `brainstorm`, `prototype`, `evaluate-relevance`, `watch`, `retrieval-chat-audit`, `skill-authoring` (only the packaging parts), `git-worktree-cleanup`, `conversation-transcript`, `code-work`, `align-intent` (header only for some), so they may hold drift not listed here.
-
-## Settled by the refactor
-
-Fixed false or stale text (`plan` saying Codex only, the missing `work-in-stages` and "Safety and gotchas", the empty metadata section, the `<WORKFLOW>_GUIDES` wording). The `dispatch-agents` skill is gone: its common text became the module `run-commands`, injected into the four workflow skills, and each skill now documents its own script (the plan's long section is [plan/run-reference.md](/agent-skills/skills/plan/run-reference.md)). The workflow skills now say the Claude backend exists, research says where web access applies, and the early stop, `gates` and `rehearse` are in the plan reference. The `guard` hook rule is in the module.
+What is still open after the audit of 2026-10-26 and the changes it led to (the harness moved out of `skills/`, the briefs became templates, runs and pending plans per repository, a worktree per run). What was settled is in git and in [harness-goal.md](/agent-skills/harness-goal.md). **Not read in the audit:** `brainstorm`, `prototype`, `evaluate-relevance`, `watch`, `retrieval-chat-audit`, `skill-authoring` (only the packaging parts), `git-worktree-cleanup`, `conversation-transcript`, `code-work` and `align-intent`. On 2026-10-27 they were searched for stale references to the harness, its paths and its scripts, and none was found.
 
 ## Decided by the owner on 2026-10-27
 

@@ -115,7 +115,7 @@ verify by code, such as how a change looks on screen or matters of opinion.
 
 ## 5. Where the work lives
 
-One review is one folder in `~/.review-runs/<name>/`: `00-input` (the pinned diff,
+One review is one folder in `~/.review-runs/<repo>/<name>/`: `00-input` (the pinned diff,
 the commits, the criteria, the gate results), `01-review`, `02-check` and
 `report.md` at the top. A review is usually read and dropped. When it is done, the user chooses: keep the
 record, copied into `records/reviews/` in the repository, or delete the run.

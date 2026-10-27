@@ -110,7 +110,7 @@ contracts between units unfixed and can misalign step numbers; two plans keep
 each one complete when it starts.
 
 **Order and parallelism.** You decide which units come first and which run together, and tell the user.
-Units run one at a time in the user's checkout by default. Two units may run
+Units run one at a time in the run's own worktree by default. Two units may run
 together only if they share nothing: each then runs in its own copy of the
 repository, and their diffs are brought together afterwards. That costs an
 integration agent, and a review of the combined result, for the group. Run in

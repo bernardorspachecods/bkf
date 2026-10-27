@@ -106,7 +106,7 @@ saying why. Your own opinion enters only if the user asks, and is said to be you
 
 ## 4. Where the work lives
 
-One council is one folder in `~/.council-runs/<name>/`, with one subfolder per
+One council is one folder in `~/.council-runs/<repo>/<name>/`, with one subfolder per
 phase in order: `00-input` (the brief), `01-advisors`, `02-packet`, `03-review`
 and `04-check`. The report sits at the top. When it is done, the user chooses: keep
 the record, copied into `records/councils/` in the repository, or delete the run.
