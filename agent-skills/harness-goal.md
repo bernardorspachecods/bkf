@@ -37,7 +37,7 @@ Four kinds of step: agents (N in parallel), a review with a verdict (pass, back 
 
 - A module is one rule set about one activity, with a consumer: shared text goes in a module, single-consumer text stays in the skill. A skill is a menu (only when it routes) or has a single objective; a skill holds only what is unique and states orders, not routing. A rule enters only when the agent would not do it by default.
 - Anything two workflows need goes to the harness, including capabilities only one uses today, as optional features: worktree isolation, the base of a diff, integration of parallel diffs, the bridge, the disk check.
-- The harness is Python, standard library only. It was called `dispatch-codex`, then lived in a `dispatch-agents` skill; that skill was dissolved on 2026-10-26: the engine moved out of `skills/`, the text every run script shares became the module `run-commands`, and each workflow skill took its own script, definition and tests. `delegate-work` launches one agent through the same engine with its own wrapper.
+- The harness is Python, standard library only. The engine is `agent-skills/harness`; the text every run script shares is the module `run-commands`; each workflow skill owns its script, definition and tests; `delegate-work` launches one agent through the same engine with a wrapper of its own.
 - The Claude backend runs `claude -p` with `--permission-mode dontAsk`. Write access is confined to the working directory (path-scoped `Write` and `Edit`, plus Claude's sandbox for Bash); a reviewer can only read. Web tools (`WebFetch`, `WebSearch`) go only to research's map agent and collectors, through `agent run --web`, never to a reviewer or an implementer.
 - Long or delegated work always has a goal file the agent consults; small work is aligned in conversation, with the agent restating the intent in its own words. The same sections serve both: what and why, done when, out of scope, decisions already taken, when to stop and ask, and how a change of intent is recorded.
 - A skill is loaded by its description, so descriptions state the activity and, where needed, who must not load it: `code-work` and `align-intent` are for the agent working in conversation, not for an agent inside a plan, a delegated task or a review, whose brief already carries their rules. Text injected into briefs (`core-code-principles`, `gate`, `intent`) is a module with the `injected` tag.
@@ -56,7 +56,6 @@ Four kinds of step: agents (N in parallel), a review with a verdict (pass, back 
 - A whole research run on Claude. The map agent and a collector were confirmed to open a web page with `--web`; the full workflow was not run.
 - A run of plan, council, review or research on the Claude backend. `require_backend` replaced the hard-coded check for `codex`, and unit tests cover it with fake commands; no real run started on Claude for these four.
 - `delegate-run.sh` on the Claude backend with a real model: its test uses a fake `claude`.
-- Failure demonstrations of the engine units are the implementers' reports in `records/plans/harness-engine`; the reviewer never saw them. Units 6, 9, 10 and 12 have none of their own.
 
 ## Open threads with the user
 
