@@ -9,7 +9,7 @@ class RunTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
-        self.settings = Settings("gpt-6-luna", "xhigh", "")
+        self.settings = Settings("gpt-6-luna", "high", "")
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -36,7 +36,7 @@ class RunTests(unittest.TestCase):
         self.assertEqual(run.pause, "2,4")
         self.assertEqual((run.path / "repo").read_text(), "/repo/path\n")
         self.assertEqual((run.path / "pause").read_text(), "2,4\n")
-        self.assertEqual((run.path / "settings").read_text(), "gpt-6-luna xhigh \n")
+        self.assertEqual((run.path / "settings").read_text(), "gpt-6-luna high \n")
         self.assertEqual((run.path / "status.log").read_text(), "time\tevent\n")
 
     def test_create_rejects_bad_name_and_existing_folder(self):

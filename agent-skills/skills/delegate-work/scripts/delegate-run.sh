@@ -3,7 +3,7 @@
 # Usage: [DELEGATE_IN_PLACE=1] delegate-run.sh <name> <brief-file> [base-ref] [model] [effort]
 # DELEGATE_IN_PLACE=1 runs in the main checkout instead of a new worktree.
 # DELEGATE_RERUN=1 allows reusing a run folder that already has a status file.
-# Without a model and effort: gpt-6-luna and xhigh on Codex, sonnet and high on Claude.
+# Without a model and effort: gpt-6-luna and high on Codex, sonnet and high on Claude.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -18,7 +18,7 @@ if [ "${HARNESS_BACKEND:-codex}" = claude ]; then
   effort=${5:-high}
 else
   model=${4:-gpt-6-luna}
-  effort=${5:-xhigh}
+  effort=${5:-high}
 fi
 
 repo=$(git rev-parse --show-toplevel)

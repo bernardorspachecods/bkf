@@ -121,7 +121,7 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue((run / ".done-S2").is_file())
         self.assertTrue((run / ".done-report").is_file())
         self.assertFalse((run / ".lock").exists())
-        self.assertIn("start step 1: agent step (gpt-6-luna xhigh)", (run / "status.log").read_text())
+        self.assertIn("start step 1: agent step (gpt-6-luna high)", (run / "status.log").read_text())
         self.assertIn("READY: report at {0}/report.md".format(run), (run / "status.log").read_text())
         self.assertEqual(self.call("status", "sample")[1], (run / "status.log").read_text())
         self.assertEqual(self.call("board", "sample")[1], "BOARD\n")

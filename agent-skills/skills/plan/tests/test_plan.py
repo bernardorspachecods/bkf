@@ -45,21 +45,21 @@ class PlanWorkflowTests(unittest.TestCase):
         self.assertTrue((run / ".done-report").is_file())
         status_events = [line.split("\t", 1)[1] for line in (run / "status.log").read_text().splitlines()[1:]]
         self.assertEqual(status_events, [
-            "start sample (gpt-6-luna xhigh, review xhigh, max 3 rounds, 1 step(s), 1 unit(s), repo {0})".format(self.fixture.repo.resolve()),
+            "start sample (gpt-6-luna high, review high, max 3 rounds, 1 step(s), 1 unit(s), repo {0})".format(self.fixture.repo.resolve()),
             "unit 01-unit has no gate: only a reviewer checks it",
             "no .plan-run.json at HEAD: the bridge will run only gate commands unless an untracked copy is in the checkout; commit it so changes to it are reviewed like code",
-            "start step 1: 01-unit (gpt-6-luna xhigh)",
+            "start step 1: 01-unit (gpt-6-luna high)",
             "01-unit round 1: implement",
             "01-unit round 1: review",
             "01-unit: round 1: verdict pass",
             "done step 1",
-            "start final review (gpt-6-luna xhigh)",
+            "start final review (gpt-6-luna high)",
             "done final review",
             "READY: report at {0}/report.md".format(run),
         ])
         self.assertEqual((run / "report.md").read_text(), "Final report\n")
         self.assertIn("diff --git a/seed.txt b/seed.txt", (run / "cumulative.patch").read_text())
-        self.assertEqual((self.fixture.state / "review-efforts").read_text(), "model_reasoning_effort=xhigh\n")
+        self.assertEqual((self.fixture.state / "review-efforts").read_text(), "model_reasoning_effort=high\n")
 
     def test_second_unit_patch_is_based_on_first_units_state(self):
         self.fixture.add_brief("first")

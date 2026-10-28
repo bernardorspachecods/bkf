@@ -237,7 +237,7 @@ def _check_pause(text):
 
 
 def _start(workflow, args):
-    options, rest = _options(args, {"model": "gpt-6-luna", "effort": "xhigh", "review_effort": "", "pause": ""},
+    options, rest = _options(args, {"model": "gpt-6-luna", "effort": "high", "review_effort": "", "pause": ""},
                              workflow.start_flags)
     if len(rest) < 1:
         raise RunError(workflow.usage_start)
@@ -289,7 +289,7 @@ def _resume(workflow, args):
         if "pause" in options:
             _check_pause(options["pause"])
             run.set_pause(options["pause"])
-        current = run.settings or Settings("gpt-6-luna", "xhigh", "")
+        current = run.settings or Settings("gpt-6-luna", "high", "")
         settings = Settings(
             options.get("model", current.model), options.get("effort", current.effort),
             options.get("review_effort", current.review_effort),

@@ -399,7 +399,7 @@ class ResearchWorkflow(Workflow):
         run = self._load_run(rest[0])
         saved = run.settings
         model = model or (saved.model if saved else "gpt-6-luna")
-        effort = effort or (saved.effort if saved else "xhigh")
+        effort = effort or (saved.effort if saved else "high")
         if not Path(rest[1]).is_file() or Path(rest[1]).stat().st_size == 0:
             raise RunError("missing or empty delivery: {0}".format(rest[1]))
         digest = run.path / "03-digest" / "digest.md"
