@@ -23,7 +23,8 @@ rules=${rules//'{{SESSION}}'/$session}
 rules=${rules//'{{ORCHESTRATOR}}'/$orchestrator}
 printf '%s\n\n---\n\n%s\n' "$(<"$brief")" "$rules" > "$prompt"
 
-flags="--name $session"
+# Auto mode, like an orchestrator in auto mode: both count as prompting, so messages between them are delivered.
+flags="--name $session --permission-mode auto"
 [[ -n $model ]] && flags+=" --model $(printf '%q' "$model")"
 [[ -n $effort ]] && flags+=" --effort $(printf '%q' "$effort")"
 open_tab "cd $(printf '%q' "$dir") && claude $flags \"\$(cat $(printf '%q' "$prompt"))\"" "$session"

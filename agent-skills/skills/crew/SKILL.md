@@ -52,7 +52,9 @@ The launcher appends the crew's rules for the coordinator: when to message the o
 2. Run [scripts/launch-coordinator.sh](scripts/launch-coordinator.sh) `<name> <your-session-name> <working-dir> <absolute-brief-path> [model] [effort]`. The model (`opus`, `sonnet`, `haiku` or a full id) and the effort (`low` to `max`) are those of the coordinator session; give them only when the user chose them while settling the crew, otherwise the session takes the user's defaults. It opens session `crew-<name>` in a window of the same name right after this one, without taking focus. The session's first message is the brief followed by the rules; the full message is written next to the brief as `<name>.prompt.md`. It prints the session name.
 3. Open only the coordinators of the current phase. When one joins a crew that already has others, send the new roster to each of them.
 
-A coordinator in a different permission mode class from yours (bypass against prompting) gets your messages held for the user's approval. Open coordinators in the same class as this session.
+The launcher starts every coordinator in auto mode. Messages between sessions are delivered only when both are in the same permission class: auto, acceptEdits and dontAsk count as prompting, bypass as the other. From an orchestrator that bypasses permissions, your messages to the coordinators are held for the user's approval, so run the crew from a session in auto mode.
+
+A coordinator whose action is denied, or waits on the user's approval, tells you in one line what the user must approve in its window. Pass that on to the user; never do the action for it.
 
 ## While it runs
 

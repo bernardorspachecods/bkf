@@ -41,6 +41,7 @@ check "leaves focus on the caller" \
   '[ "$(tmux -L "$sock" display-message -p -t main "#{window_name}")" = orchestrator ]'
 check "starts claude in the working directory" '[ "$(cat "$work/out.pwd")" = "$work/repo" ]'
 check "names the session crew-b" 'grep -qx -- "--name" "$work/out.args" && grep -qx crew-b "$work/out.args"'
+check "starts the session in auto mode" 'grep -A1 -x -- "--permission-mode" "$work/out.args" | grep -qx auto'
 check "first message has the brief" 'grep -q "Sub-plan B: SARP outbox." "$work/out.args"'
 check "first message has the rules with names filled in" \
   'grep -q "You are \`crew-b\`" "$work/out.args" && grep -q "session \`orch-1\`" "$work/out.args" && ! grep -q "{{" "$work/out.args"'
