@@ -29,7 +29,7 @@ Settle the intent with the user first (`align-intent`), for the crew as a whole:
 
 - the sub-plans, which phase each belongs to, and what each needs from an earlier phase;
 - which files, folders and schemas each coordinator owns, so no two edit the same thing;
-- the workflow each coordinator is expected to use;
+- the workflow each coordinator is expected to use, and its model and effort if the user wants other than their defaults;
 - the checkpoints: at least the end of each phase, where you stop and the user decides whether the next phase opens.
 
 Run it inside tmux (`$TMUX` is set): coordinators open as tmux windows. In Terminal.app they open as separate windows, and in any other terminal the launcher refuses.
@@ -49,7 +49,7 @@ The launcher appends the crew's rules for the coordinator: when to message the o
 ## Launch
 
 1. Run `ListAgents`. Its first line is your own session name, which the coordinators message. Check that no live session already has the name `crew-<name>`.
-2. Run [scripts/launch-coordinator.sh](scripts/launch-coordinator.sh) `<name> <your-session-name> <working-dir> <absolute-brief-path>`. It opens session `crew-<name>` in a window of the same name right after this one, without taking focus. The session's first message is the brief followed by the rules; the full message is written next to the brief as `<name>.prompt.md`. It prints the session name.
+2. Run [scripts/launch-coordinator.sh](scripts/launch-coordinator.sh) `<name> <your-session-name> <working-dir> <absolute-brief-path> [model] [effort]`. The model (`opus`, `sonnet`, `haiku` or a full id) and the effort (`low` to `max`) are those of the coordinator session; give them only when the user chose them while settling the crew, otherwise the session takes the user's defaults. It opens session `crew-<name>` in a window of the same name right after this one, without taking focus. The session's first message is the brief followed by the rules; the full message is written next to the brief as `<name>.prompt.md`. It prints the session name.
 3. Open only the coordinators of the current phase. When one joins a crew that already has others, send the new roster to each of them.
 
 A coordinator in a different permission mode class from yours (bypass against prompting) gets your messages held for the user's approval. Open coordinators in the same class as this session.
