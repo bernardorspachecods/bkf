@@ -89,7 +89,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## handoff
 
-- Description: Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new Terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task.
+- Description: Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task.
 - Package: [`agent-skills/skills/handoff`](skills/handoff/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Open a new Terminal.app tab with a Claude session whose first message is the handoff.
+# Open a new tab with a Claude session whose first message is the handoff.
 # Usage: launch-claude.sh <working-dir> <handoff-file>
 # The tab types only a short command; the shell expands the file into the argument,
 # because a typed line of tens of KB overflows the terminal.

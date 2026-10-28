@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new Terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task.
+description: Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task.
 ---
 
 # Handoff
@@ -30,12 +30,12 @@ after the task belong in the repository's documents, placed by
 
 ## Launch
 
-Each script takes `<working-dir> <absolute-handoff-path>`, opens a new Terminal.app tab in that directory and starts the agent there. The current chat is untouched. Use Claude unless the user asks for Codex.
+Each script takes `<working-dir> <absolute-handoff-path>`, opens a new tab in that directory and starts the agent there. The current chat is untouched. Use Claude unless the user asks for Codex.
 
 - [scripts/launch-claude.sh](scripts/launch-claude.sh) starts `claude` with the whole handoff as its first message, so the user sees it in full.
 - [scripts/launch-codex.sh](scripts/launch-codex.sh) starts `codex` with a short prompt that points to the file, which Codex reads itself. The file sits in this session's scratchpad, outside its workspace, and may prompt for read permission.
-- Run them only when `$TERM_PROGRAM` is `Apple_Terminal`. In another terminal, give the user the path and the command to run themselves.
-- The tab comes from a simulated cmd+T, which needs Accessibility permission for Terminal. Without it, or if the keystroke is lost, the script opens a new window instead. Read [scripts/lib-terminal.sh](scripts/lib-terminal.sh), which both scripts share, only to change how the tab opens.
+- Run them only when `$TMUX` is set or `$TERM_PROGRAM` is `Apple_Terminal`. In another terminal, give the user the path and the command to run themselves.
+- Inside tmux, the tab is a tmux window placed right after the caller's window, without taking focus; under iTerm2's `tmux -CC` it shows as an iTerm2 tab. In Terminal.app it is a new window, because Terminal cannot add a tab to a chosen window. Read [scripts/lib-terminal.sh](scripts/lib-terminal.sh), which both scripts share, only to change how the tab opens.
 
 Afterward, tell the user the handoff path and that the new session is open.
 

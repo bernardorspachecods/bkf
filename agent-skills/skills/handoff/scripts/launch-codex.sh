@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Open a new Terminal.app tab with a Codex session that reads the handoff file.
+# Open a new tab with a Codex session that reads the handoff file.
 # Usage: launch-codex.sh <working-dir> <handoff-file>
 set -euo pipefail
 source "$(dirname "$0")/lib-terminal.sh"
