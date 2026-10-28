@@ -77,4 +77,12 @@ rm -f "$work/stderr"
 env -u TMUX TERM_PROGRAM=other PATH="$work/bin:$PATH" "$script" claude "$work/repo" "$work/prompt.md" 2>"$work/stderr"
 check "refuses outside tmux and Terminal.app" '[ $? -ne 0 ] && grep -q "run inside tmux" "$work/stderr"'
 
+# The iTerm2 and Terminal.app paths need those apps, so only their AppleScript is checked: each
+# block must compile.
+awk -v dir="$work" '/<<'"'"'APPLESCRIPT'"'"'/{n++; f=dir"/as-"n".applescript"; next} /^APPLESCRIPT$/{f=""; next} f{print > f}' "$script"
+check "the launcher has three AppleScript blocks" '[ "$(ls "$work"/as-*.applescript | wc -l | tr -d " ")" = 3 ]'
+for f in "$work"/as-*.applescript; do
+  check "AppleScript $(basename "$f") compiles" 'osacompile -o "$work/out.scpt" "$f" 2>/dev/null'
+done
+
 exit $fail

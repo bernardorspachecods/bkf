@@ -35,7 +35,7 @@ Each script takes `<working-dir> <absolute-handoff-path> [model] [effort]`, open
 - [scripts/launch-claude.sh](scripts/launch-claude.sh) starts `claude`; the model is `opus`, `sonnet`, `haiku` or a full id, the effort `low` to `max`.
 - [scripts/launch-codex.sh](scripts/launch-codex.sh) starts `codex`; the model is a Codex model such as `gpt-6-luna`, the effort its reasoning effort.
 - Run them only when `$TMUX` is set or `$TERM_PROGRAM` is `Apple_Terminal`. In another terminal, give the user the path and the command to run themselves.
-- Inside tmux, the tab is a tmux window placed right after the caller's window, without taking focus; under iTerm2's `tmux -CC` it shows as an iTerm2 tab. In Terminal.app it is a new window, because Terminal cannot add a tab to a chosen window. Both scripts call the harness's shared [launch-session.sh](../../harness/scripts/launch-session.sh); read it only to change how the tab opens.
+- Inside tmux, the tab is a tmux window placed right after the caller's window, without taking focus; under iTerm2's `tmux -CC` it shows as an iTerm2 tab of the caller's window, which gets focus for a moment while the tab appears. In Terminal.app it is a new window, because Terminal cannot add a tab to a chosen window. Both scripts call the harness's shared [launch-session.sh](../../harness/scripts/launch-session.sh); read it only to change how the tab opens.
 
 Afterward, tell the user the handoff path and that the new session is open.
 

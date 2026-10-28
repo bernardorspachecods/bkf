@@ -52,9 +52,51 @@ cmd="cd $(q "$dir") && $cmd \"\$(cat $(q "$prompt"))\""
 # focus; under iTerm2's tmux -CC it shows as an iTerm2 tab. In Terminal.app it is a new window:
 # Terminal has no command to add a tab to a given window, and a simulated cmd+T lands in
 # whichever window has focus. After the agent exits, a login shell stays open in the tab.
+#
+# iTerm2 shows a new tmux window as a tab of its focused window, or of a new window when the
+# focused one belongs to another tmux client, never of the caller's window. So when iTerm2 is
+# attached (a tmux client in control mode), the caller's iTerm2 window gets focus until the tab
+# appears there, and the window focused before gets it back.
+iterm_focus_caller() {
+  osascript - "${TMUX_PANE#%}" <<'APPLESCRIPT' || true
+on run argv
+  tell application "iTerm2"
+    set focusedId to id of current window
+    repeat with w in windows
+      repeat with t in tabs of w
+        if (variable of (current session of t) named "tmuxWindowPane") is (item 1 of argv) then
+          set tabCount to count of tabs of w
+          select w
+          return (focusedId as text) & " " & (id of w) & " " & tabCount
+        end if
+      end repeat
+    end repeat
+  end tell
+end run
+APPLESCRIPT
+}
+iterm_restore_focus() { # <window focused before> <caller window> <its tab count before>
+  osascript - "$@" <<'APPLESCRIPT' >/dev/null || true
+on run argv
+  tell application "iTerm2"
+    repeat 30 times
+      if (count of tabs of window id ((item 2 of argv) as integer)) > ((item 3 of argv) as integer) then exit repeat
+      delay 0.1
+    end repeat
+    select window id ((item 1 of argv) as integer)
+  end tell
+end run
+APPLESCRIPT
+}
+
 if [[ -n ${TMUX:-} ]]; then
   caller=$(tmux display-message -p -t "${TMUX_PANE:?TMUX set without TMUX_PANE}" '#{window_id}')
+  focus=""
+  if tmux list-clients -t "$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}')" -F '#{client_control_mode}' | grep -qx 1; then
+    focus=$(iterm_focus_caller)
+  fi
   tmux new-window -d -a -t "$caller" ${window:+-n "$window"} "$cmd; exec \"\${SHELL:-/bin/zsh}\" -l"
+  [[ -z $focus ]] || iterm_restore_focus $focus
 elif [[ ${TERM_PROGRAM:-} == Apple_Terminal ]]; then
   # The command travels as an argument, so it needs no AppleScript escaping.
   osascript - "$cmd" >/dev/null <<'APPLESCRIPT'
