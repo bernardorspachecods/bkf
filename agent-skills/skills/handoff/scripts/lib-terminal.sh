@@ -9,7 +9,7 @@ check_args() {
   command -v "$3" >/dev/null || { printf 'Error: %s not found on PATH\n' "$3" >&2; exit 1; }
 }
 
-# open_tab <shell-command>: run the command in a new tab beside the caller.
+# open_tab <shell-command> [tmux-window-name]: run the command in a new tab beside the caller.
 # Inside tmux, the tab is a tmux window placed right after the caller's window
 # without taking focus; under iTerm2's tmux -CC it shows as an iTerm2 tab.
 # In Terminal.app it is a new window: Terminal has no command to add a tab to
@@ -19,7 +19,7 @@ open_tab() {
   if [[ -n ${TMUX:-} ]]; then
     local window
     window=$(tmux display-message -p -t "${TMUX_PANE:?TMUX set without TMUX_PANE}" '#{window_id}')
-    tmux new-window -d -a -t "$window" "$1; exec \"\${SHELL:-/bin/zsh}\" -l"
+    tmux new-window -d -a -t "$window" ${2:+-n "$2"} "$1; exec \"\${SHELL:-/bin/zsh}\" -l"
   elif [[ ${TERM_PROGRAM:-} = Apple_Terminal ]]; then
     # The command travels as an argument, so it needs no AppleScript escaping.
     osascript - "$1" <<'APPLESCRIPT'

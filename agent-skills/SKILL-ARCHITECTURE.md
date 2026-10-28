@@ -68,6 +68,16 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Council
   - `short_description`: Five advisors and five reviewers on one question
 
+## crew
+
+- Description: Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review, delegate-work) or to continue one task in a new chat (handoff).
+- Package: [`agent-skills/skills/crew`](skills/crew/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Crew
+  - `short_description`: Open coordinator sessions for the sub-plans of a large piece of work
+- Runtime policy: `explicit invocation required`
+
 ## delegate-work
 
 - Description: Hand one short, objective task to another agent, either a Claude subagent or a run of the harness on Codex or Claude, and check what comes back. Use when the user asks to delegate, or when a self-contained task suits a cheaper or parallel agent; do not use for work with several stages, a plan or a branch review (use plan, research, council or code-review), or to continue in a new chat (use handoff).

@@ -48,8 +48,11 @@ Four kinds of step: agents (N in parallel), a review with a verdict (pass, back 
 - Agents that read or write the repository work in a git worktree of the run, never in the owner's checkout: a plan on the branch `plan/<name>` (one commit per unit; the owner or the coordinator merges it), a code review at the revision under review. What a worktree lacks (dependencies, untracked configuration) is declared in the repository's committed `.plan-run.json` (`worktree.copy`, `worktree.prepare`) and set up by the script, not left to the coordinator. `--in-place` keeps the old behavior. Research and council agents never touch the repository, and `delegate-work` keeps working in place by default because its tasks are small.
 - Runs live in `~/.<workflow>-runs/<repo>/<run>` and pending plans in `~/.plan-runs-pending/<repo>/<plan>`; `start <name>` starts a pending plan and consumes it. Runs of the old flat layout are still found.
 - A plan run stops early when the same gate failure repeats in two rounds, and an agent can end with `BLOCKED:` or a reviewer with `VERDICT: brief`; `gates` lints the briefs and `rehearse` runs the gate lines before `start`.
+- A crew (skill `crew`) sits above the workflows and uses no harness code: the orchestrating chat opens one interactive Claude session per sub-plan in a tmux window, and the sessions talk through Claude Code's cross-session messaging. Its coordinators run the workflows; the module `coordinate-a-run` covers the orchestrator as the coordinator of a run that no script chains.
 
 ## Not yet seen working
+
+- A crew on real work: the launcher's test uses a fake `claude`, and a live crew of two read-only coordinators passed messages to each other and to the orchestrator; no crew has yet run a workflow such as plan.
 
 - A plan run in a worktree on a real repository with its dependencies (`desmor-hub`): the unit tests use fake agents and a repository without dependencies. How long `worktree.prepare` takes there is not known.
 - The quota signal for a hit usage limit on the Claude backend. It reads `rate_limit_info.status` and `resetsAt` of the `rate_limit_event`, whose real shape was confirmed with an `allowed` event; a limit itself was never reached, so the `rejected` shape is assumed.
