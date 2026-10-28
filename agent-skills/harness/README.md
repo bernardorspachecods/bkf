@@ -8,10 +8,12 @@ The standard-library Python engine that the run scripts of the `plan`, `research
 - `verdict read FILE` prints the verdict from the last non-empty line (exit 0) or exits 1; `verdict checked FILE --min N` exits 0 when `## What I checked` has at least `N` non-empty lines.
 - `agent run --dir DIR --prompt FILE --out-prefix PREFIX --model MODEL --effort EFFORT [--sandbox SANDBOX] [--tier TIER] [--backend BACKEND] [--web]` writes `PREFIX.events.jsonl`, `PREFIX.stderr.log` and `PREFIX.last-message.md`; it returns the backend's exit status, 1 for an injection error, 2 for an unknown backend or an operating-system error. The backend is `codex` or `claude`; without `--backend`, `HARNESS_BACKEND` picks it, else `codex`. `--web` adds `WebFetch` and `WebSearch` to a Claude agent's tools; Codex ignores it. The research workflow sets it for its map agent and collectors only. An agent whose events and stderr files stay the same size for `HARNESS_AGENT_STALL_TIMEOUT` seconds (default 1200, 0 turns it off) is ended and `agent run` returns 124, so a hung agent stops the run with a `STALLED` reason instead of leaving it waiting.
 - `run DEFINITION ...` runs a workflow definition under `workflows/` on the engine.
+- [`scripts/launch-session.sh`](scripts/launch-session.sh) `[--name N] [--model M] [--effort E] [--permission-mode P] [--window W] <claude|codex> <working-dir> <prompt-file>` opens an interactive session in a new tab beside the caller, with the prompt file as its first message: a tmux window right after the caller's when `$TMUX` is set, a new Terminal.app window otherwise. The `handoff` and `crew` skills launch their sessions through it; it is shell, not part of the Python engine.
 
 ## Files
 
 - [`scripts/lib.sh`](scripts/lib.sh)
+- [session launcher](scripts/launch-session.sh)
 - [the project metadata](pyproject.toml)
 - [package initializer](harness/__init__.py)
 - [module entry point](harness/__main__.py)
@@ -66,4 +68,4 @@ The standard-library Python engine that the run scripts of the `plan`, `research
 
 ## Tests
 
-Run the Python tests with `PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/harness/tests`, and the shell test [test-inject.sh](tests/test-inject.sh) with `bash`. Each workflow skill keeps its own tests in its `tests/` folder (see the skill's `SKILL.md`).
+Run the Python tests with `PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/harness/tests`, and the shell tests [test-inject.sh](tests/test-inject.sh) and [test-launch-session.sh](tests/test-launch-session.sh) with `bash`; the second needs `tmux` and starts a throwaway tmux server of its own. Each workflow skill keeps its own tests in its `tests/` folder (see the skill's `SKILL.md`).

@@ -5,7 +5,6 @@
 # Writes the full first message next to the brief as <brief>.prompt.md. Without a model or
 # effort, the session takes the user's defaults.
 set -euo pipefail
-source "$(dirname "$0")/../../handoff/scripts/lib-terminal.sh"
 
 name=${1:?coordinator name}
 orchestrator=${2:?orchestrator session name}
@@ -14,7 +13,7 @@ brief=${4:?brief file}
 model=${5:-}
 effort=${6:-}
 [[ $name =~ ^[a-z0-9][a-z0-9-]*$ ]] || { printf 'Error: name must be lowercase letters, digits and hyphens: %s\n' "$name" >&2; exit 1; }
-check_args "$dir" "$brief" claude
+[[ -f $brief && $brief == /* ]] || { printf 'Error: brief must be an absolute path to a file: %s\n' "$brief" >&2; exit 1; }
 
 session="crew-$name"
 prompt="${brief%.md}.prompt.md"
@@ -24,8 +23,8 @@ rules=${rules//'{{ORCHESTRATOR}}'/$orchestrator}
 printf '%s\n\n---\n\n%s\n' "$(<"$brief")" "$rules" > "$prompt"
 
 # Auto mode, like an orchestrator in auto mode: both count as prompting, so messages between them are delivered.
-flags="--name $session --permission-mode auto"
-[[ -n $model ]] && flags+=" --model $(printf '%q' "$model")"
-[[ -n $effort ]] && flags+=" --effort $(printf '%q' "$effort")"
-open_tab "cd $(printf '%q' "$dir") && claude $flags \"\$(cat $(printf '%q' "$prompt"))\"" "$session"
+args=(--name "$session" --permission-mode auto --window "$session")
+[[ -n $model ]] && args+=(--model "$model")
+[[ -n $effort ]] && args+=(--effort "$effort")
+"$(dirname "$0")/../../../harness/scripts/launch-session.sh" "${args[@]}" claude "$dir" "$prompt"
 printf '%s\n' "$session"

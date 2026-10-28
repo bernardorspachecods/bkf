@@ -30,12 +30,12 @@ after the task belong in the repository's documents, placed by
 
 ## Launch
 
-Each script takes `<working-dir> <absolute-handoff-path>`, opens a new tab in that directory and starts the agent there. The current chat is untouched. Use Claude unless the user asks for Codex.
+Each script takes `<working-dir> <absolute-handoff-path> [model] [effort]`, opens a new tab in that directory and starts the agent there with the whole handoff as its first message, so the user sees it in full. The current chat is untouched. Use Claude unless the user asks for Codex, and give a model or effort only when the user chose one; without them the session takes the user's defaults.
 
-- [scripts/launch-claude.sh](scripts/launch-claude.sh) starts `claude` with the whole handoff as its first message, so the user sees it in full.
-- [scripts/launch-codex.sh](scripts/launch-codex.sh) starts `codex` with a short prompt that points to the file, which Codex reads itself. The file sits in this session's scratchpad, outside its workspace, and may prompt for read permission.
+- [scripts/launch-claude.sh](scripts/launch-claude.sh) starts `claude`; the model is `opus`, `sonnet`, `haiku` or a full id, the effort `low` to `max`.
+- [scripts/launch-codex.sh](scripts/launch-codex.sh) starts `codex`; the model is a Codex model such as `gpt-6-luna`, the effort its reasoning effort.
 - Run them only when `$TMUX` is set or `$TERM_PROGRAM` is `Apple_Terminal`. In another terminal, give the user the path and the command to run themselves.
-- Inside tmux, the tab is a tmux window placed right after the caller's window, without taking focus; under iTerm2's `tmux -CC` it shows as an iTerm2 tab. In Terminal.app it is a new window, because Terminal cannot add a tab to a chosen window. Read [scripts/lib-terminal.sh](scripts/lib-terminal.sh), which both scripts share, only to change how the tab opens.
+- Inside tmux, the tab is a tmux window placed right after the caller's window, without taking focus; under iTerm2's `tmux -CC` it shows as an iTerm2 tab. In Terminal.app it is a new window, because Terminal cannot add a tab to a chosen window. Both scripts call the harness's shared [launch-session.sh](../../harness/scripts/launch-session.sh); read it only to change how the tab opens.
 
 Afterward, tell the user the handoff path and that the new session is open.
 
