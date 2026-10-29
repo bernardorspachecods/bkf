@@ -45,6 +45,7 @@ check "starts the session in auto mode" 'grep -A1 -x -- "--permission-mode" "$wo
 check "first message has the brief" 'grep -q "Sub-plan B: SARP outbox." "$work/out.args"'
 check "first message has the rules with names filled in" \
   'grep -q "You are \`crew-b\`" "$work/out.args" && grep -q "session \`orch-1\`" "$work/out.args" && ! grep -q "{{" "$work/out.args"'
+check "first message names the brief file" 'grep -qF "\`$work/b.md\`" "$work/out.args"'
 check "writes the full message next to the brief" '[ -f "$work/b.prompt.md" ]'
 check "passes no model or effort when none is given" '! grep -qx -- "--model" "$work/out.args" && ! grep -qx -- "--effort" "$work/out.args"'
 tmux -L "$sock" kill-server 2>/dev/null
