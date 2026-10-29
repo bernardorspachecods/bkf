@@ -50,15 +50,6 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Code work
   - `short_description`: Principles for writing and fixing code, and for verifying it
 
-## conversation-transcript
-
-- Description: Clean exported Codex session files into a user-assistant transcript, optionally retaining a compact activity trail. Use when asked to remove session artifacts or preserve an audit trail; do not use to summarize or rewrite the conversation.
-- Package: [`agent-skills/skills/conversation-transcript`](skills/conversation-transcript/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Conversation Transcript
-  - `short_description`: Clean exported session transcripts
-
 ## council
 
 - Description: Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume.
@@ -170,6 +161,16 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Run to completion
   - `short_description`: Final check with the user, then work alone until the plan is done
+- Runtime policy: `explicit invocation required`
+
+## session-export
+
+- Description: Export chosen Claude Code or Codex sessions to readable files with what the chat itself does not show (tokens per turn, models, what woke each turn, messages between sessions), to analyze how skills and instructions behave. Use only when the user asks to export or analyze specific sessions; do not use to summarize a conversation or to export sessions on your own initiative.
+- Package: [`agent-skills/skills/session-export`](skills/session-export/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Session Export
+  - `short_description`: Export chosen Claude or Codex sessions with their tokens and activity
 - Runtime policy: `explicit invocation required`
 
 ## skill-authoring

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Session Export"
+  short_description: "Export chosen Claude or Codex sessions with their tokens and activity"
+policy:
+  allow_implicit_invocation: false

@@ -6,7 +6,7 @@ tags: [harness, skills]
 
 # Skills audit against harness-goal
 
-What is still open after the audit of 2026-10-26 and the changes it led to (the harness moved out of `skills/`, the briefs became templates, runs and pending plans per repository, a worktree per run). What was settled is in git and in [harness-goal.md](/agent-skills/harness-goal.md). **Not read in the audit:** `brainstorm`, `prototype`, `evaluate-relevance`, `watch`, `retrieval-chat-audit`, `skill-authoring` (only the packaging parts), `git-worktree-cleanup`, `conversation-transcript`, `code-work` and `align-intent`. On 2026-10-27 they were searched for stale references to the harness, its paths and its scripts, and none was found.
+What is still open after the audit of 2026-10-26 and the changes it led to (the harness moved out of `skills/`, the briefs became templates, runs and pending plans per repository, a worktree per run). What was settled is in git and in [harness-goal.md](/agent-skills/harness-goal.md). **Not read in the audit:** `brainstorm`, `prototype`, `evaluate-relevance`, `watch`, `retrieval-chat-audit`, `skill-authoring` (only the packaging parts), `git-worktree-cleanup`, `code-work` and `align-intent`. On 2026-10-27 they were searched for stale references to the harness, its paths and its scripts, and none was found.
 
 ## Decided by the owner on 2026-10-27
 
