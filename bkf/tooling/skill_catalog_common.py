@@ -1033,7 +1033,15 @@ def generate_catalog(root: Path) -> str:
         "This document is generated from the non-empty packages under `agent-skills/skills/`.",
         "It contains only package metadata and supported runtime metadata derived from the repository.",
         "",
+        "| Skill | When to use it | Explicit only |",
+        "| --- | --- | --- |",
     ]
+    for entry in entries:
+        explicit = "yes" if entry["supported"].get("allow_implicit_invocation") is False else ""
+        lines.append(
+            f"| [{entry['name']}]({entry['skill_link']}) | {_markdown_value(entry['description'])} | {explicit} |"
+        )
+    lines.append("")
     for entry in entries:
         description = entry["description"]
         supported = entry["supported"]

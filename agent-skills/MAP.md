@@ -24,4 +24,4 @@ refresh the injected text and catalog.
 ## Artifact references
 
 - [Harness engine](/agent-skills/harness/README.md) — read it when you change how agents, gates, injection or workflow definitions run; each workflow's own script and definition are in its skill's `scripts/`.
-- [Generated skill catalog](/agent-skills/SKILL-ARCHITECTURE.md) — read the catalog when you need to inspect the skill collection as a whole.
+- [Generated skill catalog](/agent-skills/SKILL-ARCHITECTURE.md) — it opens with a table of every skill, when to use it, and whether it runs only when the user asks; read it when you need to know which skills exist or to inspect the collection as a whole.

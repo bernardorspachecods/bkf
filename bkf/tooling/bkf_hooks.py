@@ -54,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("action", choices=("install", "status", "run"))
     parser.add_argument("event", nargs="?", help="with run: the hook event to handle (used by the registered hooks)")
     parser.add_argument("--write", action="store_true", help="apply the install (the default is a preview)")
-    parser.add_argument("--only", choices=HOOK_NAMES, help="act on one hook instead of both")
+    parser.add_argument("--only", choices=HOOK_NAMES, help="act on one hook group instead of all of them")
     parser.add_argument("--home", type=Path, help="home directory to act on (defaults to the real one)")
     return parser
 

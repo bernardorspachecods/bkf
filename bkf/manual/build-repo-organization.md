@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "The procedure for organizing a repository's documents under BKF for the first time, or revamping an outdated one, as a conversation with the user. Owns the build-only rules and the user's decision points; the upkeep rules are in the `repo-maintenance` skill and the reasons in what-is-bkf."
+description: "The procedure for organizing a repository's documents under BKF for the first time, or revamping an outdated one, as a conversation with the user. Owns the build-only rules, the user's decision points and what the repository has when it is done; the upkeep rules are in the `repo-maintenance` skill and the reasons in what-is-bkf."
 tags: [bkf, manual]
 ---
 
@@ -25,6 +25,22 @@ The rules that apply both while building and after are in the `repo-maintenance`
 3. **Propose the target as a whole, and get it approved by exception.** Write the target in one file, a section per area, where the user can open it. It is a working note, not a document of the repo: keep it untracked and without BKF frontmatter so no map lists it. For each area, show the documents it should have, what each owns and where its edge is (what a close neighbour owns instead), whether a task router adds anything the generated map will not, which unlisted files to log, and what to merge, move, or remove. Decide the target from responsibility, authority, lifecycle, and real consumers. The user approves the file or marks the points to change; list your assumptions in it so each can be objected to.
 4. **Execute, only after step 3 is settled.** Move, merge, and remove documents by the "Fix what is clearly wrong, ask about what is not" rule in the `repo-maintenance` skill. Then add frontmatter and descriptions to every tracked document and every map, regenerate the maps with the BKF tooling, and add the repo's entry pointer in `AGENTS.md`.
 5. **Verify, then ask the user to confirm.** Run the BKF validator and the inventory check, and rerun the repo's own checks from step 1 against the baseline. Read the root map as if the repo were new to you; for each row, say what the area is from the row alone. If a row does not make its area clear, its description is not done. Search every file, ignored local ones included, for the old names and paths you changed, and search for facts still written in more than one place and for stale areas that are not flagged. Trace two or three real tasks the user names to see whether an agent would find the right documents from the map. Report what was checked and what was not. Remove the working notes (findings, target) and any exported transcript from the repo unless the user asks to keep them. The repo is organized when the user says so.
+
+## What the repo has when it is done
+
+The target from step 3 decides the documents and areas; these are what every target ends with, or adds when its condition holds. Each row names where its rules are; do not restate them in the repo.
+
+| In the repo | When | Rules in |
+| --- | --- | --- |
+| A root `MAP.md` with `bkf_version` and a generated member inventory | Always | [Specification §3.1](/format/format-specification.md#31-map-files-and-inventories) |
+| A tracked root `AGENTS.md` that links the root map near its start and holds only the repo's agent rules | Always | [Specification §3](/format/format-specification.md#3-reserved-files-and-maps), the `repo-maintenance` skill |
+| Frontmatter with a `description` on every tracked document | Always | [Frontmatter profiles](/format/frontmatter-profiles.md) |
+| A nested `MAP.md` | A folder is a distinct navigation boundary | [Map placement guidance](/format/format-specification.md#map-placement-guidance) |
+| Task routes in a map | Requests that cross areas or are ambiguous | The `repo-maintenance` skill |
+| A `repo-library/` | A procedure has repeated and the user approves | The `repo-library` skill |
+| `feedback.md` or `ideas.md`, with the logging rule in `AGENTS.md` | The user wants them | [Specification §3.2](/format/format-specification.md#32-feedback-file), [§3.4](/format/format-specification.md#34-ideas-file) |
+
+The `bkf` command, the skill links and the hooks are installed on the machine, not in the repo, with this repository's `INSTALL.md`.
 
 ## For an outdated repo
 

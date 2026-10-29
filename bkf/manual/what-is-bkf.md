@@ -37,7 +37,7 @@ The format defines what a valid bundle is, and its tooling makes the structure c
 
 ## Hooks
 
-Hooks handle behavior that must run in every session, which a skill cannot guarantee. The optional groups are: modes set talk (`t:`) or work (`w:`) mode; orient provides context at session start; check validates changed bundles when the session stops, blocking on errors and passing warnings to the agent with its next prompt; log records ideas (`i:`) and feedback (`f:`); guard returns a document's navigation map on the first whole-file read of a large Markdown file and refuses a run script or `codex exec` launched in the foreground; audit (`bkf:`) reports git changes and bundle health for the whole repository; rules loads personal instructions. Install hooks using the repository's `INSTALL.md`. Installation seeds `~/.agent-hooks/rules.md` with default rules when it is missing; you own the file afterward and installation never overwrites it. See the [hook command details](/tooling/commands.md#bkf-hooks).
+Hooks handle behavior that must run in every session, which a skill cannot guarantee: context the agent must see before the first prompt, a check that must run before a session ends, a mode the agent cannot leave on its own, a refusal that must hold even when the agent forgets a rule. They are optional and installed once per machine with the repository's `INSTALL.md`. What each group does is in the [`bkf hooks` reference](/tooling/commands.md#bkf-hooks).
 
 ## How a task moves through the layers
 

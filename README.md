@@ -21,7 +21,7 @@ BKF organizes a repository's knowledge so agents can find the current guidance a
 
 ## Entry points
 
-[Repository map](MAP.md) · [Agent instructions](AGENTS.md) · [BKF map](bkf/MAP.md) · [Agent skills map](agent-skills/MAP.md) · [What BKF is](bkf/manual/what-is-bkf.md)
+[Repository map](MAP.md) · [What this repository provides](system.md) · [Agent instructions](AGENTS.md) · [BKF map](bkf/MAP.md) · [Agent skills map](agent-skills/MAP.md) · [What BKF is](bkf/manual/what-is-bkf.md)
 
 ## License
 

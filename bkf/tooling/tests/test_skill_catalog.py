@@ -58,6 +58,30 @@ class SkillCatalogTests(unittest.TestCase):
         self.assertTrue(any(issue["code"] == "SKILL_MISSING" for issue in report["issues"]))
         self.assertTrue(any(issue["code"] == "SKILL_EMPTY" for issue in report["issues"]))
 
+    def test_catalog_opens_with_one_summary_row_per_skill(self):
+        temp_dir, root, skills = self.make_repo()
+        self.add_skill(
+            skills,
+            "alpha-skill",
+            "---\nname: alpha-skill\ndescription: Use for alpha | beta work\n---\n",
+        )
+        self.add_skill(
+            skills,
+            "beta-skill",
+            "---\nname: beta-skill\ndescription: Use only when asked\n---\n",
+            "policy:\n  allow_implicit_invocation: false\n",
+        )
+
+        try:
+            catalog = generate_catalog(root)
+        finally:
+            temp_dir.cleanup()
+
+        summary = catalog.split("\n## ", 1)[0]
+        self.assertIn("| Skill | When to use it | Explicit only |\n| --- | --- | --- |\n", summary)
+        self.assertIn("| [alpha-skill](skills/alpha-skill/SKILL.md) | Use for alpha \\| beta work |  |\n", summary)
+        self.assertIn("| [beta-skill](skills/beta-skill/SKILL.md) | Use only when asked | yes |\n", summary)
+
     def test_app_managed_synced_folder_is_not_a_package(self):
         temp_dir, root, skills = self.make_repo()
         self.add_skill(

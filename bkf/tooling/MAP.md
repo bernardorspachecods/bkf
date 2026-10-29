@@ -15,6 +15,17 @@ the installed tool's environment, so plain `python3` does not run them.
 "$(uv tool dir)/bkf-tooling/bin/python3" -m unittest discover -s bkf/tooling/tests
 ```
 
+To add or change a hook:
+
+1. Register it in `registrations()` in [bkf_hooks.py](/tooling/bkf_hooks.py); a new group also goes in `HOOK_NAMES`, which sets the `--only` choices. Add a probe case in `_probe_command` if the hook needs special probe input, because `install --write` and `status` run every registered command with probe input.
+2. Handle its `bkf hooks run <event>` in [hook_events.py](/tooling/hook_events.py), as every event but `rules` is: the event name in `EVENTS`, a branch in `main`, and a case in `_probe`, which rejects an event it does not know. Put a substantial handler in its own module.
+3. Add a new module to `py-modules` in [pyproject.toml](/tooling/pyproject.toml) and to the artifact references below; the installed command fails with `ModuleNotFoundError` until it is reinstalled with `--reinstall`.
+4. Add tests in `tests/test_hooks.py` and `tests/test_hook_events.py`.
+5. Describe the behavior in the [`bkf hooks` section](/tooling/commands.md#bkf-hooks), its only owner, including the group list in its usage line.
+6. Run the tests, reinstall, then `bkf hooks install` to preview, `bkf hooks install --write` and `bkf hooks status`.
+
+To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/tooling/bkf_cli.py), which also feeds `bkf help`, and a section and a navigation-map row in [commands.md](/tooling/commands.md); steps 3, 4 and the tests of step 6 apply as for a hook.
+
 ## Member inventory
 
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->

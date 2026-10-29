@@ -38,7 +38,7 @@ checkout moves, reinstall from the new path.
 The editable install records the `py-modules` list in `pyproject.toml` when it
 is created. After adding or renaming a module there, a command fails with
 `ModuleNotFoundError` until each install is refreshed: rerun the command above
-with `--force`, and for a checkout's `.venv` run
+with `--reinstall`, and for a checkout's `.venv` run
 `uv pip install --python bkf/tooling/.venv/bin/python -e bkf/tooling`.
 
 Skills are installed through the symlink `~/.claude/skills`. Their relative
