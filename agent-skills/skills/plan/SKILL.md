@@ -205,9 +205,11 @@ Unit brief
   before and after.
 - **When the checking tool does not exist yet,** make building it a unit that
   comes first, and put the commands of the unit that uses it in that later unit.
-- **Say how each command was shown to fail.** The `core-code-principles` module requires a
-  check to be able to fail. Write in the unit how that was shown: a test that was
-  run against a broken copy, or a case that is expected to be rejected.
+- **Put the proof that a check can fail where the reviewer sees it.** The `core-code-principles` module
+  requires a check to be able to fail. The proof is in the diff (a test run against a broken copy) or in
+  the gate (a line that runs the check against a case it must reject). Never in the handoff or in a
+  sentence the implementer attests: the reviewer sees only the brief, the diff and the gate result. No
+  criterion may depend on what the implementer reports.
 - **Criteria are what the gate cannot decide:** whether the diff stays in scope,
   whether what the unit leaves ready is there as stated, whether prose is accurate,
   how a page looks. Say who judges each: the reviewer by reading, or the user.

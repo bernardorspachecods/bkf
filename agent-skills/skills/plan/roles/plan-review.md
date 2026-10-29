@@ -63,6 +63,9 @@ it fail (the wrong input it rejects, the behaviour it would catch) and say where
 check you cannot make fail, for example because the build never includes it or it
 asserts what it just set up, is a problem of its own, even though the gate is green.
 
+**Judge only what you can see.** A criterion that only the handoff or the implementer's word
+could prove is reported as unchecked; it is not a reason to send the unit back or escalate.
+
 **A problem comes with a reproduction when it can.** If you find a case the gate
 does not cover, show it as a command or test that fails, and say it belongs in the
 gate. A case the brief never asked for is a weak point to report, not a reason to

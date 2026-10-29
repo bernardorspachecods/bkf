@@ -41,8 +41,9 @@ the handoff. If the failure cannot come from your change, or fixing it needs wha
 do not repeat the attempt: say so, with the command, its output and the sentence of the brief that
 conflicts. Repeating the same attempt only spends rounds.
 
-**Say in the handoff how each new check was shown to fail:** which check you broke,
-how, and what failed.
+**Show each new check able to fail where the reviewer sees it:** a test in the diff that runs
+the check against a broken copy, or a gate line that must reject a bad case. The handoff may
+note it, but it is not the proof: the reviewer does not read it.
 
 ## When to stop midway
 
