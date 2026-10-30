@@ -116,8 +116,11 @@ def board(run, compact=False):
     status_lines = _read(run_path / "status.log").splitlines()
     stamp = status_lines[1].split("\t", 1)[0] if len(status_lines) > 1 and "\t" in status_lines[1] else ""
     start_time = stamp.partition("T")[2][:5] or "--:--"
-    result = "Plano {0} · {1} unidades · início {2} → agora {3}\n\n".format(
-        run_path.name, len(units), start_time, _now_time()
+    # A plan of one or two steps fits on screen, so only a longer plan loses its titles and blank lines.
+    compact = compact and len(lines) > 2
+    gap = "" if compact else "\n"
+    result = "Plano {0} · {1} unidades · início {2} → agora {3}\n{4}".format(
+        run_path.name, len(units), start_time, _now_time(), gap
     )
     finished = []
     for step, line in enumerate(lines, 1):
@@ -135,7 +138,7 @@ def board(run, compact=False):
             finished.append(step)
     folded = set()
     pending_group = []
-    if compact and len(lines) > 2:
+    if compact:
         # Show only the step in progress and the next one; fold the rest.
         focus = next((step for step in range(1, len(lines) + 1) if step not in finished), None)
         if focus is None:
@@ -143,46 +146,8 @@ def board(run, compact=False):
         else:
             folded = {step for step in finished if step < focus}
             tail = list(range(focus + 2, len(lines) + 1))
-            if len(tail) > 1 and not any(step in finished for step in tail):
+            if tail and not any(step in finished for step in tail):
                 pending_group = tail
-    if folded:
-        folded_units = [unit for step in folded for unit in lines[step - 1]]
-        folded_rounds = sum(_round_count(run_path / unit) for unit in folded_units)
-        folded_rounds += sum(
-            _round_count(run_path / "S{0}-integration".format(step))
-            for step in folded if len(lines[step - 1]) > 1
-        )
-        if len(folded) == 1:
-            folded_label = "Passo {0} passou".format(next(iter(folded)))
-        else:
-            folded_label = "Passos 1-{0} passaram".format(max(folded))
-        folded_row = "  ✓ {0} · {1} unidades · {2} rondas\n\n".format(
-            folded_label, len(folded_units), folded_rounds
-        )
-        first_folded = min(folded)
-    else:
-        folded_row = ""
-        first_folded = None
-    for step, line in enumerate(lines, 1):
-        if step in folded:
-            if step == first_folded:
-                result += folded_row
-            continue
-        if step in pending_group:
-            if step == pending_group[0]:
-                result += "  ○ Passos {0}-{1} pendentes · {2} unidades\n\n".format(
-                    step, pending_group[-1], sum(len(lines[number - 1]) for number in pending_group)
-                )
-            continue
-        parallel = len(line) > 1
-        result += "Passo {0}{1}\n".format(step, " (paralelo)" if parallel else "")
-        step_done = (run_path / ".done-S{0}".format(step)).exists()
-        stopped = _step_stopped(events, step)
-        for unit in line:
-            result += board_state_row(run_path, "unit", unit, step, step_done, stopped, width)
-        if parallel:
-            result += board_state_row(run_path, "integration", "integração", step, False, stopped, width)
-        result += "\n"
     final_state = 0
     for event in events:
         if event.startswith("start final review"):
@@ -199,6 +164,59 @@ def board(run, compact=False):
         final_icon, final_status = "◐", "revisão"
     else:
         final_icon, final_status = "○", "pendente"
+    final_pending = final_icon == "○"
+    merge_final = bool(pending_group) and final_pending
+    if folded:
+        folded_units = [unit for step in folded for unit in lines[step - 1]]
+        folded_rounds = sum(_round_count(run_path / unit) for unit in folded_units)
+        folded_rounds += sum(
+            _round_count(run_path / "S{0}-integration".format(step))
+            for step in folded if len(lines[step - 1]) > 1
+        )
+        if len(folded) == 1:
+            folded_label = "Passo {0} passou".format(next(iter(folded)))
+        else:
+            folded_label = "Passos 1-{0} passaram".format(max(folded))
+        folded_row = "  ✓ {0} · {1} {2} · {3} rondas\n{4}".format(
+            folded_label, len(folded_units), "unidade" if len(folded_units) == 1 else "unidades",
+            folded_rounds, gap
+        )
+        first_folded = min(folded)
+    else:
+        folded_row = ""
+        first_folded = None
+    for step, line in enumerate(lines, 1):
+        if step in folded:
+            if step == first_folded:
+                result += folded_row
+            continue
+        if step in pending_group:
+            if step == pending_group[0]:
+                count = sum(len(lines[number - 1]) for number in pending_group)
+                if len(pending_group) == 1:
+                    pending_label = "Passo {0}".format(step)
+                else:
+                    pending_label = "Passos {0}-{1}".format(step, pending_group[-1])
+                if merge_final:
+                    pending_label += " + revisão final"
+                pending_label += " pendente" if len(pending_group) == 1 and not merge_final else " pendentes"
+                result += "  ○ {0} · {1} {2}\n{3}".format(
+                    pending_label, count, "unidade" if count == 1 else "unidades", gap
+                )
+            continue
+        parallel = len(line) > 1
+        # The compact board drops the step title of a single-unit step: the unit name is numbered.
+        if parallel or not compact:
+            result += "Passo {0}{1}\n".format(step, " (paralelo)" if parallel else "")
+        step_done = (run_path / ".done-S{0}".format(step)).exists()
+        stopped = _step_stopped(events, step)
+        for unit in line:
+            result += board_state_row(run_path, "unit", unit, step, step_done, stopped, width)
+        if parallel:
+            result += board_state_row(run_path, "integration", "integração", step, False, stopped, width)
+        result += gap
+    if merge_final:
+        return result
     return result + _emit(final_icon, "Revisão final", final_status, width)
 
 

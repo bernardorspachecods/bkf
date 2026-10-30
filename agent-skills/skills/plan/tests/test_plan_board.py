@@ -75,10 +75,12 @@ class PlanBoardTests(unittest.TestCase):
         compact = self.board()
         full = WORKFLOW.full_board(self.ctx())
 
-        self.assertIn("  ✓ Passos 1-2 passaram · 2 unidades · 3 rondas\n\n", compact)
+        self.assertIn("  ✓ Passos 1-2 passaram · 2 unidades · 3 rondas\n", compact)
         self.assertNotIn("Passo 1\n", compact)
         self.assertNotIn("Passo 2\n", compact)
-        self.assertIn("Passo 3\n  ✓ 03-gamma", compact)
+        self.assertIn("rondas\n  ✓ 03-gamma", compact)
+        self.assertNotIn("Passo 3\n", compact)
+        self.assertNotIn("\n\n", compact)
         self.assertIn("Passo 1\n  ✓ 01-alpha", full)
         self.assertIn("Passo 2\n  ✓ 02-beta", full)
         self.assertIn("Passo 3\n  ✓ 03-gamma", full)
@@ -92,14 +94,16 @@ class PlanBoardTests(unittest.TestCase):
 
         board = self.board()
 
-        self.assertIn("  ✓ Passos 1-2 passaram · 2 unidades · 3 rondas\n\n", board)
-        self.assertIn("Passo 3\n  ◐ 03-c", board)
-        self.assertIn("Passo 4\n  ○ 04-d", board)
-        self.assertIn("  ○ Passos 5-6 pendentes · 2 unidades\n\n", board)
+        self.assertIn("  ✓ Passos 1-2 passaram · 2 unidades · 3 rondas\n", board)
+        self.assertIn("  ◐ 03-c ", board)
+        self.assertIn("  ○ 04-d ", board)
+        self.assertIn("  ○ Passos 5-6 + revisão final pendentes · 2 unidades\n", board)
+        self.assertNotIn("Passo 3\n", board)
         self.assertNotIn("Passo 5\n", board)
-        self.assertTrue(board.endswith("  ○ Revisão final  pendente\n"))
+        self.assertNotIn("\n\n", board)
+        self.assertNotIn("Revisão final  pendente", board)
 
-    def test_board_keeps_stopped_step_visible_and_single_tail_step_expanded(self):
+    def test_board_keeps_stopped_step_visible_and_groups_single_tail_step(self):
         names = ["01-a", "02-b", "03-c", "04-d"]
         (self.run_path / "00-input" / "order").write_text("\n".join(names) + "\n", encoding="utf-8")
         self.unit("01-a", "passed")
@@ -107,11 +111,23 @@ class PlanBoardTests(unittest.TestCase):
 
         board = self.board()
 
-        self.assertIn("  ✓ Passo 1 passou", board)
-        self.assertIn("Passo 2\n  ✗ 02-b", board)
-        self.assertIn("Passo 3\n  ○ 03-c", board)
-        self.assertIn("Passo 4\n  ○ 04-d", board)
+        self.assertIn("  ✓ Passo 1 passou · 1 unidade · 1 rondas\n", board)
+        self.assertIn("  ✗ 02-b ", board)
+        self.assertIn("  ○ 03-c ", board)
+        self.assertIn("  ○ Passo 4 + revisão final pendentes · 1 unidade\n", board)
+        self.assertNotIn("Passo 4\n", board)
+
+    def test_board_keeps_final_review_row_when_no_step_is_grouped(self):
+        names = ["01-a", "02-b", "03-c"]
+        (self.run_path / "00-input" / "order").write_text("\n".join(names) + "\n", encoding="utf-8")
+        self.unit("01-a", "passed")
+        self.unit("02-b", "passed")
+        self.unit("03-c", "gate round 1")
+
+        board = self.board()
+
         self.assertNotIn("pendentes", board)
+        self.assertTrue(board.endswith("  ○ Revisão final  pendente\n"))
 
     def test_two_step_plan_keeps_both_finished_steps_expanded(self):
         self.unit("01-alpha", "passed")
@@ -242,7 +258,7 @@ class PlanBoardTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("Plano live-board · 3 unidades · início ", errors.getvalue())
         self.assertIn("✓ Passos 1-2 passaram · 2 unidades · 2 rondas", errors.getvalue())
-        self.assertIn("Passo 3\n  ✓ 03-unit3", errors.getvalue())
+        self.assertIn("rondas\n  ✓ 03-unit3", errors.getvalue())
         run_path = self.fixture.runs / "live-board"
         full_board = (run_path / "board.txt").read_text(encoding="utf-8")
         self.assertIn("Passo 1\n  ✓ 01-unit", full_board)
