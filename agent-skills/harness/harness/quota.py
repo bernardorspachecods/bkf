@@ -1,4 +1,5 @@
 """Wait for the reset time that the QUOTA line of a run names."""
+import os
 import re
 import sys
 import time
@@ -42,8 +43,11 @@ def parse_reset(text, now):
     return None
 
 
-def wait_for_reset(text, margin, now=None, sleep=time.sleep, clock=time.time):
-    """Sleep until the named time plus `margin` seconds. Return 0, or 2 when the text is not understood."""
+def wait_for_reset(text, margin, now=None, sleep=time.sleep, clock=time.time, announce=None):
+    """Sleep until the named time plus `margin` seconds. Return 0, or 2 when the text is not understood.
+
+    With `announce`, the wake-up time (epoch seconds) is written to that file while waiting and the file is
+    removed on the way out, so a watcher can tell a wait that is running to its end from one that hung."""
     start = now or datetime.now().astimezone()
     moment = parse_reset(text, start)
     if moment is None:
@@ -53,9 +57,21 @@ def wait_for_reset(text, margin, now=None, sleep=time.sleep, clock=time.time):
     target = moment.timestamp() + margin
     print("quota-wait: waiting until {0}".format(
         datetime.fromtimestamp(target).astimezone().strftime("%Y-%m-%d %H:%M:%S")), file=sys.stderr)
-    # Re-check the wall clock every pass so a sleeping laptop does not oversleep or undersleep.
-    while True:
-        remaining = target - clock()
-        if remaining <= 0:
-            return 0
-        sleep(min(remaining, 30))
+    if announce:
+        os.makedirs(os.path.dirname(announce) or ".", exist_ok=True)
+        with open(announce + ".tmp", "w") as handle:
+            handle.write("{0}\n".format(int(target)))
+        os.replace(announce + ".tmp", announce)
+    try:
+        # Re-check the wall clock every pass so a sleeping laptop does not oversleep or undersleep.
+        while True:
+            remaining = target - clock()
+            if remaining <= 0:
+                return 0
+            sleep(min(remaining, 30))
+    finally:
+        if announce:
+            try:
+                os.remove(announce)
+            except OSError:
+                pass

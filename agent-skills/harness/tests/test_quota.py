@@ -1,4 +1,5 @@
 import io
+import os
 import unittest
 from contextlib import redirect_stderr
 from datetime import datetime, timedelta, timezone
@@ -82,7 +83,34 @@ class WaitTests(unittest.TestCase):
     def test_cli_passes_text_and_margin(self):
         with patch("harness.cli.wait_for_reset", return_value=0) as wait:
             self.assertEqual(cli.main(["quota-wait", "--margin", "60", "8:26 PM"]), 0)
-        wait.assert_called_once_with("8:26 PM", 60)
+        wait.assert_called_once_with("8:26 PM", 60, announce=None)
+
+    def test_cli_passes_announce_file(self):
+        with patch("harness.cli.wait_for_reset", return_value=0) as wait:
+            cli.main(["quota-wait", "--announce", "/w/crew-a", "8:26 PM"])
+        wait.assert_called_once_with("8:26 PM", 120, announce="/w/crew-a")
+
+    def test_announce_holds_the_wake_time_while_waiting_and_is_removed_after(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "sub", "crew-a")
+        clock = [NOW.timestamp()]
+        seen = []
+
+        def sleep(seconds):
+            seen.append(open(path).read().strip())
+            clock[0] += seconds
+
+        with redirect_stderr(io.StringIO()):
+            wait_for_reset("7:49 PM", 120, now=NOW, sleep=sleep, clock=lambda: clock[0], announce=path)
+        self.assertEqual(seen[0], str(int(at(2026, 10, 29, 19, 51).timestamp())))
+        self.assertFalse(os.path.exists(path))
+
+    def test_unreadable_text_announces_nothing(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "crew-a")
+        with redirect_stderr(io.StringIO()):
+            wait_for_reset("tomorrow", 120, now=NOW, sleep=self.fail, clock=lambda: 0, announce=path)
+        self.assertFalse(os.path.exists(path))
 
 
 if __name__ == "__main__":

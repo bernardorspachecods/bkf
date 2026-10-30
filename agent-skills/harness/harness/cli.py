@@ -45,6 +45,7 @@ def _parser():
     quota_parser = subparsers.add_parser("quota-wait")
     quota_parser.add_argument("text")
     quota_parser.add_argument("--margin", type=int, default=120)
+    quota_parser.add_argument("--announce")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("definition_path")
     run_parser.add_argument("arguments", nargs=argparse.REMAINDER)
@@ -55,7 +56,7 @@ def main(argv=None):
     parser = _parser()
     args = parser.parse_args(argv)
     if args.area == "quota-wait":
-        return wait_for_reset(args.text, args.margin)
+        return wait_for_reset(args.text, args.margin, announce=args.announce)
     if args.area == "run":
         return run_workflow(args.definition_path, args.arguments)
     if args.area == "agent":
