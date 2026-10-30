@@ -72,6 +72,10 @@ A coordinator whose action is denied, or waits on the user's approval, tells you
   After handling the alerts, launch it again with the same state folder: an alert already delivered is not repeated, and an unchanged pane reminds you once an hour. Remove a coordinator from the targets when its window closes on purpose, and stop the watcher (`TaskStop`) when the phase ends.
 - To change a brief, edit its file and message the coordinator that it changed; its rules name the file, so it rereads it there.
 - You speak for the user to the coordinators: a decision you send or write into a brief carries the user's authority, and the coordinator acts on it without asking the user. Use that only within the intent agreed with the user; a decision outside it goes to the user first.
+- A coordinator missing from `ListAgents` is not a coordinator that is gone. A session registers in `~/.claude/sessions/<pid>.json`, and `ListAgents` skips a file it cannot parse (a full disk can leave one with stray text after the JSON). Look before you conclude: `tmux list-windows` and `tmux capture-pane -p -t <window>` show whether the window lives, and a socket in `/tmp/cc-socks/<pid>.sock` means the session listens. Then, in this order:
+  1. `SendMessage` to the socket address, `uds:/tmp/cc-socks/<pid>.sock`, in place of the name.
+  2. Only if that fails, type into the window with `tmux send-keys -t <window> -l "[orquestrador] <message>"` and then `Enter`, after `capture-pane` shows an empty `❯` prompt and no permission prompt. Typed text arrives as if the user wrote it, so it must start with `[orquestrador]`, and it never carries a request to approve a prompt or change settings. Check the pane afterwards that it was received.
+  Tell the user which registry file is unreadable; repairing it is theirs, because it is Claude Code's own state.
 - A blocked coordinator gets a revised brief or a decision from you or the user, not your work in its place.
 - Closing a coordinator's window is the user's call.
 
