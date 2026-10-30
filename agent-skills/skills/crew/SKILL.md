@@ -32,6 +32,8 @@ Settle the intent with the user first (`align-intent`), for the crew as a whole:
 - the workflow each coordinator is expected to use, and its model and effort if the user wants other than their defaults;
 - the checkpoints: at least the end of each phase, where you stop and the user decides whether the next phase opens.
 
+A coordinator is for work that needs coordination: several sub-plans, or one sub-plan complex enough to need its own workflows. A simple, localized fix is not: do it yourself in this chat, following `code-work`, and open no coordinator for it.
+
 Run it inside tmux (`$TMUX` is set): coordinators open as tmux windows. In Terminal.app they open as separate windows, and in any other terminal the launcher refuses.
 
 ## Brief
