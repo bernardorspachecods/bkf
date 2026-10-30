@@ -85,7 +85,7 @@ class PlanBoardTests(unittest.TestCase):
         self.assertIn("Passo 2\n  ✓ 02-beta", full)
         self.assertIn("Passo 3\n  ✓ 03-gamma", full)
 
-    def test_board_shows_only_running_and_next_step(self):
+    def test_board_shows_only_the_running_step(self):
         names = ["01-a", "02-b", "03-c", "04-d", "05-e", "06-f"]
         (self.run_path / "00-input" / "order").write_text("\n".join(names) + "\n", encoding="utf-8")
         self.unit("01-a", "passed", rounds=1)
@@ -96,14 +96,13 @@ class PlanBoardTests(unittest.TestCase):
 
         self.assertIn("  ✓ Passos 1-2 passaram · 2 unidades · 3 rondas\n", board)
         self.assertIn("  ◐ 03-c ", board)
-        self.assertIn("  ○ 04-d ", board)
-        self.assertIn("  ○ Passos 5-6 + revisão final pendentes · 2 unidades\n", board)
+        self.assertIn("  ○ Passos 4-6 + revisão final pendentes · 3 unidades\n", board)
+        self.assertNotIn("04-d", board)
         self.assertNotIn("Passo 3\n", board)
-        self.assertNotIn("Passo 5\n", board)
         self.assertNotIn("\n\n", board)
         self.assertNotIn("Revisão final  pendente", board)
 
-    def test_board_keeps_stopped_step_visible_and_groups_single_tail_step(self):
+    def test_board_keeps_stopped_step_visible_and_groups_the_pending_tail(self):
         names = ["01-a", "02-b", "03-c", "04-d"]
         (self.run_path / "00-input" / "order").write_text("\n".join(names) + "\n", encoding="utf-8")
         self.unit("01-a", "passed")
@@ -113,9 +112,8 @@ class PlanBoardTests(unittest.TestCase):
 
         self.assertIn("  ✓ Passo 1 passou · 1 unidade · 1 rondas\n", board)
         self.assertIn("  ✗ 02-b ", board)
-        self.assertIn("  ○ 03-c ", board)
-        self.assertIn("  ○ Passo 4 + revisão final pendentes · 1 unidade\n", board)
-        self.assertNotIn("Passo 4\n", board)
+        self.assertIn("  ○ Passos 3-4 + revisão final pendentes · 2 unidades\n", board)
+        self.assertNotIn("03-c", board)
 
     def test_board_keeps_final_review_row_when_no_step_is_grouped(self):
         names = ["01-a", "02-b", "03-c"]
@@ -128,6 +126,20 @@ class PlanBoardTests(unittest.TestCase):
 
         self.assertNotIn("pendentes", board)
         self.assertTrue(board.endswith("  ○ Revisão final  pendente\n"))
+
+    def test_two_step_plan_with_pending_parallel_step_folds_it_with_the_final_review(self):
+        (self.run_path / "00-input" / "order").write_text(
+            "01-alpha\n02-beta 03-gamma\n", encoding="utf-8"
+        )
+        self.unit("01-alpha", "implementing round 1")
+
+        board = self.board()
+
+        self.assertIn("  ◐ 01-alpha ", board)
+        self.assertIn("  ○ Passo 2 + revisão final pendentes · 2 unidades\n", board)
+        self.assertNotIn("02-beta", board)
+        self.assertNotIn("\n\n", board)
+        self.assertNotIn("Revisão final  pendente", board)
 
     def test_two_step_plan_keeps_both_finished_steps_expanded(self):
         self.unit("01-alpha", "passed")

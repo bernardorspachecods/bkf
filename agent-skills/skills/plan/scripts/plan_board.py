@@ -116,8 +116,9 @@ def board(run, compact=False):
     status_lines = _read(run_path / "status.log").splitlines()
     stamp = status_lines[1].split("\t", 1)[0] if len(status_lines) > 1 and "\t" in status_lines[1] else ""
     start_time = stamp.partition("T")[2][:5] or "--:--"
-    # A plan of one or two steps fits on screen, so only a longer plan loses its titles and blank lines.
-    compact = compact and len(lines) > 2
+    # A plan of one or two single-unit steps fits on screen, so only a longer plan or one with a parallel step
+    # loses its titles and blank lines.
+    compact = compact and (len(lines) > 2 or any(len(line) > 1 for line in lines))
     gap = "" if compact else "\n"
     result = "Plano {0} · {1} unidades · início {2} → agora {3}\n{4}".format(
         run_path.name, len(units), start_time, _now_time(), gap
@@ -139,13 +140,13 @@ def board(run, compact=False):
     folded = set()
     pending_group = []
     if compact:
-        # Show only the step in progress and the next one; fold the rest.
+        # Show only the step in progress; a pending step is never expanded.
         focus = next((step for step in range(1, len(lines) + 1) if step not in finished), None)
         if focus is None:
             folded = set(finished[:-1])
         else:
             folded = {step for step in finished if step < focus}
-            tail = list(range(focus + 2, len(lines) + 1))
+            tail = list(range(focus + 1, len(lines) + 1))
             if tail and not any(step in finished for step in tail):
                 pending_group = tail
     final_state = 0
