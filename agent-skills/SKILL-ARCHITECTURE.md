@@ -14,7 +14,8 @@ It contains only package metadata and supported runtime metadata derived from th
 | [council](skills/council/SKILL.md) | Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume. |  |
 | [crew](skills/crew/SKILL.md) | Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review, delegate-work) or to continue one task in a new chat (handoff). | yes |
 | [delegate-work](skills/delegate-work/SKILL.md) | Hand one short, objective task to another agent, either a Claude subagent or a run of the harness on Codex or Claude, and check what comes back. Use when the user asks to delegate, or when a self-contained task suits a cheaper or parallel agent; do not use for work with several stages, a plan or a branch review (use plan, research, council or code-review), or to continue in a new chat (use handoff). |  |
-| [git-worktree-cleanup](skills/git-worktree-cleanup/SKILL.md) | Commit selected worktree changes while preserving changes outside the chosen scope. | yes |
+| [git-status-cleanup](skills/git-status-cleanup/SKILL.md) | Commit selected uncommitted changes of the current worktree while preserving changes outside the chosen scope. Do not use to delete merged branches or worktrees (use git-worktree-cleanup). | yes |
+| [git-worktree-cleanup](skills/git-worktree-cleanup/SKILL.md) | Delete the local branches already merged into the default branch, and the linked worktrees checked out on them, then report what was left and why. Use only when the user asks to clean up worktrees or branches; do not use to commit changes (use git-status-cleanup). | yes |
 | [handoff](skills/handoff/SKILL.md) | Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task. | yes |
 | [plan](skills/plan/SKILL.md) | Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script runs, or a stopped plan run to resume. A single task is not a plan. |  |
 | [prototype](skills/prototype/SKILL.md) | Build throwaway code that answers a design question - does a logic or state model feel right, or what should a page look like - then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship. |  |
@@ -101,14 +102,24 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Delegate Work
   - `short_description`: Hand a short, objective task to a Claude subagent or a Codex run
 
+## git-status-cleanup
+
+- Description: Commit selected uncommitted changes of the current worktree while preserving changes outside the chosen scope. Do not use to delete merged branches or worktrees (use git-worktree-cleanup).
+- Package: [`agent-skills/skills/git-status-cleanup`](skills/git-status-cleanup/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Git Status Cleanup
+  - `short_description`: Commit relevant worktree changes
+- Runtime policy: `explicit invocation required`
+
 ## git-worktree-cleanup
 
-- Description: Commit selected worktree changes while preserving changes outside the chosen scope.
+- Description: Delete the local branches already merged into the default branch, and the linked worktrees checked out on them, then report what was left and why. Use only when the user asks to clean up worktrees or branches; do not use to commit changes (use git-status-cleanup).
 - Package: [`agent-skills/skills/git-worktree-cleanup`](skills/git-worktree-cleanup/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Git Worktree Cleanup
-  - `short_description`: Commit relevant worktree changes
+  - `short_description`: Delete merged branches and their worktrees
 - Runtime policy: `explicit invocation required`
 
 ## handoff

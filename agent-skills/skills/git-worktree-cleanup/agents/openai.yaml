@@ -1,5 +1,5 @@
 interface:
   display_name: "Git Worktree Cleanup"
-  short_description: "Commit relevant worktree changes"
+  short_description: "Delete merged branches and their worktrees"
 policy:
   allow_implicit_invocation: false

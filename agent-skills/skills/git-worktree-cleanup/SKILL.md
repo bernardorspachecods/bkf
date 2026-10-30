@@ -1,34 +1,42 @@
 ---
 name: git-worktree-cleanup
-description: Commit selected worktree changes while preserving changes outside the chosen scope.
+description: Delete the local branches already merged into the default branch, and the linked worktrees checked out on them, then report what was left and why. Use only when the user asks to clean up worktrees or branches; do not use to commit changes (use git-status-cleanup).
 ---
 
 # Git worktree cleanup
 
+Deletes what is certainly finished and lists the rest for the user. It works on local branches and linked worktrees of the current repository. It never touches remote branches, the default branch, the current branch or the worktree you stand in.
+
 ## Core rules
 
-- Keep ignored files out of scope unless requested.
-- Verify the worktree and report the commit message, and anything intentionally left behind.
-- Create one commit for the selected scope, with a concise message that describes it. For a start-of-task snapshot without a better description, use `chore(worktree): snapshot existing changes`.
-- If the worktree is clean, report that no commit was necessary.
+- Delete without asking only a branch whose work is already in the default branch (see "Merged"), and only a worktree that is clean. Everything else is reported, not deleted.
+- Never use `--force`, `git branch -D` outside the squash case below, `git reset`, `git clean` or `git stash`. A refusal from git is an answer: report it and leave the item.
+- Do not choose by branch name, age or how the branch looks abandoned.
+- Other agents may be working in other worktrees. A worktree with changes, or whose branch has commits that are not in the default branch, is theirs: leave it.
 
-## Choose the commit scope
+## Steps
 
-### `all`
+1. Find the default branch (`git symbolic-ref --short refs/remotes/origin/HEAD`, usually `origin/main`) and run `git fetch --prune origin` so it is current. Read `git worktree list --porcelain` and `git branch --format='%(refname:short) %(objectname)'`.
+2. Classify each local branch except the default branch and the current one.
+3. For every merged branch with a linked worktree, check the worktree is clean (`git -C <path> status --porcelain` prints nothing) and is not the directory you are in. Remove it with `git worktree remove <path>`, then delete the branch with `git branch -d <branch>`.
+4. For every merged branch without a worktree, delete it with `git branch -d <branch>`.
+5. Run `git worktree prune` for worktree folders that no longer exist.
+6. Report, as a table: what was deleted (branch, worktree path); what was left, each with the reason; the commands to delete the left ones if the user wants them gone.
 
-When the user says `git-worktree-cleanup all`, commit all non-ignored changes in the worktree in one commit. This includes unrelated pre-existing changes. Ignored files remain out of scope unless the user explicitly requests them.
+## Merged
 
-### `only`
+A branch is merged when its tip is an ancestor of the default branch: `git merge-base --is-ancestor <branch> origin/main`. `git branch -d` then deletes it.
 
-When the user says `git-worktree-cleanup only`, commit only changes made for the current task and preserve unrelated pre-existing work. If isolating the task changes requires more than three separate staging groups, stop and report back to the user. Count each group that must be selectively staged or excluded as one staging group.
+A branch merged by squash or rebase is not an ancestor. Treat it as merged only when `gh pr list --state merged --head <branch> --json headRefOid` returns a pull request whose `headRefOid` equals the local branch tip, so nothing was added after the merge. Delete that one with `git branch -D` and say in the report that it was a squash merge. Without `gh`, or without a match, leave the branch.
 
-### `pre-existing`
+## Left in place, with the reason
 
-When the user says `git-worktree-cleanup pre-existing`, use the snapshot captured before the current work to identify and commit only the changes that were already present then. The snapshot is whatever the user or the harness recorded before the work (for example a commit or a saved `git status` and diff); if none can be found, stop and ask the user for it instead of guessing. Preserve changes made after that snapshot in the worktree and keep them out of the commit. If the snapshot contains no changes relative to its base, report that no commit was necessary.
+- Commits not in the default branch (give how many), or a squash match whose tip differs.
+- A worktree with changes (give the output of `status --porcelain` in a line) or detached HEAD.
+- The current branch, the default branch, the branch of the worktree you stand in, and branches checked out in the main worktree.
+- A worktree git refuses to remove.
 
-### No mode specified
-
-If the user says `git-worktree-cleanup` without a mode, assume `git-worktree-cleanup all`.
+Ignored files in a removed worktree (build output, `.env` files) are deleted with it. Mention in the report that the worktree had any, with `git -C <path> status --ignored --short` before removing it, so the user can tell.
 
 ## Runtime metadata
 
