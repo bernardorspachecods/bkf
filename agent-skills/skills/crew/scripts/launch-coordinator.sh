@@ -21,6 +21,7 @@ rules=$(<"$(dirname "$0")/coordinator-rules.md")
 rules=${rules//'{{SESSION}}'/$session}
 rules=${rules//'{{ORCHESTRATOR}}'/$orchestrator}
 rules=${rules//'{{BRIEF}}'/$brief}
+rules=${rules//'{{WAIT_FILE}}'/${WATCH_WAITS:-$HOME/.crew-waits}/$session}
 printf '%s\n\n---\n\n%s\n' "$(<"$brief")" "$rules" > "$prompt"
 
 # Auto mode, like an orchestrator in auto mode: both count as prompting, so messages between them are delivered.

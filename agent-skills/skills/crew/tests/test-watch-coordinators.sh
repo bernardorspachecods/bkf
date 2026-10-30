@@ -18,7 +18,7 @@ check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
 mkdir -p "$work/bin"
 printf '#!/usr/bin/env bash\nexec /usr/bin/env -u TMUX "%s" -L "%s" "$@"\n' "$(command -v tmux)" "$sock" >"$work/bin/tmux"
 chmod +x "$work/bin/tmux"
-export PATH="$work/bin:$PATH" WATCH_INTERVAL=1 WATCH_NOTIFY=true
+export PATH="$work/bin:$PATH" WATCH_INTERVAL=1 WATCH_NOTIFY=true WATCH_WAITS="$work/none"
 
 tmux new-session -d -s main -n busy 'while :; do date +%s%N; sleep 0.2; done'
 tmux new-window -t main -n idle 'echo idle; sleep 300'
@@ -38,12 +38,27 @@ check "permission prompt alerts PROMPT at once" 'grep -qx "PROMPT main:ask" "$wo
 STILL=3 WATCH_REMIND=3600 timeout 4 "$script" "$work/state-a" main:idle >"$work/out-c" 2>&1
 check "relaunch does not repeat a delivered alert" '! grep -q STILL "$work/out-c"'
 
-WATCH_STILL=3 WATCH_WAIT=3600 timeout 6 "$script" "$work/state-f" main:shellbar >"$work/out-f" 2>&1
-check "idle pane with a background shell does not alert before WATCH_WAIT" '! grep -Eq "^(STILL|WAIT|PROMPT)" "$work/out-f"'
-
-STILL=3 WATCH_WAIT=3 run g main:shellbar main:idle
-check "idle pane with a background shell alerts WAIT with its minutes" 'grep -qx "WAIT main:shellbar 0m" "$work/out-g"'
+STILL=3 run g main:shellbar main:idle
+check "idle pane with a background shell never alerts" '! grep -q shellbar "$work/out-g"'
 check "idle pane without a shell still alerts STILL beside it" 'grep -qx "STILL main:idle" "$work/out-g"'
+
+mkdir -p "$work/waits"; export WATCH_WAITS="$work/waits"
+echo $(( $(date +%s) + 3600 )) >"$work/waits/idle"
+STILL=3 WATCH_GRACE=0 timeout 6 "$script" "$work/state-h" main:idle >"$work/out-h" 2>&1
+check "idle pane with a quota wait still ahead stays silent" '! grep -Eq "^(STILL|OVERDUE)" "$work/out-h"'
+
+echo $(( $(date +%s) - 10 )) >"$work/waits/idle"
+STILL=3 WATCH_GRACE=0 run i main:idle
+check "idle pane whose announced time passed alerts OVERDUE" 'grep -qx "OVERDUE main:idle" "$work/out-i"'
+
+echo $(( $(date +%s) - 10 )) >"$work/waits/idle"
+STILL=3 WATCH_GRACE=3600 timeout 6 "$script" "$work/state-j" main:idle >"$work/out-j" 2>&1
+check "announced time inside the grace stays silent" '! grep -Eq "^(STILL|OVERDUE)" "$work/out-j"'
+
+echo $(( $(date +%s) + 3600 )) >"$work/waits/ask"
+STILL=3600 run k main:ask
+check "permission prompt still alerts during a quota wait" 'grep -qx "PROMPT main:ask" "$work/out-k"'
+rm -f "$work/waits"/*
 
 run d main:nowindow
 check "missing window alerts GONE" 'grep -qx "GONE main:nowindow" "$work/out-d"'
