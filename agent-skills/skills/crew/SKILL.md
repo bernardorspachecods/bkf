@@ -61,13 +61,18 @@ A coordinator whose action is denied, or waits on the user's approval, tells you
 - Messages from coordinators arrive on their own. Do not poll them and do not send status requests.
 - A coordinator's "done" unlocks nothing until its workflow's review has passed. Check the return against the brief and look at the result yourself. At the end of a phase, stop and give the user the outcome of each sub-plan, then open the next phase only when they approve.
 - When a coordinator has gone quiet longer than its work explains, look at its window before messaging: `tmux capture-pane -p -t crew-<name>` shows its screen, including a permission prompt it may be waiting on. When you wait on one result, `SendMessage` with `notify_when_idle` and no message brings one notice when it next goes idle. It also goes idle while it talks with the user, so idle does not mean done.
-- A coordinator stuck on an approval prompt cannot message you. For a phase that runs long without the user, schedule one hourly check with `CronCreate` that captures the pane of every coordinator in the roster. A pending prompt is the user's: notify them (`PushNotification`) with the coordinator and what it asks, and never approve it. A coordinator still working gets nothing, and the user gets no message. When no coordinator has a pending prompt and none looks stalled, answer the check with one line ("nothing pending") and nothing else: no analysis, no notes, no status. A coordinator that looks stalled without a prompt gets one line saying which and why. Delete the check (`CronDelete`) when the phase ends.
+- A coordinator stuck on an approval prompt cannot message you. For a phase that runs long without the user, run [scripts/watch-coordinators.sh](scripts/watch-coordinators.sh) `<state-dir> <session>:crew-<name>...` with `run_in_background`, one target per coordinator in the roster, and `<state-dir>` a folder next to the briefs. It uses no tokens while nothing happens and exits on every alert, which wakes you. It prints one line per alert and sends the user a system notification itself. Do not replace it with a cron: each check would reload this whole chat.
+  - `PROMPT <target>`: the pane shows a permission prompt. It is the user's: notify them (`PushNotification`) with the coordinator and what it asks (`tmux capture-pane -p -t <target>`), and never approve it.
+  - `STILL <target>`: the pane has not changed for 10 minutes. Look at it: a prompt in other words is the user's, as above; a stalled coordinator gets one line saying why; a coordinator that waits on a background shell or on you needs nothing.
+  - `GONE <target>`: the window cannot be captured. Tell the user.
+  - `WATCHER-EXIT`: the watcher stopped without an alert and nothing is watched. Find out why before relaunching.
+  After handling the alerts, launch it again with the same state folder: an alert already delivered is not repeated, and an unchanged pane reminds you once an hour. Remove a coordinator from the targets when its window closes on purpose, and stop the watcher (`TaskStop`) when the phase ends.
 - To change a brief, edit its file and message the coordinator that it changed; its rules name the file, so it rereads it there.
 - You speak for the user to the coordinators: a decision you send or write into a brief carries the user's authority, and the coordinator acts on it without asking the user. Use that only within the intent agreed with the user; a decision outside it goes to the user first.
 - A blocked coordinator gets a revised brief or a decision from you or the user, not your work in its place.
 - Closing a coordinator's window is the user's call.
 
-Tests of the launcher are in [tests/test-launch-coordinator.sh](tests/test-launch-coordinator.sh).
+Tests of the launcher are in [tests/test-launch-coordinator.sh](tests/test-launch-coordinator.sh), and of the watcher in [tests/test-watch-coordinators.sh](tests/test-watch-coordinators.sh).
 
 ## Runtime metadata
 
