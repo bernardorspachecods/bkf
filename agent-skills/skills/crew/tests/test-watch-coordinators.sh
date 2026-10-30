@@ -22,6 +22,7 @@ export PATH="$work/bin:$PATH" WATCH_INTERVAL=1 WATCH_NOTIFY=true
 
 tmux new-session -d -s main -n busy 'while :; do date +%s%N; sleep 0.2; done'
 tmux new-window -t main -n idle 'echo idle; sleep 300'
+tmux new-window -t main -n shellbar 'echo "done · 1 shell still running"; echo "  ⏵⏵ auto mode on · 1 shell"; sleep 300'
 tmux new-window -t main -n ask 'echo "Do you want to proceed? (y/n)"; sleep 300'
 sleep 1
 
@@ -36,6 +37,13 @@ check "permission prompt alerts PROMPT at once" 'grep -qx "PROMPT main:ask" "$wo
 
 STILL=3 WATCH_REMIND=3600 timeout 4 "$script" "$work/state-a" main:idle >"$work/out-c" 2>&1
 check "relaunch does not repeat a delivered alert" '! grep -q STILL "$work/out-c"'
+
+WATCH_STILL=3 WATCH_WAIT=3600 timeout 6 "$script" "$work/state-f" main:shellbar >"$work/out-f" 2>&1
+check "idle pane with a background shell does not alert before WATCH_WAIT" '! grep -Eq "^(STILL|WAIT|PROMPT)" "$work/out-f"'
+
+STILL=3 WATCH_WAIT=3 run g main:shellbar main:idle
+check "idle pane with a background shell alerts WAIT with its minutes" 'grep -qx "WAIT main:shellbar 0m" "$work/out-g"'
+check "idle pane without a shell still alerts STILL beside it" 'grep -qx "STILL main:idle" "$work/out-g"'
 
 run d main:nowindow
 check "missing window alerts GONE" 'grep -qx "GONE main:nowindow" "$work/out-d"'
