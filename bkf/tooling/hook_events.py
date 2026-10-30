@@ -26,7 +26,9 @@ AUDIT_PREFIX = re.compile(r"^\s*bkf\s*:", re.IGNORECASE)
 REPORT_DIR = Path.home() / ".agent-hooks" / "reports"
 PASTE_TAG = re.compile(r"^[ \t]*</?pasted_content\b[^>\n]*>[ \t]*\n?|</?pasted_content\b[^>\n]*>", re.MULTILINE)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
-EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit", "warnings"}
+EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit", "warnings", "tabname"}
+TITLE_TAIL_BYTES = 2_000_000
+TAB_NAME_LIMIT = 80
 
 
 def report_failure(event: str, exc: Exception, fields: dict | None = None) -> None:
@@ -60,7 +62,7 @@ def _probe(event: str) -> None:
     elif event == "stop":
         for module in ("generate_inventory", "validate_bundle", "bkf_common", "navigation_map"):
             importlib.import_module(module)
-    elif event not in {"record", "snapshot", "last", "warnings"}:
+    elif event not in {"record", "snapshot", "last", "warnings", "tabname"}:
         raise ValueError(f"unknown event {event!r}")
     print(json.dumps({"probe": "ok"}, separators=(",", ":")))
 
@@ -410,6 +412,44 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
     return {"decision": "block", "reason": reason[:REASON_LIMIT]}
 
 
+def session_title(transcript: Path) -> str | None:
+    """Return the session's name: the last /rename title, else the last generated title."""
+    try:
+        with transcript.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - TITLE_TAIL_BYTES))
+            lines = handle.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    found: dict[str, str] = {}
+    for line in lines:
+        for kind, key in (("custom-title", "customTitle"), ("ai-title", "aiTitle")):
+            if f'"{kind}"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict) and entry.get("type") == kind and isinstance(entry.get(key), str):
+                found[kind] = entry[key]
+    title = " ".join((found.get("custom-title") or found.get("ai-title") or "").split())
+    return title[:TAB_NAME_LIMIT] or None
+
+
+def tab_name(data: dict) -> None:
+    """Name the tmux window of this session after the session, so tab and chat share one name."""
+    pane = os.environ.get("TMUX_PANE")
+    transcript = data.get("transcript_path")
+    if not pane or not isinstance(transcript, str):
+        return
+    title = session_title(Path(transcript))
+    if title is None:
+        return
+    current = subprocess.run(["tmux", "display-message", "-p", "-t", pane, "#{window_name}"], capture_output=True, text=True)
+    if current.returncode == 0 and current.stdout.strip() != title:
+        subprocess.run(["tmux", "rename-window", "-t", pane, title], capture_output=True)
+
+
 def main(argv: list[str]) -> int:
     """Run one hook event from the JSON on stdin. Never fails the host tool."""
     event = argv[0] if argv else ""
@@ -449,6 +489,8 @@ def main(argv: list[str]) -> int:
             output = audit(data)
         elif event == "warnings":
             output = pending_warnings(data)
+        elif event == "tabname":
+            tab_name(data)
         elif event == "stop":
             output = stop(data)
         elif event == "guard":

@@ -17,7 +17,7 @@ import agent_modes
 
 
 SCRIPT_NAME = "mode.py"
-HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "guard", "audit")
+HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "guard", "audit", "tabname")
 EDIT_TOOLS = "Edit|Write|NotebookEdit|MultiEdit|apply_patch"
 TIMEOUT = 10
 RULES_LIMIT = 4000
@@ -91,6 +91,9 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
         Registration("check", "UserPromptSubmit", None, f"{bkf_command(home)} hooks run warnings", re.compile(r"(^|/)bkf hooks run warnings$")),
         Registration("log", "Stop", None, f"{bkf_command(home)} hooks run last", re.compile(r"(^|/)bkf hooks run last$")),
     ]
+    tabname = f"{bkf_command(home)} hooks run tabname"
+    tabname_owner = re.compile(r"(^|/)bkf hooks run tabname$")
+    wanted += [Registration("tabname", event, None, tabname, tabname_owner) for event in ("SessionStart", "UserPromptSubmit", "Stop")]
     return [item for item in wanted if only in (None, item.hook)]
 
 
@@ -237,7 +240,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
             message = None
         return str(message or "systemMessage")
 
-    if registration.hook in {"check", "log", "guard", "audit"}:
+    if registration.hook in {"check", "log", "guard", "audit", "tabname"}:
         if result.stdout.strip() != '{"probe":"ok"}':
             return "no probe answer (stale install?)" if not result.stdout.strip() else "unexpected probe answer"
         if result.stderr:

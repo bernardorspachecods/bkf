@@ -231,8 +231,8 @@ the [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks).
 
 ## bkf hooks
 
-`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard|audit] [--home PATH]` and
-`bkf hooks status [--only modes|orient|check|log|rules|guard|audit] [--home PATH]` manage seven hook groups that
+`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard|audit|tabname] [--home PATH]` and
+`bkf hooks status [--only modes|orient|check|log|rules|guard|audit|tabname] [--home PATH]` manage eight hook groups that
 must run every time, which a skill cannot guarantee. They are registered for
 both Claude Code (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`);
 a tool whose folder is missing is skipped.
@@ -336,6 +336,13 @@ a tool whose folder is missing is skipped.
   `~/.agent-hooks/reports/bkf-audit-<timestamp>.md`, and the 20 newest reports
   are kept. The audit changes nothing in the repository. Outside a git
   repository it says so and stops.
+- **tabname** registers `bkf hooks run tabname` on `SessionStart`,
+  `UserPromptSubmit` and `Stop`. Inside tmux it renames the session's tmux
+  window (the tab under iTerm2's `tmux -CC`) to the session's name: the last
+  `/rename` title, else the generated title, read from the session transcript
+  and cut at 80 characters. The session is the source: renaming the tab by hand
+  does not rename the session, and the next event renames the tab again. It
+  does nothing outside tmux or while the session has no title yet.
 
 `install` previews by default and prints one line per script and registration
 as `ok`, `missing`, or `differs`; `--write` applies it. Other settings and

@@ -46,7 +46,7 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/tooling/bkf_cl
 - [validate_bundle.py](/tooling/validate_bundle.py) — Checks BKF bundle structure, metadata, maps, and links.
 - [updates.py](/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.
 - [hook_events.py](/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, gives the agent the resulting warnings with its next prompt, and dispatches the `log`, `guard`, and `audit` hooks.
-- [bkf_hooks.py](/tooling/bkf_hooks.py) — Previews, installs, and reports the seven hook groups (modes, orient, check, log, rules, guard, audit) for Claude Code and Codex.
+- [bkf_hooks.py](/tooling/bkf_hooks.py) — Previews, installs, and reports the eight hook groups (modes, orient, check, log, rules, guard, audit, tabname) for Claude Code and Codex.
 - [default_rules.txt](/tooling/default_rules.txt) — Holds the default standing rules that `bkf hooks install --write` copies to `~/.agent-hooks/rules.md` when that file is missing.
 - [agent_modes.py](/tooling/agent_modes.py) — Implements the `w:` and `t:` prompt-prefix hook and the `git stash` block, copied to the user's home on install.
 - [bkf_cli.py](/tooling/bkf_cli.py) — Dispatches the installed `bkf` command to the focused tooling modules.

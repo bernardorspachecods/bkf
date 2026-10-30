@@ -540,5 +540,53 @@ class HookEventsTest(unittest.TestCase):
         self.assertEqual(audit_report.classify("D "), ["deleted"])
 
 
+class TabNameTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.transcript = Path(self.tmp.name) / "t.jsonl"
+
+    def write(self, *entries: dict) -> None:
+        self.transcript.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
+
+    def test_custom_title_wins_over_generated_title(self) -> None:
+        self.write({"type": "ai-title", "aiTitle": "Generated"}, {"type": "custom-title", "customTitle": "Mine"}, {"type": "ai-title", "aiTitle": "Later"})
+        self.assertEqual(hook_events.session_title(self.transcript), "Mine")
+
+    def test_last_generated_title_without_rename(self) -> None:
+        self.write({"type": "ai-title", "aiTitle": "First"}, {"type": "user"}, {"type": "ai-title", "aiTitle": "Second"})
+        self.assertEqual(hook_events.session_title(self.transcript), "Second")
+
+    def test_no_title_or_no_file(self) -> None:
+        self.write({"type": "user"})
+        self.assertIsNone(hook_events.session_title(self.transcript))
+        self.assertIsNone(hook_events.session_title(Path(self.tmp.name) / "missing.jsonl"))
+
+    def test_renames_window_only_when_name_differs(self) -> None:
+        self.write({"type": "ai-title", "aiTitle": "Nomes de tabs"})
+        calls: list[list[str]] = []
+
+        def current(name: str):
+            def fake(cmd, **kwargs):
+                calls.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, stdout=name + "\n")
+            return fake
+
+        with patch.dict("os.environ", {"TMUX_PANE": "%3"}), patch.object(hook_events.subprocess, "run", current("2.1.314")):
+            hook_events.tab_name({"transcript_path": str(self.transcript)})
+        self.assertEqual(calls[-1], ["tmux", "rename-window", "-t", "%3", "Nomes de tabs"])
+
+        calls.clear()
+        with patch.dict("os.environ", {"TMUX_PANE": "%3"}), patch.object(hook_events.subprocess, "run", current("Nomes de tabs")):
+            hook_events.tab_name({"transcript_path": str(self.transcript)})
+        self.assertEqual(len(calls), 1)
+
+    def test_outside_tmux_does_nothing(self) -> None:
+        self.write({"type": "ai-title", "aiTitle": "X"})
+        with patch.dict("os.environ", {}, clear=True), patch.object(hook_events.subprocess, "run") as run:
+            hook_events.tab_name({"transcript_path": str(self.transcript)})
+        run.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
