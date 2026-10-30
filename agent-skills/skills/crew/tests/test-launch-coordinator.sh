@@ -19,6 +19,7 @@ cat >"$work/bin/claude" <<'F'
 #!/usr/bin/env bash
 pwd >"$FAKE_OUT.pwd"
 printf '%s\n' "$@" >"$FAKE_OUT.args"
+printf '%s\n' "${BKF_DELEGATED-unset}" >"$FAKE_OUT.delegated"
 F
 chmod +x "$work/bin/claude"
 printf 'Sub-plan B: SARP outbox.\n' >"$work/b.md"
@@ -41,6 +42,7 @@ check "leaves focus on the caller" \
   '[ "$(tmux -L "$sock" display-message -p -t main "#{window_name}")" = orchestrator ]'
 check "starts claude in the working directory" '[ "$(cat "$work/out.pwd")" = "$work/repo" ]'
 check "names the session crew-b" 'grep -qx -- "--name" "$work/out.args" && grep -qx crew-b "$work/out.args"'
+check "marks the session as delegated" '[ "$(cat "$work/out.delegated")" = 1 ] && ! grep -qx -- "--delegated" "$work/out.args"'
 check "starts the session in auto mode" 'grep -A1 -x -- "--permission-mode" "$work/out.args" | grep -qx auto'
 check "first message has the brief" 'grep -q "Sub-plan B: SARP outbox." "$work/out.args"'
 check "first message has the rules with names filled in" \

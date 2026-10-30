@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # Open an interactive Claude or Codex session in a new tab beside the caller, with a prompt
 # file as its first message. Shared by the handoff and crew skills.
-# Usage: launch-session.sh [--name NAME] [--model MODEL] [--effort EFFORT]
+# Usage: launch-session.sh [--name NAME] [--model MODEL] [--effort EFFORT] [--delegated]
 #                          [--permission-mode MODE] [--window NAME] <claude|codex> <working-dir> <prompt-file>
 # --name and --permission-mode exist for Claude only. --window names the tmux window.
+# --delegated sets BKF_DELEGATED=1 in the session, as the harness does for the agents it runs, so the
+# `rules` session-start hook leaves out the rules meant for a chat with the user. Crew coordinators
+# use it; a handoff does not, because its session continues a chat with the user.
 # Without --model or --effort the session takes the user's defaults.
 set -euo pipefail
 
 die() { printf 'Error: %s\n' "$1" >&2; exit 1; }
 
-name="" model="" effort="" mode="" window=""
+name="" model="" effort="" mode="" window="" delegated=""
 while [[ $# -gt 0 && $1 == --* ]]; do
+  if [[ $1 == --delegated ]]; then delegated=1; shift; continue; fi
   [[ $# -ge 2 ]] || die "$1 needs a value"
   case $1 in
     --name) name=$2 ;;
@@ -44,6 +48,7 @@ else
   [[ -n $model ]] && cmd+=" -m $(q "$model")"
   [[ -n $effort ]] && cmd+=" -c $(q "model_reasoning_effort=\"$effort\"")"
 fi
+[[ -z $delegated ]] || cmd="BKF_DELEGATED=1 $cmd"
 # The tab types only a short command; its shell expands the file into the argument,
 # because a typed line of tens of KB overflows the terminal.
 cmd="cd $(q "$dir") && $cmd \"\$(cat $(q "$prompt"))\""

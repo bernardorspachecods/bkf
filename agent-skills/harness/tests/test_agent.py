@@ -217,6 +217,10 @@ class AgentCliTests(unittest.TestCase):
         result = self.run_in_process(FAKE_SLEEP="2", HARNESS_AGENT_STALL_TIMEOUT="0")
         self.assertEqual(result, 0)
 
+    def test_agent_is_marked_as_delegated_in_its_environment(self):
+        for in_thread in (False, True):
+            self.assertEqual(self.spawn_kwargs(in_thread)["env"]["BKF_DELEGATED"], "1")
+
     def test_main_thread_masks_signals_while_the_agent_registers(self):
         self.assertIn("preexec_fn", self.spawn_kwargs(in_thread=False))
 

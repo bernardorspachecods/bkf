@@ -5,7 +5,7 @@ description: "Use at the start of any task that is more than a small change: set
 
 # Align intent
 
-Inside a plan, a delegated task or a review, stop reading: the brief already carries the intent.
+**Check first.** You are delegated, and this skill does not apply to you, when your first message is a brief, a task or a prompt file from another agent or a run script, or when the environment variable `BKF_DELEGATED` is set. Then do not ask anyone to confirm anything and do not read further: go back to the brief and work from it, because the brief already carries the intent and nobody is there to answer.
 
 <!-- inject: ../../modules/intent.md -->
 <!-- BKF:GENERATED-INJECTED -->

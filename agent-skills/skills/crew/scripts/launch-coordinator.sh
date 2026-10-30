@@ -25,7 +25,7 @@ rules=${rules//'{{WAIT_FILE}}'/${WATCH_WAITS:-$HOME/.crew-waits}/$session}
 printf '%s\n\n---\n\n%s\n' "$(<"$brief")" "$rules" > "$prompt"
 
 # Auto mode, like an orchestrator in auto mode: both count as prompting, so messages between them are delivered.
-args=(--name "$session" --permission-mode auto --window "$session")
+args=(--name "$session" --permission-mode auto --window "$session" --delegated)
 [[ -n $model ]] && args+=(--model "$model")
 [[ -n $effort ]] && args+=(--effort "$effort")
 "$(dirname "$0")/../../../harness/scripts/launch-session.sh" "${args[@]}" claude "$dir" "$prompt"

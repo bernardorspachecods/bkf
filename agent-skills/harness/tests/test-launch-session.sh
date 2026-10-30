@@ -21,6 +21,7 @@ for agent in claude codex; do
 #!/usr/bin/env bash
 pwd >"$FAKE_OUT.pwd"
 printf '%s\n' "$@" >"$FAKE_OUT.args"
+printf '%s\n' "${BKF_DELEGATED-unset}" >"$FAKE_OUT.delegated"
 F
   chmod +x "$work/bin/$agent"
 done
@@ -51,6 +52,12 @@ check "claude: starts in the working directory" '[ "$(cat "$work/out.pwd")" = "$
 check "claude: passes name, mode, model and effort" \
   '[ "$(arg_after --name)" = crew-x ] && [ "$(arg_after --permission-mode)" = auto ] && [ "$(arg_after --model)" = sonnet ] && [ "$(arg_after --effort)" = high ]'
 check "claude: the whole prompt is the last argument" '[ "$(tail -2 "$work/out.args")" = "$(cat "$work/prompt.md")" ]'
+
+check "claude: a session without --delegated has no BKF_DELEGATED" '[ "$(cat "$work/out.delegated")" = unset ]'
+
+launch "$script" --delegated --name crew-x claude "$work/repo" "$work/prompt.md"
+check "claude: --delegated sets BKF_DELEGATED and is not passed on" \
+  '[ "$(cat "$work/out.delegated")" = 1 ] && ! grep -qx -- --delegated "$work/out.args"'
 
 launch "$script" claude "$work/repo" "$work/prompt.md"
 check "claude: no options passes none" '[ "$(head -1 "$work/out.args")" = "First line of the prompt." ]'

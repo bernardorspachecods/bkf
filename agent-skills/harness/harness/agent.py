@@ -14,6 +14,9 @@ from .inject import InjectionError, inject_rules
 
 _LIVE_PROCESSES = set()
 
+# Set in the environment of every agent the harness starts, so a session-start hook can tell a delegated agent from a chat.
+DELEGATED_VARIABLE = "BKF_DELEGATED"
+
 # Returned by run_agent for an agent that wrote nothing for the stall timeout and was ended (the exit code of a timeout).
 STALLED_EXIT = 124
 _DEFAULT_STALL_SECONDS = 1200.0
@@ -263,9 +266,11 @@ def get_backend(name):
 def _spawn(command, directory, stdin, stdout, stderr):
     """Start the backend and register it so a handled signal can end it."""
 
+    environment = dict(os.environ, **{DELEGATED_VARIABLE: "1"})
+
     def popen(**extra):
         return subprocess.Popen(
-            command, cwd=directory, stdin=stdin, stdout=stdout, stderr=stderr, **extra
+            command, cwd=directory, stdin=stdin, stdout=stdout, stderr=stderr, env=environment, **extra
         )
 
     if threading.current_thread() is not threading.main_thread():

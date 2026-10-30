@@ -65,6 +65,23 @@ class HooksTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(output, "Keep changes scoped.\n")
 
+    def test_run_rules_interactive_lines_lose_their_prefix_in_a_chat(self) -> None:
+        path = self.home / ".agent-hooks" / "rules.md"
+        path.parent.mkdir()
+        path.write_text("Keep changes scoped.\n[interactive] Ask first.\n", encoding="utf-8")
+        with patch.dict(os.environ):
+            os.environ.pop("BKF_DELEGATED", None)
+            code, output = run("run", "rules", "--home", self.home)
+        self.assertEqual((code, output), (0, "Keep changes scoped.\nAsk first.\n"))
+
+    def test_run_rules_interactive_lines_are_dropped_for_a_delegated_agent(self) -> None:
+        path = self.home / ".agent-hooks" / "rules.md"
+        path.parent.mkdir()
+        path.write_text("Keep changes scoped.\n[interactive] Ask first.\n", encoding="utf-8")
+        with patch.dict(os.environ, {"BKF_DELEGATED": "1"}):
+            code, output = run("run", "rules", "--home", self.home)
+        self.assertEqual((code, output), (0, "Keep changes scoped.\n"))
+
     def test_run_rules_missing_or_empty_file_is_silent(self) -> None:
         code, output = run("run", "rules", "--home", self.home)
         self.assertEqual((code, output), (0, ""))

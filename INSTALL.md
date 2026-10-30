@@ -57,7 +57,7 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
 
    Expected result: hooks are registered in `~/.claude/settings.json` and `~/.codex/hooks.json` where those tools are present, and hook files are placed under `~/.agent-hooks/`. Installation creates `~/.agent-hooks/rules.md` from BKF's default rules only when the file is missing, and never overwrites it; after that the file is yours to edit. The `--only modes|orient|check|log|rules|guard|audit` option limits installation to selected groups, and `--home PATH` targets another home directory.
 
-   What each hook group does is in the [`bkf hooks` reference](bkf/tooling/commands.md#bkf-hooks). Edit `~/.agent-hooks/rules.md` to hold your own standing instructions; the `rules` hook prints it at every session start and cuts a long file, so keep it short.
+   What each hook group does is in the [`bkf hooks` reference](bkf/tooling/commands.md#bkf-hooks). Edit `~/.agent-hooks/rules.md` to hold your own standing instructions; the `rules` hook prints it at every session start and cuts a long file, so keep it short. Start a line with `[interactive] ` when it only makes sense in a chat with you (for example, asking you to confirm something): agents the harness starts do not see it.
 
 6. Report hook status:
 

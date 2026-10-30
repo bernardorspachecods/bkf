@@ -257,7 +257,10 @@ a tool whose folder is missing is skipped.
 - **rules** registers a `SessionStart` hook that prints
   `~/.agent-hooks/rules.md` at every session start. Output is capped at 4,000
   characters and cut at a line boundary; a longer file ends with
-  `... rules.md truncated`. The hook never fails a session and `bkf hooks install --write`
+  `... rules.md truncated`. A line that starts with `[interactive] ` is for a
+  chat with the user: it is printed without the prefix, and left out when the
+  environment variable `BKF_DELEGATED` is set, which the harness sets for every
+  agent it starts. The hook never fails a session and `bkf hooks install --write`
   copies `default_rules.txt` to that path only when it does not exist, and never
   overwrites or edits an existing file.
 - **check** registers a `SessionStart` hook that records a git snapshot,

@@ -21,6 +21,8 @@ HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "guard", "audit")
 EDIT_TOOLS = "Edit|Write|NotebookEdit|MultiEdit|apply_patch"
 TIMEOUT = 10
 RULES_LIMIT = 4000
+INTERACTIVE_PREFIX = "[interactive] "
+DELEGATED_VARIABLE = "BKF_DELEGATED"
 
 
 @dataclass(frozen=True)
@@ -144,11 +146,24 @@ def default_rules() -> Path:
     return Path(__file__).with_name("default_rules.txt")
 
 
+def select_rules(content: str, delegated: bool) -> str:
+    """Drop the `[interactive] ` lines for a delegated agent; keep them, without the prefix, otherwise."""
+    lines = []
+    for line in content.splitlines(keepends=True):
+        if line.startswith(INTERACTIVE_PREFIX):
+            if delegated:
+                continue
+            line = line[len(INTERACTIVE_PREFIX):]
+        lines.append(line)
+    return "".join(lines)
+
+
 def run_rules(home: Path) -> int:
     try:
         content = rules_file(home).read_text(encoding="utf-8")
     except FileNotFoundError:
         return 0
+    content = select_rules(content, bool(os.environ.get(DELEGATED_VARIABLE)))
     if not content:
         return 0
     if len(content) <= RULES_LIMIT:
