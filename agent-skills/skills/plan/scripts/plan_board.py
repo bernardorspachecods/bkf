@@ -133,7 +133,18 @@ def board(run, compact=False):
             )
         if passed:
             finished.append(step)
-    folded = set(finished[:-1]) if compact and len(lines) > 2 else set()
+    folded = set()
+    pending_group = []
+    if compact and len(lines) > 2:
+        # Show only the step in progress and the next one; fold the rest.
+        focus = next((step for step in range(1, len(lines) + 1) if step not in finished), None)
+        if focus is None:
+            folded = set(finished[:-1])
+        else:
+            folded = {step for step in finished if step < focus}
+            tail = list(range(focus + 2, len(lines) + 1))
+            if len(tail) > 1 and not any(step in finished for step in tail):
+                pending_group = tail
     if folded:
         folded_units = [unit for step in folded for unit in lines[step - 1]]
         folded_rounds = sum(_round_count(run_path / unit) for unit in folded_units)
@@ -156,6 +167,12 @@ def board(run, compact=False):
         if step in folded:
             if step == first_folded:
                 result += folded_row
+            continue
+        if step in pending_group:
+            if step == pending_group[0]:
+                result += "  ○ Passos {0}-{1} pendentes · {2} unidades\n\n".format(
+                    step, pending_group[-1], sum(len(lines[number - 1]) for number in pending_group)
+                )
             continue
         parallel = len(line) > 1
         result += "Passo {0}{1}\n".format(step, " (paralelo)" if parallel else "")

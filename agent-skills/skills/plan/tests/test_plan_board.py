@@ -83,6 +83,36 @@ class PlanBoardTests(unittest.TestCase):
         self.assertIn("Passo 2\n  ✓ 02-beta", full)
         self.assertIn("Passo 3\n  ✓ 03-gamma", full)
 
+    def test_board_shows_only_running_and_next_step(self):
+        names = ["01-a", "02-b", "03-c", "04-d", "05-e", "06-f"]
+        (self.run_path / "00-input" / "order").write_text("\n".join(names) + "\n", encoding="utf-8")
+        self.unit("01-a", "passed", rounds=1)
+        self.unit("02-b", "passed", rounds=2)
+        self.unit("03-c", "gate round 1")
+
+        board = self.board()
+
+        self.assertIn("  ✓ Passos 1-2 passaram · 2 unidades · 3 rondas\n\n", board)
+        self.assertIn("Passo 3\n  ◐ 03-c", board)
+        self.assertIn("Passo 4\n  ○ 04-d", board)
+        self.assertIn("  ○ Passos 5-6 pendentes · 2 unidades\n\n", board)
+        self.assertNotIn("Passo 5\n", board)
+        self.assertTrue(board.endswith("  ○ Revisão final  pendente\n"))
+
+    def test_board_keeps_stopped_step_visible_and_single_tail_step_expanded(self):
+        names = ["01-a", "02-b", "03-c", "04-d"]
+        (self.run_path / "00-input" / "order").write_text("\n".join(names) + "\n", encoding="utf-8")
+        self.unit("01-a", "passed")
+        self.unit("02-b", "escalated")
+
+        board = self.board()
+
+        self.assertIn("  ✓ Passo 1 passou", board)
+        self.assertIn("Passo 2\n  ✗ 02-b", board)
+        self.assertIn("Passo 3\n  ○ 03-c", board)
+        self.assertIn("Passo 4\n  ○ 04-d", board)
+        self.assertNotIn("pendentes", board)
+
     def test_two_step_plan_keeps_both_finished_steps_expanded(self):
         self.unit("01-alpha", "passed")
         self.unit("02-beta", "passed")
@@ -104,7 +134,7 @@ class PlanBoardTests(unittest.TestCase):
         (integration / "rounds" / "2").mkdir()
         (integration / "status").write_text("passed\n", encoding="utf-8")
         self.unit("03-gamma", "passed", rounds=1)
-        self.assertIn("  ✓ Passo 1 passou · 2 unidades · 5 rondas\n", self.board())
+        self.assertIn("  ✓ Passos 1-2 passaram · 3 unidades · 6 rondas\n", self.board())
 
     def test_parallel_step_includes_integration_row(self):
         (self.run_path / "00-input" / "order").write_text(
