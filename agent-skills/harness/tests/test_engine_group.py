@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tempfile
@@ -103,6 +104,55 @@ class GroupTests(unittest.TestCase):
         prepare_worktrees(self.run, self.repo, 1, ["a", "b"], environ=self.env)
         self.assertEqual(before, self.git("worktree", "list", "--porcelain"))
         self.assertEqual((self.run.path / "worktrees" / "a" / "untracked.txt").read_text(), "later\n")
+
+    def declare(self, section):
+        (self.repo / ".plan-run.json").write_text(json.dumps({"worktree": section}), encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "declare")
+
+    def test_every_group_worktree_is_set_up_as_the_repository_declares(self):
+        self.declare({"copy": ["local.env"], "prepare": ["echo built > built.txt"]})
+        (self.repo / "local.env").write_text("S=1\n", encoding="utf-8")
+        self.fake_df(300000, 200000)
+        self.assertEqual(prepare_worktrees(self.run, self.repo, 1, ["a", "b"], environ=self.env), "")
+        for unit in ("a", "b"):
+            worktree = self.run.path / "worktrees" / unit
+            self.assertEqual((worktree / "built.txt").read_text(), "built\n")
+            self.assertEqual((worktree / "local.env").read_text(), "S=1\n")
+            self.assertTrue((self.run.path / ("prepare-" + unit) / "gate.md").is_file())
+            self.assertTrue((self.run.path / (".prepared-" + unit)).exists())
+        log = (self.run.path / "status.log").read_text()
+        for unit in ("a", "b"):
+            self.assertIn("S1: {0}: worktree.prepare: 1 command(s) passed".format(unit), log)
+
+    def test_a_failing_prepare_refuses_the_group_and_resume_sets_the_copy_up_again(self):
+        self.declare({"prepare": ["test -f ok.flag"]})
+        self.fake_df(300000, 200000)
+        reason = prepare_worktrees(self.run, self.repo, 1, ["a", "b"], environ=self.env)
+        self.assertIn("could not prepare the worktree for a", reason)
+        self.assertFalse((self.run.path / ".group-ready-S1").exists())
+        self.assertFalse((self.run.path / ".prepared-a").exists())
+        (self.run.path / "worktrees" / "a" / "ok.flag").touch()
+        (self.run.path / "worktrees" / "b" / "ok.flag").touch()
+        self.assertEqual(prepare_worktrees(self.run, self.repo, 1, ["a", "b"], environ=self.env), "")
+        self.assertTrue((self.run.path / ".group-ready-S1").exists())
+
+    def test_a_copy_that_exists_without_its_marker_is_set_up_on_resume(self):
+        self.declare({"prepare": ["echo built > built.txt"]})
+        self.fake_df(300000, 200000)
+        prepare_worktrees(self.run, self.repo, 1, ["a"], environ=self.env)
+        for name in (".prepared-a", ".group-ready-S1"):
+            (self.run.path / name).unlink()
+        (self.run.path / "worktrees" / "a" / "built.txt").unlink()
+        self.assertEqual(prepare_worktrees(self.run, self.repo, 1, ["a"], environ=self.env), "")
+        self.assertTrue((self.run.path / "worktrees" / "a" / "built.txt").is_file())
+
+    def test_worktrees_are_only_cut_where_they_are_also_set_up(self):
+        engine = Path(group.__file__).parent
+        cutters = sorted(path.name for path in engine.glob("*.py") if '"worktree", "add"' in path.read_text(encoding="utf-8"))
+        self.assertEqual(cutters, ["checkout.py", "group.py"])
+        source = Path(group.__file__).read_text(encoding="utf-8")
+        self.assertIn("prepare_tree(", source.split("def prepare_worktrees", 1)[1].split("def run_group", 1)[0])
 
     def test_run_group_runs_units_concurrently_and_keeps_pass_on_failure(self):
         self.fake_df(300000, 200000)

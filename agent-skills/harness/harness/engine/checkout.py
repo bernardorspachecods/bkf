@@ -76,9 +76,11 @@ def _declared(repo):
     return copy, prepare
 
 
-def prepare_tree(run_path, repo, tree, timeout):
+def prepare_tree(run_path, repo, tree, timeout, label=None):
     """Copy the files and run the commands the repository declares, so gates can pass in the new worktree.
 
+    Every worktree a run makes goes through here, the run's own tree and each copy of a parallel group.
+    ``label`` names the copy, so each keeps its own gate output in ``<run>/prepare-<label>``.
     Returns notes for the status log. The commands run outside any agent and a failing one raises RunError.
     """
     copy, prepare = _declared(repo)
@@ -98,7 +100,7 @@ def prepare_tree(run_path, repo, tree, timeout):
             shutil.copy2(str(source), str(target))
         notes.append("worktree.copy: {0}".format(relative))
     if prepare:
-        output = Path(run_path) / "prepare"
+        output = Path(run_path) / ("prepare" if label is None else "prepare-" + label)
         result = run_gate(os.fspath(tree), timeout, os.fspath(output), prepare)
         if result["red"]:
             raise RunError("preparing the worktree failed (see {0}/gate.md)".format(output))

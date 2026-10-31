@@ -6,7 +6,9 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from .checkout import prepare_tree
 from .diffbase import snapshot_commit
+from .run import RunError
 
 
 def _git(repo, args, output=None):
@@ -51,7 +53,11 @@ def remove_worktrees(run, repo):
 
 
 def prepare_worktrees(run, repo, step, units, environ=None):
-    """Create missing group worktrees, returning an empty or refusal reason."""
+    """Create missing group worktrees and set each up as the repository declares.
+
+    Returns an empty string or a refusal reason. A copy counts as ready only once its ``.prepared-<unit>``
+    marker exists, so a copy cut but not yet set up (a crash, a failed command) is set up again on resume.
+    """
     run_path = Path(run.path if hasattr(run, "path") else run)
     marker = run_path / ".group-ready-S{0}".format(step)
     if marker.exists():
@@ -101,6 +107,19 @@ def prepare_worktrees(run, repo, step, units, environ=None):
                     "run lives ({5}). Free some space, then resume. The estimate covers the worktrees only, not "
                     "what the units create while they run (temporary database clusters, build output)."
                 ).format(step, used // 1024, todo - 1, need // 1024, after // 1024, run_path)
+
+    timeout = float(os.environ.get("PLAN_PREPARE_TIMEOUT", "1800"))
+    for unit in units:
+        prepared = run_path / (".prepared-" + unit)
+        if prepared.exists():
+            continue
+        try:
+            notes = prepare_tree(run_path, repo, worktrees / unit, timeout, label=unit)
+        except RunError as error:
+            return "could not prepare the worktree for {0}: {1}".format(unit, error)
+        for note in notes:
+            run.note("S{0}: {1}: {2}".format(step, unit, note))
+        prepared.touch()
 
     marker.touch()
     return ""
