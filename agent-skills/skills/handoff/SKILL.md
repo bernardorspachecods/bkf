@@ -20,6 +20,7 @@ after the task belong in the repository's documents, placed by
    - State the working directory, the branch, and where uncommitted changes stand.
    - Mark each claim as verified (say how) or as an assumption. The new agent will not re-check a claim written as fact, so re-check cheap ones now and downgrade the rest, especially "X is done" and "Y is not built".
    - Leave out keys, tokens and passwords.
+   - Leave out whatever a new session already loads on its own at start (standing instructions, memory, repository documents, hooks). Restating it risks a stale or distorted copy that competes with the real one. Write only what this task adds, or what it needs stricter than the standing rules, each with its reason. Do not describe the user's temperament or habits; turn them into a concrete stop condition for this task, or drop them.
    - Sources: give each one's path and what it is authoritative for, and what wins when they disagree (by default the plan on intent and scope, the code on current behavior). Say what not to read, whether examples are binding or only shape references, and whether history is current truth or background.
    - Name what the new agent can access (repo, tools, files) and what it lacks. Put the essential context in the file, stating anything settled in this chat, instead of pointing to guidance the new agent cannot reach.
    - Delimit pasted or retrieved material (logs, documents, code) from the instructions and say what it is.
