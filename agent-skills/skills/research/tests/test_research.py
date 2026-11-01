@@ -40,13 +40,16 @@ elif prompt.startswith("# Brief: review of the collection"):
 elif prompt.startswith("# Brief: digest"):
     (directory / "digest.md").write_text("# Digest\\n\\nSummary.\\n")
 elif prompt.startswith("# Brief: review of the digest"):
-    (directory / "problems.md").write_text("## What I checked\\n\\n- objective\\n- sources\\n- digest\\n\\n## Problems\\n\\nNone.\\n\\nVERDICT: pass\\n")
+    (directory / "problems.md").write_text("## What I checked\\n\\n- objective\\n- sources\\n- digest\\n\\n## Problems\\n\\nNone.\\n\\nVERDICT: " + os.environ.get("FAKE_DIGEST_VERDICT", "pass") + "\\n")
 elif prompt.startswith("# Brief: review of the delivery"):
     verdict = os.environ.get("FAKE_DELIVERY_VERDICT", "pass")
-    (directory / "problems.md").write_text("## What I checked\\n\\n- digest in delivery\\n- objective\\n- coverage\\n\\n## Problems\\n\\nNone.\\n\\nVERDICT: " + verdict + "\\n")
+    # A reviewer is read-only: its review is only its final message.
+    output.write_text("## What I checked\\n\\n- digest in delivery\\n- objective\\n- coverage\\n\\n## Problems\\n\\nNone.\\n\\nVERDICT: " + verdict + "\\n")
+    print('{"type":"turn.completed"}')
+    raise SystemExit(0)
 else:
     raise SystemExit("unexpected prompt: " + prompt[:100])
-if prompt.startswith("# Brief: review of the collection") or prompt.startswith("# Brief: review of the digest") or prompt.startswith("# Brief: review of the delivery"):
+if prompt.startswith("# Brief: review of the collection") or prompt.startswith("# Brief: review of the digest"):
     output.write_text((directory / "problems.md").read_text())
 else:
     output.write_text("fake response\\n")
@@ -161,6 +164,25 @@ class ResearchWorkflowTests(unittest.TestCase):
         self.assertEqual(self.call("deliver", "study", str(self.delivery)), 0)
         self.assertEqual(self.call("deliver", "study", str(self.delivery), FAKE_DELIVERY_VERDICT="back"), 1)
         self.assertEqual(self.call("deliver", "study", str(self.delivery), FAKE_DELIVERY_VERDICT="escalate"), 2)
+
+    def test_accept_digest_after_escalation_unblocks_deliver(self):
+        self.assertEqual(self.start(FAKE_DIGEST_VERDICT="escalate"), 1)
+        run = self.run_path()
+        self.assertFalse((run / "03-digest" / "digest.md").exists())
+        self.assertNotEqual(self.call("deliver", "study", str(self.delivery)), 0)
+        self.assertIn("has not reached READY", self.stderr.getvalue())
+        self.assertEqual(self.call("accept-digest", "study", "--why", "user accepted"), 0)
+        self.assertTrue((run / "03-digest" / "digest.md").is_file())
+        self.assertIn("digest accepted by hand after escalation: user accepted", (run / "status.log").read_text())
+        self.assertEqual(self.call("deliver", "study", str(self.delivery)), 0)
+        before = (run / "status.log").read_text().count("start step 3")
+        self.assertEqual(self.call("resume", "study", FAKE_DIGEST_VERDICT="escalate"), 0)
+        self.assertEqual((run / "status.log").read_text().count("start step 3"), before)
+
+    def test_accept_digest_refuses_a_digest_that_did_not_escalate(self):
+        self.assertEqual(self.start(), 0)
+        self.assertNotEqual(self.call("accept-digest", "study", "--why", "x"), 0)
+        self.assertIn("only closes an escalated digest", self.stderr.getvalue())
 
     def test_deliver_uses_saved_model_and_effort(self):
         self.assertEqual(self.call("start", "-m", "saved-model", "-e", "low", "study",

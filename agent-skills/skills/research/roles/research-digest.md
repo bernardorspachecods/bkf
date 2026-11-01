@@ -77,7 +77,8 @@ The failures that come back most are about this.
 - **Locators the reader can check.** "Where in it" must let someone with only the
   original source find the passage: a section heading, page, timestamp, or
   numbered item. A line number in the joined file or in a collector's copy is not
-  enough on its own; add the heading.
+  enough on its own; add the heading. For a web page the URL plus the heading the
+  collector gave is a locator; do not invent a finer one.
 - **Other areas get a pointer, not a link you cannot make.** When the objective
   assigns a topic to another area, name the area that owns it in one sentence.
   You cannot edit, and so cannot require, anything in another run's digest. A

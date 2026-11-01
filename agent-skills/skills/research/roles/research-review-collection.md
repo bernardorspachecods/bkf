@@ -42,6 +42,9 @@ field, say whether the result meets it and point to where.
 
 Every finding should carry its source and where in it. Confirm that the link
 exists. Do not confirm that it is true; truth is checked when sources diverge.
+For a web page, the URL plus a section heading (or the page title if it has no
+sections) is a sufficient "where in it": collectors cannot give a finer locator,
+so do not send work back for a missing passage locator on a web source.
 
 ## When the objective is vague
 

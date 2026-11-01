@@ -380,7 +380,27 @@ class ResearchWorkflow(Workflow):
         self._finish(ctx, [only, keep])
 
     def commands(self):
-        return {"deliver": self._deliver}
+        return {"deliver": self._deliver, "accept-digest": self._accept_digest}
+
+    def _accept_digest(self, args):
+        usage = "usage: accept-digest <name> --why <text>"
+        if len(args) < 3 or args[1] != "--why" or not " ".join(args[2:]).strip():
+            raise RunError(usage)
+        run = self._load_run(args[0])
+        why = " ".join(args[2:]).strip()
+        phase = run.path / "03-digest"
+        status_path = phase / "digest" / "status"
+        status = status_path.read_text(encoding="utf-8").strip() if status_path.is_file() else ""
+        if status != "escalated":
+            raise RunError("the digest is {0}: accept-digest only closes an escalated digest".format(status or "not started"))
+        digest = phase / "digest" / "work" / "digest.md"
+        if not digest.is_file() or not digest.stat().st_size:
+            raise RunError("there is no digest to accept: {0}".format(digest))
+        _copy(digest, phase / "digest.md")
+        run.mark_done("S3")
+        run.note("digest accepted by hand after escalation: {0}".format(why))
+        print("Digest accepted: {0}".format(phase / "digest.md"))
+        return 0
 
     def _deliver(self, args):
         model, effort = None, None
@@ -445,7 +465,6 @@ class ResearchWorkflow(Workflow):
         if result.verdict is None:
             ctx.progress("delivery · parou")
             raise RunError(result.reason)
-        _copy(review / "problems.md", round_path / "problems.md")
         verdict = result.verdict
         if verdict == "back" and number >= _limits()[0]:
             verdict = "escalate"

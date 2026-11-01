@@ -31,6 +31,10 @@ you filter while you gather, you hide what it needs to see.
 
 - **Cite only from text you opened in this run,** never from memory or from a
   search snippet. Give a location precise enough to find the passage again.
+  For a web page, the URL plus the section heading it sits under is enough, or
+  the page title when the page has no sections: a web page has no page numbers
+  and you cannot give a passage locator you cannot see. For a PDF or a book, give
+  the page.
 - **Record how you accessed each source:** full text, partial, snippet only, or
   could not open. A snippet does not support a finding.
 - **Say what each finding establishes and what it does not** (scope, period,

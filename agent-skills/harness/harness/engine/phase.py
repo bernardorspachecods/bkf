@@ -123,10 +123,10 @@ def _agent(run, phase_path, name, agent_brief, review_brief, model, effort, tier
             else:
                 text += "This is the first round; there is no previous list.\n"
             if min_checked > 0:
-                text += 'Begin problems.md with a section headed "## What I checked": one line per thing you went through and where you found it. Then list the problems.\n'
-            text += "Write your list of problems to problems.md. Its last line must be exactly one of:\nVERDICT: pass\nVERDICT: back\nVERDICT: escalate\n"
+                text += 'Begin your list with a section headed "## What I checked": one line per thing you went through and where you found it. Then list the problems.\n'
+            text += "You cannot write files: your final message is your list of problems, and the harness saves it as problems.md. Its last line must be exactly one of:\nVERDICT: pass\nVERDICT: back\nVERDICT: escalate\n"
             if attempt > 1:
-                text += 'Your previous attempt left no usable problems.md (missing, or without a "## What I checked" section). Write the file this time; the brief and the role guide hold everything you need.\n'
+                text += 'Your previous final message was not a usable list (empty, without a "## What I checked" section, or without the VERDICT line last). Put the whole list in your final message this time; the brief and the role guide hold everything you need.\n'
             return text
 
         result = run_review(run, name, str(review), str(round_path), build_prompt,

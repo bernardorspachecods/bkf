@@ -35,7 +35,9 @@ objective, find where it went in the digest:
 - **The sources not consulted** from collection are all listed.
 - **Findings keep their source and where in it,** and say whether they come from a
   source, a synthesis or an inference. Confirm that the link exists; do not
-  confirm that it is true.
+  confirm that it is true. For a web page the URL plus the collector's section
+  heading (or page title) is a sufficient "where in it"; do not send the digest
+  back, or escalate, for a finer passage locator on a web source.
 
 Then a sanity check on the views: do the opinions inside each view line up in
 general, even when the details do not, and do the views differ in a way that
