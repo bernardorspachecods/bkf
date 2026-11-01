@@ -21,6 +21,9 @@ rules=$(<"$(dirname "$0")/coordinator-rules.md")
 rules=${rules//'{{SESSION}}'/$session}
 rules=${rules//'{{ORCHESTRATOR}}'/$orchestrator}
 rules=${rules//'{{BRIEF}}'/$brief}
+crew_dir=$(dirname "$brief")
+rules=${rules//'{{DONE_FILE}}'/$crew_dir/done/$name.md}
+rules=${rules//'{{DECISIONS}}'/$crew_dir/decisions.md}
 rules=${rules//'{{WAIT_FILE}}'/${WATCH_WAITS:-$HOME/.crew-waits}/$session}
 printf '%s\n\n---\n\n%s\n' "$(<"$brief")" "$rules" > "$prompt"
 
