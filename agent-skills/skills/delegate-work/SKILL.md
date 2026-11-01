@@ -25,7 +25,9 @@ One bounded, objective task goes to another agent; its result is checked by you,
 - **Claude subagent:** the Agent tool with the brief as the prompt; set `model` only when the user chose one, and `isolation: "worktree"` for agents that write in parallel. The report is not shown to the user: relay what matters.
 - **Harness agent:** [scripts/delegate-run.sh](scripts/delegate-run.sh) `<name> <brief-file> [base-ref] [model] [effort]`, started with `run_in_background: true`. Codex by default (`gpt-6-luna`, `high`; never `gpt-6.1-sol` unless the user says); `HARNESS_BACKEND=claude` runs it on `claude -p` (`sonnet`, `high`). It works in the checkout with `DELEGATE_IN_PLACE=1`, one task at a time, or in a sibling worktree `<repo>-delegate/<name>` on branch `delegate/<name>`, the only way to run tasks in parallel. The brief must forbid git commands that change state. `DELEGATE_RERUN=1` reuses a run folder that already has a `status` file.
 - It prints the run folder, `~/.delegate-runs/<repo>/<name>/` (or under `$DELEGATE_RUNS_DIR`): `status` (`exit=0` means finished; otherwise `stderr.log`), `last-message.md` (the agent's report), `diffstat.txt`, `worktree` and `base`. In place, read the diff with `git diff $(cat <run-folder>/base)` and compare `status-before.txt` with `status-after.txt` for new files.
-- To correct the work, write a new brief or resume the agent in the same checkout. Do not edit its work unless the user asks, and do not commit or merge unless the user says so.
+- Close a small gap yourself: when the work is mostly right and what is missing is quick, simple and clear from the brief and the check (a missed case, a wrong name, a failing line), fix it directly in the checkout. Sending it back costs a new brief, a run and a second review, which is more than the fix. Then run the check again and say what you changed.
+- Send it back only when the gap is large, needs the agent's context, or shows the brief was wrong (write a new brief or resume the agent in the same checkout). Do not rewrite the agent's work wholesale in its place.
+- Do not commit or merge unless the user says so.
 
 ## Reconcile
 
