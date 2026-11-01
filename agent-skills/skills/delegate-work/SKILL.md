@@ -9,6 +9,7 @@ One bounded, objective task goes to another agent; its result is checked by you,
 
 ## Decide
 
+- Prefer this to a plan when the work is simple and quick: the cheaper agent does it and you review it at the end, which costs little because it is small. If the work has units that depend on one another and each needs its own reviewer, it is a plan.
 - Delegate only a task whose inputs fit in a brief and whose result a command can check. Advice needs only the context to answer it.
 - One agent for cohesive work. Several only when their files and outputs are independent; give each its own files, and never let implementation and review change the same target.
 - A weak model (`gpt-6-luna`, Haiku) fails on long work and goes shallow on research across many sources: make more and smaller briefs.

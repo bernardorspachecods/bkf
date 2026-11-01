@@ -37,8 +37,11 @@ The skills of the plan, code review, council and research workflows include this
 
 Use this when the user has an agreed goal that needs several pieces of work
 done in a coordinated way, such as a feature split into database, UI and UX. A
-single task is not a plan: brief it and run it. To explore options before the
-goal is agreed, hold a discussion first.
+single task is not a plan: brief it and run it. A simple, quick task, or several
+independent ones that need no review of each unit, goes to [delegate-work](../delegate-work/SKILL.md)
+instead: you review the result yourself at the end, which costs little because the work is
+small. The plan is for units that depend on one another and need a reviewer each, with you
+only coordinating. To explore options before the goal is agreed, hold a discussion first.
 
 **One plan is one goal split into units.** Each unit is small and isolated, so
 that it can be implemented, reviewed and read on its own. The plan is the
