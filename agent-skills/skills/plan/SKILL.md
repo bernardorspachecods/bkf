@@ -185,7 +185,10 @@ Unit brief
   write every brief before the run starts, so the two sides of each contract are
   fixed then: what one unit leaves ready is exactly what the next receives. The
   producing unit's review checks that it left that ready, so a unit never starts
-  on a contract that was not met.
+  on a contract that was not met. A fact about the repository that the brief
+  relies on (a file contains X, a command exists) is proved by a command in the
+  gate, such as a `grep`; a premise that is false makes the implementer stop with
+  `BLOCKED:` and costs a round, not a deviation found at the final review.
 - **The gate is a fenced block tagged `gate`,** one command per line:
 
   ````
@@ -210,6 +213,11 @@ Unit brief
   the gate (a line that runs the check against a case it must reject). Never in the handoff or in a
   sentence the implementer attests: the reviewer sees only the brief, the diff and the gate result. No
   criterion may depend on what the implementer reports.
+- **A number is a gate line, not a criterion:** a score, a count or a duration that
+  the reviewer would have to take from the implementer goes in the gate or out of the
+  brief. When a gate command is slow (tens of minutes), the brief tells the implementer
+  to measure only what it touches and leaves the full measurement to the gate, and says
+  why: otherwise the implementer pays the same measurement the gate then repeats.
 - **Criteria are what the gate cannot decide:** whether the diff stays in scope,
   whether what the unit leaves ready is there as stated, whether prose is accurate,
   how a page looks. Say who judges each: the reviewer by reading, or the user.
@@ -314,6 +322,9 @@ how it is created, is in the Run commands section below.
 
 When the plan is done, the user chooses: keep the record, which is copied into
 `records/plans/` in the repository, or delete the run. Until they choose, it stays where it is.
+`finish` removes the run folder and the worktree. When the plan is merged, also remove what
+`finish` does not: the plan's branches (unless `finish --discard` already deleted them) and any
+background process or temporary database the plan started.
 
 ## Run commands
 

@@ -44,7 +44,8 @@ Write one brief per coordinator in the scratchpad, `crew-<crew>/<name>.md`, by t
 - what it owns and what it must not touch;
 - what it receives from earlier phases, with paths or branches;
 - the workflow to use;
-- the roster: each coordinator open so far, with its session name and sub-plan.
+- the roster: each coordinator open so far, with its session name and sub-plan;
+- the exact command to resume the work, with its environment variables, and the decisions already taken that are not to be reopened: a coordinator loses its thread when its context is compacted, and the brief is what it rereads.
 
 The launcher appends the crew's rules for the coordinator: when to message the orchestrator, when to message another coordinator, and when to talk to the user. Do not repeat them in the brief. Read [scripts/coordinator-rules.md](scripts/coordinator-rules.md) only to change them.
 
@@ -61,6 +62,8 @@ A coordinator whose action is denied, or waits on the user's approval, tells you
 ## While it runs
 
 - Messages from coordinators arrive on their own. Do not poll them and do not send status requests.
+- When the user changes direction on a sub-plan that is already running, a new coordinator with a new brief usually costs less than redirecting the old one, which carries the old style and a large cached context. Make sure the old one is closed before the new one acts on the same run.
+- A run that stops on the agent's quota stays stopped until someone notices: with no watcher, nobody does. When the watcher is off, ask the user to say when the quota is back, or look at the run's `status.log` when they return.
 - A coordinator's "done" unlocks nothing until its workflow's review has passed. Check the return against the brief and look at the result yourself. At the end of a phase, stop and give the user the outcome of each sub-plan, then open the next phase only when they approve.
 - When a coordinator has gone quiet longer than its work explains, look at its window before messaging: `tmux capture-pane -p -t crew-<name>` shows its screen, including a permission prompt it may be waiting on. When you wait on one result, `SendMessage` with `notify_when_idle` and no message brings one notice when it next goes idle. It also goes idle while it talks with the user, so idle does not mean done.
 - A coordinator stuck on an approval prompt cannot message you. For a phase that runs long without the user, run [scripts/watch-coordinators.sh](scripts/watch-coordinators.sh) `<state-dir> <session>:crew-<name>...` with `run_in_background`, one target per coordinator in the roster, and `<state-dir>` a folder next to the briefs. It uses no tokens while nothing happens and exits on every alert, which wakes you. It prints one line per alert and sends the user a system notification itself. Do not replace it with a cron: each check would reload this whole chat.
