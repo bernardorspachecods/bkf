@@ -89,6 +89,7 @@ _WORKFLOW = Path(os.environ.get(
 
 
 _FAKE_CODEX = '''#!/usr/bin/env python3
+import fcntl
 import json
 import os
 import pathlib
@@ -100,6 +101,22 @@ directory = pathlib.Path(args[args.index("-C") + 1])
 output = pathlib.Path(args[args.index("-o") + 1])
 prompt = sys.stdin.read()
 state = pathlib.Path(os.environ["FAKE_STATE"])
+
+def next_count(name):
+    count_file = state / name
+    with (state / (name + ".lock")).open("a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            try:
+                count = int(count_file.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                count = 0
+            count += 1
+            count_file.write_text(str(count), encoding="utf-8")
+            return count
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
 if prompt.startswith("# Final review"):
     output.write_text("Final report\\n", encoding="utf-8")
 elif prompt.startswith("# Review"):
@@ -107,17 +124,13 @@ elif prompt.startswith("# Review"):
     effort = next((value.partition("=")[2].strip('"') for value in args if value.startswith('model_reasoning_effort=')), "")
     with effort_file.open("a", encoding="utf-8") as efforts:
         efforts.write("model_reasoning_effort=" + effort + "\\n")
-    count_file = state / "reviews"
-    count = int(count_file.read_text() if count_file.exists() else "0") + 1
-    count_file.write_text(str(count))
+    next_count("reviews")
     remove = os.environ.get("FAKE_REMOVE_BRIEF_ON_REVIEW")
     if remove:
         pathlib.Path(remove).unlink(missing_ok=True)
     output.write_text("## What I checked\\n\\n- patch\\n- prompt\\n- result\\n\\n## Problems\\n\\nnone\\n\\nVERDICT: pass\\n", encoding="utf-8")
 else:
-    count_file = state / "implementations"
-    count = int(count_file.read_text() if count_file.exists() else "0") + 1
-    count_file.write_text(str(count))
+    count = next_count("implementations")
     scripts = json.loads(os.environ.get("FAKE_IMPLS", "{}"))
     script = scripts.get(str(count), "echo change >> seed.txt")
     completed = subprocess.run(["bash", "-c", script], cwd=str(directory), check=False)
