@@ -7,8 +7,10 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import nullcontext
 from typing import Optional
 
+from .engine.bridge import porteiro
 from .inject import InjectionError, inject_rules
 
 
@@ -306,6 +308,9 @@ def run_agent(
     tier=None,
     backend=None,
     web=False,
+    bridge_base_file=None,
+    bridge_log=None,
+    bridge_unit=None,
 ):
     """Inject prompt rules, run a backend in the foreground, and return its status."""
     backend_class = get_backend(backend)
@@ -328,20 +333,26 @@ def run_agent(
     command = [backend_class.executable] + backend_class().arguments(
         directory, model, effort, sandbox, tier, last_message_path, web
     )
+    bridge_context = (
+        porteiro(directory, bridge_unit, bridge_base_file, [], bridge_log)
+        if bridge_base_file is not None
+        else nullcontext()
+    )
     try:
-        with open(prompt_file, "rb") as prompt, open(events_path, "wb") as events, open(
-            stderr_path, "wb"
-        ) as errors:
-            process = _spawn(command, directory, prompt, events, errors)
-            try:
-                status, stalled = _wait(process, (events_path, stderr_path), stall_seconds())
-            finally:
-                _LIVE_PROCESSES.discard(process)
-            if stalled:
-                print(
-                    "harness: the agent wrote nothing for {0:g}s and was ended".format(stall_seconds()),
-                    file=sys.stderr,
-                )
+        with bridge_context:
+            with open(prompt_file, "rb") as prompt, open(events_path, "wb") as events, open(
+                stderr_path, "wb"
+            ) as errors:
+                process = _spawn(command, directory, prompt, events, errors)
+                try:
+                    status, stalled = _wait(process, (events_path, stderr_path), stall_seconds())
+                finally:
+                    _LIVE_PROCESSES.discard(process)
+                if stalled:
+                    print(
+                        "harness: the agent wrote nothing for {0:g}s and was ended".format(stall_seconds()),
+                        file=sys.stderr,
+                    )
     except OSError as error:
         print("harness: {0}".format(error), file=sys.stderr)
         return 2

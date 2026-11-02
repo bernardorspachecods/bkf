@@ -1,8 +1,11 @@
 import argparse
 import math
+import os
 import sys
 
 from .agent import run_agent
+from .engine.checkout import prepare_tree
+from .engine.run import RunError
 from .gate import run_gate
 from .inject import InjectionError, inject_rules
 from .quota import wait_for_reset
@@ -42,6 +45,17 @@ def _parser():
     agent_run_parser.add_argument("--tier")
     agent_run_parser.add_argument("--backend")
     agent_run_parser.add_argument("--web", action="store_true")
+    agent_run_parser.add_argument("--bridge-base-file")
+    agent_run_parser.add_argument("--bridge-log")
+    agent_run_parser.add_argument("--bridge-unit")
+    prepare_parser = subparsers.add_parser("prepare")
+    prepare_parser.add_argument("--run", required=True)
+    prepare_parser.add_argument("--repo", required=True)
+    prepare_parser.add_argument("--tree", required=True)
+    prepare_parser.add_argument(
+        "--timeout", type=float,
+        default=float(os.environ.get("PLAN_PREPARE_TIMEOUT", "1800")),
+    )
     quota_parser = subparsers.add_parser("quota-wait")
     quota_parser.add_argument("text")
     quota_parser.add_argument("--margin", type=int, default=120)
@@ -59,7 +73,22 @@ def main(argv=None):
         return wait_for_reset(args.text, args.margin, announce=args.announce)
     if args.area == "run":
         return run_workflow(args.definition_path, args.arguments)
+    if args.area == "prepare":
+        if not math.isfinite(args.timeout) or args.timeout <= 0:
+            parser.error("--timeout must be a finite number greater than zero")
+        try:
+            for note in prepare_tree(args.run, args.repo, args.tree, args.timeout):
+                print(note)
+        except RunError as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        return 0
     if args.area == "agent":
+        bridge_options = (args.bridge_log, args.bridge_unit)
+        if args.bridge_base_file and any(value is None for value in bridge_options):
+            agent_run_parser.error("--bridge-log and --bridge-unit are required with --bridge-base-file")
+        if not args.bridge_base_file and any(value is not None for value in bridge_options):
+            agent_run_parser.error("--bridge-log and --bridge-unit require --bridge-base-file")
         return run_agent(
             args.dir,
             args.prompt,
@@ -70,6 +99,9 @@ def main(argv=None):
             tier=args.tier,
             backend=args.backend,
             web=args.web,
+            bridge_base_file=args.bridge_base_file,
+            bridge_log=args.bridge_log,
+            bridge_unit=args.bridge_unit,
         )
     if args.area == "inject":
         try:

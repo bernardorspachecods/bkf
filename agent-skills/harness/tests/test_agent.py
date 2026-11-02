@@ -32,6 +32,9 @@ class AgentCliTests(unittest.TestCase):
             "    json.dump(arguments, output)\n"
             "with open(os.environ['INPUT_LOG'], 'wb') as output:\n"
             "    output.write(sys.stdin.buffer.read())\n"
+            "if os.environ.get('BRIDGE_VISIBLE'):\n"
+            "    with open(os.environ['BRIDGE_VISIBLE'], 'w') as output:\n"
+            "        output.write(str(os.path.isdir(os.path.join(os.environ['WORKDIR'], '.plan-porteiro'))))\n"
             "import time\n"
             "end = time.monotonic() + float(os.environ.get('FAKE_SLEEP', '0'))\n"
             "while time.monotonic() < end:\n"
@@ -67,6 +70,7 @@ class AgentCliTests(unittest.TestCase):
         self.env["PATH"] = str(self.bin_dir) + os.pathsep + self.env.get("PATH", "")
         self.env["ARG_LOG"] = str(self.arg_log)
         self.env["INPUT_LOG"] = str(self.input_log)
+        self.env["WORKDIR"] = str(self.root)
 
     def tearDown(self):
         self.temp.cleanup()
@@ -175,6 +179,38 @@ class AgentCliTests(unittest.TestCase):
             pathlib.Path(str(self.prefix) + ".last-message.md").read_text(encoding="utf-8"),
             "last message",
         )
+
+    def test_agent_bridge_is_present_only_during_backend_run(self):
+        subprocess.run(["git", "-C", str(self.root), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        (self.root / ".plan-run.json").write_text(
+            json.dumps({"bridge": {"pnpmScripts": []}}), encoding="utf-8"
+        )
+        (self.root / "package.json").write_text(json.dumps({"scripts": {}}), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "-A"], check=True)
+        tree = subprocess.run(
+            ["git", "-C", str(self.root), "write-tree"], check=True,
+            stdout=subprocess.PIPE, text=True,
+        ).stdout.strip()
+        base_file = self.root / "base"
+        base_file.write_text(tree + "\n", encoding="utf-8")
+        visible = self.root / "bridge-visible"
+        self.env["BRIDGE_VISIBLE"] = str(visible)
+        result = self.run_agent(
+            "--bridge-base-file", str(base_file), "--bridge-log", str(self.root / "porteiro.log"),
+            "--bridge-unit", "test-unit",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(visible.read_text(), "True")
+        self.assertFalse((self.root / ".plan-porteiro").exists())
+
+    def test_agent_without_bridge_flags_keeps_bridge_absent(self):
+        visible = self.root / "bridge-visible"
+        self.env["BRIDGE_VISIBLE"] = str(visible)
+        result = self.run_agent()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(visible.read_text(), "False")
 
     def run_in_process(self, **environment):
         patched = dict(self.env)

@@ -14,6 +14,9 @@ harness() { PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" python
 agent_run() { # <dir> <prompt-file> <out-prefix> [sandbox]
   local -a args=(agent run --dir "$1" --prompt "$2" --out-prefix "$3" --model "$model" --effort "$effort" --sandbox "${4:-workspace-write}")
   [ -z "${PLAN_CODEX_TIER:-}" ] || args+=(--tier "$PLAN_CODEX_TIER")
+  if [ -n "${HARNESS_BRIDGE_BASE_FILE:-}" ]; then
+    args+=(--bridge-base-file "$HARNESS_BRIDGE_BASE_FILE" --bridge-log "$HARNESS_BRIDGE_LOG" --bridge-unit "$HARNESS_BRIDGE_UNIT")
+  fi
   harness "${args[@]}"
 }
 
