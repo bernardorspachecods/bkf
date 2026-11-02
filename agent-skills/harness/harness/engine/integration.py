@@ -1,6 +1,5 @@
 """Apply a parallel group's patches and review their combined result."""
 
-import inspect
 import os
 import shutil
 import subprocess
@@ -28,17 +27,6 @@ def _write(path, text):
 def _read(path):
     with open(path, "r", encoding="utf-8", newline="") as source:
         return source.read()
-
-
-def _review_round_accepts_memory(method):
-    """Keep patched or legacy review runners callable without the optional value."""
-    target = getattr(method, "side_effect", None) or method
-    try:
-        parameters = inspect.signature(target).parameters.values()
-    except (TypeError, ValueError):
-        return False
-    return any(parameter.name == "last_review_problems" or parameter.kind == inspect.Parameter.VAR_KEYWORD
-               for parameter in parameters)
 
 
 def _apply_patch(repo, patch, error_path):
@@ -183,10 +171,7 @@ def run_integration(
             previous_problems, gate_file,
             "S{0} integração · ronda {1}".format(step, round_number),
         )
-        if _review_round_accepts_memory(run_review_round):
-            verdict, reason = run_review_round(*review_args, last_review_problems=last_review_problems)
-        else:
-            verdict, reason = run_review_round(*review_args)
+        verdict, reason = run_review_round(*review_args, last_review_problems=last_review_problems)
         if verdict is None:
             return IntegrationResult(False, reason)
         if verdict == "pass":

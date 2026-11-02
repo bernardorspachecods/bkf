@@ -99,7 +99,7 @@ class IntegrationTests(unittest.TestCase):
         seen = []
 
         def reviewer(run, label, checkout, round_dir, hooks, settings, tier,
-                     limits, previous, gate_file, progress):
+                     limits, previous, gate_file, progress, last_review_problems=None):
             seen.append(round_dir)
             verdict = "back" if len(seen) == 1 else "pass"
             Path(round_dir, "problems.md").write_text("review\n", encoding="utf-8")
@@ -175,7 +175,7 @@ class IntegrationTests(unittest.TestCase):
             return StepResult(True, "", None)
 
         def reviewer(run, label, checkout, round_dir, hooks, settings, tier,
-                     limits, previous, gate_file, progress):
+                     limits, previous, gate_file, progress, last_review_problems=None):
             Path(round_dir, "problems.md").write_text("review\n", encoding="utf-8")
             Path(round_dir, "verdict").write_text("pass\n", encoding="utf-8")
             return "pass", ""
@@ -256,7 +256,7 @@ class IntegrationTests(unittest.TestCase):
             return StepResult(True, "", None)
 
         def reviewer(run, label, checkout, round_dir, hooks, settings, tier,
-                     limits, previous, gate_file, progress):
+                     limits, previous, gate_file, progress, last_review_problems=None):
             prompt = hooks.review_prompt(
                 Path(round_dir).parent.parent / "brief.md",
                 Path(round_dir) / "diff.patch",
@@ -315,7 +315,7 @@ class IntegrationTests(unittest.TestCase):
             return StepResult(True, "", None)
 
         def reviewer(run, label, checkout, round_dir, hooks, settings, tier,
-                     limits, previous, gate_file, progress):
+                     limits, previous, gate_file, progress, last_review_problems=None):
             Path(round_dir, "problems.md").write_text("review\n", encoding="utf-8")
             Path(round_dir, "verdict").write_text("pass\n", encoding="utf-8")
             return "pass", ""
@@ -345,7 +345,7 @@ class IntegrationTests(unittest.TestCase):
 
     def _reviewer(self, files="none", verdict="back"):
         def review(run, label, checkout, round_dir, hooks, settings, tier,
-                   limits, previous, gate_file, progress):
+                   limits, previous, gate_file, progress, last_review_problems=None):
             Path(round_dir, "problems.md").write_text(
                 "## What I checked\n- diff\n\n## Problems\n" + files + "\n",
                 encoding="utf-8",
@@ -413,10 +413,10 @@ class IntegrationTests(unittest.TestCase):
         class TwoRounds(Limits):
             max_rounds = 2
         calls = []
-        def changing_reviewer(*args):
+        def changing_reviewer(*args, **kwargs):
             calls.append(len(calls))
             files = "- Fix `src/a.py`" if len(calls) == 1 else "- Fix `src/b.py`"
-            return self._reviewer(files)(*args)
+            return self._reviewer(files)(*args, **kwargs)
         with patch("harness.engine.integration.run_agent_step", side_effect=self._integrator), patch(
             "harness.engine.integration.run_review_round", side_effect=changing_reviewer
         ):
