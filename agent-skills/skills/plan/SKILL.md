@@ -123,7 +123,8 @@ together only if they share nothing: each then runs in its own copy of the
 repository, and their diffs are brought together afterwards. That costs an
 integration agent, and a review of the combined result, for the group. Run in
 series when unsure, and when the group is only two small units, which is cheaper
-and sees more. Parallel pays when the units are big and truly independent.
+and sees more. Parallel pays when the units are big and truly independent. Read
+[run-recovery.md](run-recovery.md) only when a step has several briefs on one line or a run is stopped.
 
 You write the order in a plan file, one step per line; units on the same line run
 together:
@@ -303,7 +304,8 @@ time, so they are built from fixed templates: you write only the goal, the unit
 briefs and their order, and a script builds the agent briefs, runs each unit and
 stops when a review escalates. That script is [plan-run.sh](scripts/plan-run.sh); [run-reference.md](run-reference.md)
 has its options, the gate, the repeated-failure stop, `gates` (brief lint), `rehearse`, the bridge
-and the commands to repair a stopped run. Read it before the first `start`.
+and the commands to repair a stopped run. Read it before the first `start`. Read
+[run-recovery.md](run-recovery.md) only when a step has several briefs on one line or a run is stopped.
 
 | Role | Does | Receives |
 | --- | --- | --- |
