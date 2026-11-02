@@ -100,7 +100,7 @@ The orchestrator that the script opens reviews the whole phase: it reads the don
 - A blocked coordinator gets a revised brief or a decision from you or the user, not your work in its place.
 - Closing a coordinator's window is the user's call.
 
-Tests of the launcher are in [tests/test-launch-coordinator.sh](tests/test-launch-coordinator.sh), and of the watcher in [tests/test-watch-coordinators.sh](tests/test-watch-coordinators.sh).
+Tests of the launcher are in [tests/test-launch-coordinator.sh](tests/test-launch-coordinator.sh), of the watcher in [tests/test-watch-coordinators.sh](tests/test-watch-coordinators.sh), and of the waiter in [tests/test-await-crew.sh](tests/test-await-crew.sh).
 
 ## Runtime metadata
 
