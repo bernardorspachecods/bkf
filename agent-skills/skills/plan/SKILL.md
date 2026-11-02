@@ -141,16 +141,13 @@ read the commands that decide each unit; you do. Before `start`, and again whene
 you add or change a unit, run the script's `gates` command and read the list. Every
 unit has a command that fails if it is wrong, or a reason, written in the plan, for
 why none can exist. A unit with neither is not ready to run.
-The `gates` output also shows brief lint, and `start` refuses a plan whose briefs have lint
-errors, and `resume` refuses a run whose current briefs have them. Rehearse with
-`plan-run.sh rehearse <plan.txt|name>` before `start`, as required. Rehearsal catches
-gate commands that cannot run as written, such as `bkf validate` without its required
-argument. Fix unexpected failures before starting. Every unit's gate also includes the same repository-wide
-check command (for example, `pnpm check:quick`) alongside that unit's own tests;
-otherwise a defect found one unit later costs a full round. Gate commands run
-through `bash -c` (a shell). The bridge runs an exact gate command through `bash -c`,
-but invokes an allowed `pnpm` script directly as argv, without a shell; see
-[run-reference.md](run-reference.md#the-bridge).
+Rehearse before every `start` and fix unexpected failures; see
+[run-reference.md](run-reference.md#rehearsal) for what rehearsal and `gates` do.
+Gate commands run through `bash -c`, so shell syntax works in a gate line.
+Every unit's gate also includes the same repository-wide check command (for example,
+`pnpm check:quick`) alongside that unit's own tests; otherwise a defect found one
+unit later costs a full round. For script behavior, including lint refusals and how
+gate commands run, see [run-reference.md](run-reference.md#gate).
 
 **Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
 and ask the user, when you agree the split, who the pauses are for: only for you to check the step
@@ -163,11 +160,14 @@ it. Write the answer in the plan and follow it. Step numbers count the lines of
 rule, a migration, an interface), read it, and only then release the rest of that kind. A kind that
 is new to the plan fails in ways the briefs cannot predict, and fails once instead of in every unit.
 
-**Have the briefs read before they run.** A cheap agent (a Haiku subagent is enough) that reads
-every brief and answers only two questions catches most contradictions: are there two sentences
-that cannot both be obeyed, and is there a criterion that someone holding only the diff and the
-gate result cannot judge? It is a probabilistic check, so it adds to reading the gates, never
-replaces it.
+**Have the briefs read before they run.** This is required when there are more than
+three briefs, when the briefs are not variations of one template, or when any unit
+is above the size ceiling. For up to three briefs that follow one template, it is
+optional; if you skip it, say so in the report. A cheap agent (a Haiku subagent is
+enough) that reads every brief and answers only two questions catches most
+contradictions: are there two sentences that cannot both be obeyed, and is there a
+criterion that someone holding only the diff and the gate result cannot judge? It is
+a probabilistic check, so it adds to reading the gates, never replaces it.
 
 **Agree the plan before anything runs.** Present the finished plan: the split with
 the reason for each cut, the order, the pauses and the model. You suggest the pauses
@@ -247,11 +247,7 @@ Unit brief
   ```
   ````
 
-  After each implementation round the script runs these in the checkout, outside
-  any agent and outside the reviewer's sandbox, so they can reach a database or
-  write build output. A failing command sends the work back to the implementer
-  with its output and no review; the reviewer cannot override it, and cannot be
-  asked until it is green.
+  The script's gate behavior is in [run-reference.md](run-reference.md#gate).
   Following the `core-code-principles` module, write every criterion that a command can
   decide as a gate line: a test, a script, a query, a comparison of the behaviour
   before and after.
@@ -286,12 +282,12 @@ Unit brief
 - **State what each step leaves true.** A gate or a criterion written with the end state of the plan
   in mind is false half way: a command that checks a rule a later unit closes cannot pass now, and a
   rule such as "this number only changes in X" is wrong when the step creates a temporary exception.
-  Check every gate line against two states: the one the unit finds, for what the gate checks before
-  the work, and the one the unit leaves, since the script runs the gate after the implementer
-  finished. A gate that runs a file the same unit removes passes the rehearsal, which runs at the
-  start state, and fails the unit. Write the exceptions into the brief and into the unit that closes
-  them. List what the unit deletes or moves under Removes and what it adds under Creates: `gates`
-  follows them step by step and reports as an error a gate that uses a path the plan has removed.
+  Check every gate line against two states: the one the unit finds and the one it leaves. Write the
+  exceptions into the brief and into the unit that closes them. List what the unit deletes or moves
+  under Removes and what it adds under Creates; see [run-reference.md](run-reference.md#brief-lint)
+  for how `gates` checks those paths.
+  For the script timing behind this check, see [run-reference.md](run-reference.md#gate) and
+  [run-reference.md](run-reference.md#rehearsal).
   Units on the same line do not see each other's changes. A tool that only bridges the transition
   names, in the brief of the unit that creates it, the unit that removes it and the gate that
   replaces it.
@@ -303,8 +299,7 @@ the brief points to it and never explains it. The briefs are the same shape ever
 time, so they are built from fixed templates: you write only the goal, the unit
 briefs and their order, and a script builds the agent briefs, runs each unit and
 stops when a review escalates. That script is [plan-run.sh](scripts/plan-run.sh); [run-reference.md](run-reference.md)
-has its options, the gate, the repeated-failure stop, `gates` (brief lint), `rehearse`, the bridge
-and the commands to repair a stopped run. Read it before the first `start`. Read
+has its options and behavior. Read it before the first `start`. Read
 [run-recovery.md](run-recovery.md) only when a step has several briefs on one line or a run is stopped.
 
 | Role | Does | Receives |
@@ -325,19 +320,17 @@ Parallel group:  unit A ─► review ─┐
 
 Rules that hold whatever the number of agents:
 
-- **Brief problems go to the coordinator.** An implementer may stop with
-  `BLOCKED:`, and a reviewer may return `VERDICT: brief`; both signal that the
-  brief may be wrong.
-- **The gate is run by the script, not by an agent,** and a review does not
-  replace it. A unit passes when the gate is green and the reviewer passes.
+- **Brief problems go to the coordinator.** When a unit signals that its brief
+  may be wrong, revisit the brief before resuming; the script's signals are in
+  [run-reference.md](run-reference.md#brief-problems).
+- Gate and review execution, including the gate-failure cap, is described in
+  [run-reference.md](run-reference.md#gate).
 - **The reviewer does not see the implementer's reasoning or handoff.** The brief, the diff and the gate result are
   all it needs.
 - **The handoff is a log, not evidence.** It helps the implementer resume when a
   unit is sent back, and helps you read the run. What a unit left ready is attested
   by its review, not by its handoff.
 - **Each agent writes only its own files.** Two agents never touch the same file.
-- **A gate that keeps failing has its own cap,** larger than the cap on reviews.
-  When it is reached the unit goes to you.
 - **Git state is not touched by agents.** They do not commit, stage, stash or
   reset. The run records a base before the unit starts, and the diff is read from it.
 
