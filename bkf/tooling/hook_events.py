@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from validate_bundle import Validator
 
 STATE_DIR = Path.home() / ".agent-hooks" / "state"
-MAX_BLOCKS = 2
+MAX_BLOCKS = 1
 STATE_MAX_AGE = 14 * 24 * 3600
 REASON_LIMIT = 2500
 LOG_PREFIX = re.compile(r"^\s*([if])(-?)\s*:", re.IGNORECASE)
@@ -125,6 +125,14 @@ def _snapshot(repo: Path) -> dict | None:
     return {"repo": str(repo), "head": head, "files": files}
 
 
+def _in_repo(path: Path, repo: Path) -> bool:
+    """True when `path` belongs to the working tree `repo`, not to another worktree or repository."""
+    directory = path if path.is_dir() else path.parent
+    while not directory.is_dir() and directory != directory.parent:
+        directory = directory.parent
+    return _repo(directory) == repo
+
+
 def snapshot(data: dict, state_dir: Path | None = None) -> None:
     """Write the session's initial git snapshot once, when cwd is in a repo."""
     target = _state(data.get("session_id", ""), "base.json", state_dir)
@@ -166,6 +174,8 @@ def edited_paths(data: dict) -> list[str]:
 
 
 def record(data: dict, state_dir: Path | None = None) -> None:
+    if data.get("agent_id"):
+        return  # a subagent's edit: its work is not checked as this session's
     cwd = Path(data.get("cwd") or ".")
     resolved = [str((cwd / path).resolve()) for path in edited_paths(data)]
     if not resolved:
@@ -380,6 +390,8 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
     paths = {Path(line) for line in touched.read_text(encoding="utf-8").splitlines() if line} if touched.exists() else set()
     current: dict | None = None
     current_repo = _repo(data.get("cwd") or ".")
+    if current_repo is not None:
+        paths = {path for path in paths if _in_repo(path, current_repo)}
     if baseline is not None and current_repo is not None:
         current = _snapshot(current_repo)
         if current is not None and str(current_repo) == baseline.get("repo"):

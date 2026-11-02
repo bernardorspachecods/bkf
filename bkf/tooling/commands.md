@@ -280,8 +280,9 @@ a tool whose folder is missing is skipped.
   block, the warnings that name a file changed in the session are saved for the
   session; `bkf hooks run warnings`, a `UserPromptSubmit` hook of this group,
   gives them to the agent once as context with the next prompt, and shows the
-  same warnings to the user as a `systemMessage` (without the map guidance). The hook blocks at most
-  twice per session so an error the agent cannot fix cannot trap it, and a
+  same warnings to the user as a `systemMessage` (without the map guidance). The recorder ignores edits made by subagents (payloads with `agent_id`), and the check ignores
+  recorded paths that belong to another worktree than the session's working directory. The hook blocks at most
+  once per session so an error the agent cannot fix cannot trap it, and a
   passing or abandoned check clears the record and refreshes the snapshot. The
   recorder remains a fallback when git comparison is unavailable. A snapshot
   requires a git repository; more than 2000 dirty paths skips it. Two sessions

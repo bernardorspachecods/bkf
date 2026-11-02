@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -250,10 +251,9 @@ class HookEventsTest(unittest.TestCase):
         self.assertEqual((code, stderr), (0, ""))
         self.assertIn("NAVIGATION_MAP_STALE a.md", json.loads(stdout)["hookSpecificOutput"]["additionalContext"])
 
-    def test_blocks_at_most_twice_then_lets_the_session_stop(self) -> None:
+    def test_blocks_once_then_lets_the_session_stop(self) -> None:
         (self.root / "new.md").write_text(DOC.replace("A guide.", "A new guide."))
         self.touch(self.root / "new.md")
-        self.assertEqual(self.stop()["decision"], "block")
         self.assertEqual(self.stop()["decision"], "block")
         self.assertIsNone(self.stop())
         self.assertFalse((self.state / "s.touched").exists())
@@ -284,7 +284,7 @@ class HookEventsTest(unittest.TestCase):
         hook_events.STATE_DIR = self.state
         self.addCleanup(setattr, hook_events, "STATE_DIR", original)
         stdin, stdout = sys.stdin, io.StringIO()
-        sys.stdin = io.StringIO(json.dumps({"session_id": "s"}))
+        sys.stdin = io.StringIO(json.dumps({"session_id": "s", "cwd": str(self.base)}))
         try:
             with contextlib.redirect_stdout(stdout):
                 code = hook_events.main(["stop"])
@@ -395,6 +395,26 @@ class HookEventsTest(unittest.TestCase):
         self.snapshot()
         (self.root / "guide.md").write_text("---\nbkf: document\ntags: [test]\n---\n\n# Guide\n")
         self.assertEqual(self.stop()["decision"], "block")
+
+    def test_subagent_edits_are_not_recorded(self) -> None:
+        (self.root / "new.md").write_text(DOC.replace("A guide.", "A new guide."))
+        hook_events.record(
+            {"session_id": "s", "cwd": str(self.base), "agent_id": "x", "tool_name": "Edit", "tool_input": {"file_path": str(self.root / "new.md")}},
+            self.state,
+        )
+        self.assertIsNone(self.stop())
+
+    def test_edits_in_another_worktree_are_not_checked(self) -> None:
+        self.init_git()
+        other = self.base.parent / (self.base.name + "-wt")
+        self.addCleanup(shutil.rmtree, other, True)
+        subprocess.run(["git", "worktree", "add", "-b", "other", str(other)], cwd=self.base, check=True, capture_output=True)
+        broken = other / "bundle" / "guide.md"
+        broken.write_text("---\nbkf: document\ntags: [test]\n---\n\n# Guide\n")
+        self.touch(broken, session="a")
+        self.touch(broken, session="b")
+        self.assertIsNone(self.stop(session="a"))
+        self.assertEqual(self.stop(session="b", cwd=other)["decision"], "block")
 
     def test_deleted_tracked_file_is_checked(self) -> None:
         self.init_git()
