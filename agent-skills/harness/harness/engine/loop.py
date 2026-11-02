@@ -52,7 +52,7 @@ def _read(path):
         return source.read()
 
 
-def _call_with_last_review(method, args, last_review_problems):
+def _call_with_last_review(method, args, last_review_problems, fallback_args=None):
     """Pass review memory to updated hooks while keeping older workflow hooks compatible."""
     try:
         parameters = inspect.signature(method).parameters.values()
@@ -61,16 +61,7 @@ def _call_with_last_review(method, args, last_review_problems):
     if any(parameter.name == "last_review_problems" or parameter.kind == inspect.Parameter.VAR_KEYWORD
            for parameter in parameters):
         return method(*args, last_review_problems=last_review_problems or None)
-    return method(*args)
-
-
-def _accepts_last_review(method):
-    try:
-        parameters = inspect.signature(method).parameters.values()
-    except (TypeError, ValueError):
-        return False
-    return any(parameter.name == "last_review_problems" or parameter.kind == inspect.Parameter.VAR_KEYWORD
-               for parameter in parameters)
+    return method(*(fallback_args if fallback_args is not None else args))
 
 
 def _gate_problems(round_dir):
@@ -142,13 +133,17 @@ def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
     run.note("{0} round {1}: review".format(label, os.path.basename(round_dir)))
 
     def build_prompt(attempt):
-        review_previous = last_review_problems if _accepts_last_review(hooks.review_prompt) else previous_problems
+        review_previous = last_review_problems or previous_problems
+        args = (
+            os.path.join(os.path.dirname(os.path.dirname(round_dir)), "brief.md"),
+            os.path.join(round_dir, "diff.patch"), review_previous, attempt,
+            gate_file if gate_file and os.path.getsize(gate_file) else "",
+        )
+        fallback_args = args[:2] + (previous_problems,) + args[3:]
         return _call_with_last_review(
-            hooks.review_prompt,
-            (os.path.join(os.path.dirname(os.path.dirname(round_dir)), "brief.md"),
-             os.path.join(round_dir, "diff.patch"), review_previous, attempt,
-             gate_file if gate_file and os.path.getsize(gate_file) else ""),
+            hooks.review_prompt, args,
             last_review_problems,
+            fallback_args,
         )
 
     result = run_review(
@@ -281,7 +276,7 @@ def run_unit_loop(
             run, unit, checkout, round_dir, hooks, settings, tier, limits,
             previous_problems, gate_file,
             "{0} unidade {1} · ronda {2}".format(step_prefix, unit, round_count),
-            last_review_problems,
+            last_review_problems=last_review_problems,
         )
         if verdict is None:
             return LoopResult(False, review_reason)
