@@ -1,5 +1,6 @@
 """Apply a parallel group's patches and review their combined result."""
 
+import inspect
 import os
 import shutil
 import subprocess
@@ -10,7 +11,7 @@ from typing import NamedTuple
 from .agentstep import run_agent_step
 from .diffbase import make_patch, snapshot_base
 from .converge import gate_signature, problem_files
-from .loop import run_gate_round, run_review_round
+from .loop import _call_with_last_review, run_gate_round, run_review_round
 from ..verdict import read_blocked
 
 
@@ -27,6 +28,17 @@ def _write(path, text):
 def _read(path):
     with open(path, "r", encoding="utf-8", newline="") as source:
         return source.read()
+
+
+def _review_round_accepts_memory(method):
+    """Keep patched or legacy review runners callable without the optional value."""
+    target = getattr(method, "side_effect", None) or method
+    try:
+        parameters = inspect.signature(target).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(parameter.name == "last_review_problems" or parameter.kind == inspect.Parameter.VAR_KEYWORD
+               for parameter in parameters)
 
 
 def _apply_patch(repo, patch, error_path):
@@ -83,6 +95,7 @@ def run_integration(
     reviews = 0
     gate_fails = 0
     previous_problems = ""
+    last_review_problems = ""
     previous_handoff = ""
     previous_gate_signature = None
     previous_review_files = set()
@@ -111,7 +124,11 @@ def run_integration(
             hooks.progress("S{0} integração · ronda {1} · integrar".format(step, round_number))
             run.note("{0} round {1}: integrate".format(label, round_number))
             prompt_path = round_dir / "integrate-prompt.md"
-            _write(prompt_path, hooks.integrate_prompt(brief_path, failed, previous_problems, previous_handoff))
+            _write(prompt_path, _call_with_last_review(
+                hooks.integrate_prompt,
+                (brief_path, failed, previous_problems, previous_handoff),
+                last_review_problems if last_review_problems != previous_problems else None,
+            ))
             prefix = round_dir / "integrate"
             result = run_agent_step(
                 run, label, repo, os.fspath(prompt_path), os.fspath(prefix), settings.model, settings.effort,
@@ -161,11 +178,15 @@ def run_integration(
                 continue
 
         reviews += 1
-        verdict, reason = run_review_round(
+        review_args = (
             run, label, repo, round_dir, hooks, settings, tier, limits,
             previous_problems, gate_file,
             "S{0} integração · ronda {1}".format(step, round_number),
         )
+        if _review_round_accepts_memory(run_review_round):
+            verdict, reason = run_review_round(*review_args, last_review_problems=last_review_problems)
+        else:
+            verdict, reason = run_review_round(*review_args)
         if verdict is None:
             return IntegrationResult(False, reason)
         if verdict == "pass":
@@ -202,5 +223,6 @@ def run_integration(
             hooks.progress("S{0} integração · ronda {1} · escalada".format(step, round_number))
             return IntegrationResult(False, "{0}: round cap {1} reached (see {2})".format(label, limits.max_rounds, round_dir / "problems.md"))
         previous_problems = str(round_dir / "problems.md")
+        last_review_problems = previous_problems
         previous_handoff = str(round_dir / "handoff.md")
         previous_review_files = current_review_files

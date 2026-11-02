@@ -1,4 +1,5 @@
 """Run the implementation, gate, and review loop for one workflow unit."""
+import inspect
 import os
 import shutil
 import time
@@ -22,10 +23,12 @@ class LoopResult(NamedTuple):
 class UnitHooks:
     """Workflow supplied prompts, gate commands, progress, and implement context."""
 
-    def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff):
+    def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff,
+                         last_review_problems=None):
         raise NotImplementedError
 
-    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file):
+    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file,
+                      last_review_problems=None):
         raise NotImplementedError
 
     def gate_commands(self, brief):
@@ -47,6 +50,27 @@ def _write(path, text):
 def _read(path):
     with open(path, "r", encoding="utf-8", newline="") as source:
         return source.read()
+
+
+def _call_with_last_review(method, args, last_review_problems):
+    """Pass review memory to updated hooks while keeping older workflow hooks compatible."""
+    try:
+        parameters = inspect.signature(method).parameters.values()
+    except (TypeError, ValueError):
+        parameters = ()
+    if any(parameter.name == "last_review_problems" or parameter.kind == inspect.Parameter.VAR_KEYWORD
+           for parameter in parameters):
+        return method(*args, last_review_problems=last_review_problems or None)
+    return method(*args)
+
+
+def _accepts_last_review(method):
+    try:
+        parameters = inspect.signature(method).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(parameter.name == "last_review_problems" or parameter.kind == inspect.Parameter.VAR_KEYWORD
+               for parameter in parameters)
 
 
 def _gate_problems(round_dir):
@@ -109,7 +133,8 @@ def run_gate_round(run, label, checkout, round_dir, commands, hooks, limits,
 
 
 def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
-                     limits, previous_problems, gate_file, progress_prefix):
+                     limits, previous_problems, gate_file, progress_prefix,
+                     last_review_problems=None):
     """Run one shared review stage and return its validated verdict and reason."""
     _write(os.path.join(os.path.dirname(os.path.dirname(round_dir)), "status"),
            "reviewing round {0}\n".format(os.path.basename(round_dir)))
@@ -117,10 +142,13 @@ def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
     run.note("{0} round {1}: review".format(label, os.path.basename(round_dir)))
 
     def build_prompt(attempt):
-        return hooks.review_prompt(
-            os.path.join(os.path.dirname(os.path.dirname(round_dir)), "brief.md"),
-            os.path.join(round_dir, "diff.patch"), previous_problems, attempt,
-            gate_file if gate_file and os.path.getsize(gate_file) else "",
+        review_previous = last_review_problems if _accepts_last_review(hooks.review_prompt) else previous_problems
+        return _call_with_last_review(
+            hooks.review_prompt,
+            (os.path.join(os.path.dirname(os.path.dirname(round_dir)), "brief.md"),
+             os.path.join(round_dir, "diff.patch"), review_previous, attempt,
+             gate_file if gate_file and os.path.getsize(gate_file) else ""),
+            last_review_problems,
         )
 
     result = run_review(
@@ -154,6 +182,7 @@ def run_unit_loop(
     gate_fails = 0
     resumed = 0
     previous_problems = ""
+    last_review_problems = ""
     previous_handoff = ""
     previous_gate_signature = None
     previous_review_files = set()
@@ -188,8 +217,10 @@ def run_unit_loop(
         run.note("{0} round {1}: implement".format(unit, round_count))
 
         prompt_path = os.path.join(round_dir, "implement-prompt.md")
-        prompt = hooks.implement_prompt(
-            brief_path, round_count, resumed, previous_problems, previous_handoff
+        prompt = _call_with_last_review(
+            hooks.implement_prompt,
+            (brief_path, round_count, resumed, previous_problems, previous_handoff),
+            last_review_problems if last_review_problems != previous_problems else None,
         )
         _write(prompt_path, prompt)
         start_epoch = int(time.time())
@@ -250,6 +281,7 @@ def run_unit_loop(
             run, unit, checkout, round_dir, hooks, settings, tier, limits,
             previous_problems, gate_file,
             "{0} unidade {1} · ronda {2}".format(step_prefix, unit, round_count),
+            last_review_problems,
         )
         if verdict is None:
             return LoopResult(False, review_reason)
@@ -292,5 +324,6 @@ def run_unit_loop(
                 "{0}: round cap {1} reached (see {2})".format(unit, limits.max_rounds, os.path.join(round_dir, "problems.md")),
             )
         previous_problems = os.path.join(round_dir, "problems.md")
+        last_review_problems = previous_problems
         previous_handoff = round_handoff
         previous_review_files = current_review_files

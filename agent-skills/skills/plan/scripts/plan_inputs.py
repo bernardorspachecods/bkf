@@ -261,7 +261,8 @@ def integration_brief(run_path, units, goal_text):
     return text
 
 
-def integrate_prompt(guides, brief, failed_patches, previous_problems, previous_handoff):
+def integrate_prompt(guides, brief, failed_patches, previous_problems, previous_handoff,
+                     last_review_problems=None):
     """Build the integration agent prompt using the plan role guide."""
     text = _read_text(brief)
     text += (
@@ -282,13 +283,20 @@ def integrate_prompt(guides, brief, failed_patches, previous_problems, previous_
             "\nA reviewer found problems in the combined result. Fix those and only those, then verify again.\n\n"
             "Problems from the review:\n\n{0}\n\nYour handoff from the previous round, for you to resume from:\n\n{1}\n"
         ).format(_read_text(previous_problems), handoff)
+    if last_review_problems:
+        text += (
+            "\n## Problems from the last review (still binding until you prove they are gone)\n"
+            "Source: `{0}`\n\n{1}\n"
+        ).format(last_review_problems, _read_text(last_review_problems))
     text += "\nIf the brief cannot be followed because a command cannot pass at this step or a rule forbids what the result requires, make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt.\n"
     return text
 
 
-def integration_review_prompt(guides, brief, patch, previous_problems, attempt, gate_file):
+def integration_review_prompt(guides, brief, patch, previous_problems, attempt, gate_file,
+                              last_review_problems=None):
     """Build the read-only review prompt for a group's combined diff."""
-    text = review_prompt(guides, brief, patch, previous_problems, attempt, gate_file)
+    text = review_prompt(guides, brief, patch, previous_problems, attempt, gate_file,
+                         last_review_problems)
     text = text.replace(
         "Open and follow the role guide: {0}/plan-review.md (read-only). You are not the author of the work.".format(guides),
         'Open and follow the role guide: {0}/plan-review.md (read-only), section "The integration review". You are not the author of the work.'.format(guides),
@@ -296,7 +304,8 @@ def integration_review_prompt(guides, brief, patch, previous_problems, attempt, 
     return text
 
 
-def implement_prompt(guides, brief, round_number, resumed, previous_problems, previous_handoff):
+def implement_prompt(guides, brief, round_number, resumed, previous_problems, previous_handoff,
+                     last_review_problems=None):
     text = _read_text(brief)
     text += (
         "\n\n---\n## Role\nOpen and follow the role guide: {0}/plan-implementation.md (read-only). "
@@ -316,11 +325,17 @@ def implement_prompt(guides, brief, round_number, resumed, previous_problems, pr
             "Problems from the gate or the review:\n\n{0}\n\n"
             "Your handoff from the previous round, for you to resume from:\n\n{1}\n"
         ).format(_read_text(previous_problems), _read_text(previous_handoff))
+    if last_review_problems:
+        text += (
+            "\n## Problems from the last review (still binding until you prove they are gone)\n"
+            "Source: `{0}`\n\n{1}\n"
+        ).format(last_review_problems, _read_text(last_review_problems))
     text += "\nIf the brief cannot be followed because a command cannot pass at this step or a rule forbids what the result requires, make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt.\n"
     return text
 
 
-def review_prompt(guides, brief, patch, previous_problems, attempt, gate_file):
+def review_prompt(guides, brief, patch, previous_problems, attempt, gate_file,
+                  last_review_problems=None):
     text = "# Review\n\n## The brief\n\n" + _read_text(brief)
     text += (
         "\n\n---\n## Inputs (read-only)\n- The diff, new files included: {0}\n"
@@ -333,8 +348,14 @@ def review_prompt(guides, brief, patch, previous_problems, attempt, gate_file):
             "They are binding and not open to your verdict. Do not run them again and do not report them as unchecked. You judge what code did not check.\n"
         ).format(gate_file)
     text += "\n## Role\nOpen and follow the role guide: {0}/plan-review.md (read-only). You are not the author of the work.\n".format(guides)
-    if previous_problems:
-        text += "\nThe problems you listed in the previous round are below. The work was corrected; check whether they are gone.\n\n{0}\n".format(_read_text(previous_problems))
+    review_problems = last_review_problems or previous_problems
+    if last_review_problems:
+        text += (
+            "\nThe problems you listed in the last review are below and remain binding until you prove they are gone. "
+            "The work was corrected; check whether they are gone.\n\nSource: `{0}`\n\n{1}\n"
+        ).format(last_review_problems, _read_text(last_review_problems))
+    elif review_problems:
+        text += "\nThe problems you listed in the previous round are below. The work was corrected; check whether they are gone.\n\n{0}\n".format(_read_text(review_problems))
     text += (
         '\n---\nYour final message is the review, and nothing else. Begin it with a section headed "## What I checked": one line per thing you went through and where you found it. Then list the problems. Its last line must be exactly one of:\n'
         "VERDICT: pass\nVERDICT: back\nVERDICT: escalate\n"
