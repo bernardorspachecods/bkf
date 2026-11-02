@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from harness.engine.layout import find_run
+from harness.engine.layout import find_run, pending_dir
 from harness.engine.run import RunError
 import plan_lint
 
@@ -110,6 +110,33 @@ def _current_repo():
     return result.stdout.rstrip("\n") if result.returncode == 0 else None
 
 
+def resolve_plan(target):
+    """Resolve a plan file, existing run, or pending plan name to ordered briefs."""
+    if os.path.isfile(target):
+        return parse_plan(target)
+    if _valid_name(target):
+        run_path = _run_path(target)
+        if run_path.is_dir():
+            units_path = run_path / "00-input" / "units"
+            steps = []
+            with open(run_path / "00-input" / "order", "r", encoding="utf-8", newline="") as source:
+                for line in source:
+                    names = line.rstrip("\r\n").split()
+                    if names:
+                        steps.append([(unit, str(units_path / (unit + ".md"))) for unit in names])
+            return steps
+        repo = _current_repo()
+        if repo is not None:
+            pending = pending_dir("plan", repo, target)
+            plan_path = pending / "plan.txt"
+            if plan_path.is_file():
+                return parse_plan(plan_path)
+    raise RunError(
+        "no plan path, run, or pending plan named {0} (looked for an existing path, "
+        "an existing run, and a pending plan)".format(target)
+    )
+
+
 def lint_plan(steps, repo):
     """Yield (brief path, diagnostics) in plan order; each step sees what the earlier steps remove and create."""
     gone, made = frozenset(), frozenset()
@@ -153,34 +180,7 @@ def gates_command(args):
     if len(args) != 1:
         raise RunError("usage: gates <plan.txt|name>")
     target = args[0]
-    steps = []
-    if os.path.isfile(target):
-        plan_path = Path(target)
-        plan_dir = plan_path.parent.absolute()
-        with open(plan_path, "r", encoding="utf-8", newline="") as source:
-            for line in source:
-                step = []
-                for word in _words(line.split("#", 1)[0]):
-                    brief_path = Path(word)
-                    if not brief_path.is_absolute():
-                        brief_path = plan_dir / brief_path
-                    if not brief_path.is_file() or brief_path.stat().st_size == 0:
-                        raise RunError("missing or empty unit brief: {0}".format(word))
-                    step.append(brief_path)
-                if step:
-                    steps.append(step)
-    else:
-        if not _valid_name(target):
-            raise RunError("bad run name: {0}".format(target))
-        run_path = _run_path(target)
-        if not run_path.is_dir():
-            raise RunError("no such run: {0}".format(run_path))
-        units_path = run_path / "00-input" / "units"
-        with open(run_path / "00-input" / "order", "r", encoding="utf-8", newline="") as source:
-            for line in source:
-                name = line.rstrip("\r\n").split()
-                if name:
-                    steps.append([units_path / (unit + ".md") for unit in name])
+    steps = [[Path(path) for _, path in step] for step in resolve_plan(target)]
     if not steps:
         raise RunError("no unit")
     missing = False

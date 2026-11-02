@@ -10,7 +10,7 @@ from harness.engine.run import RunError
 import plan_inputs
 
 
-_USAGE = "usage: rehearse <plan.txt>"
+_USAGE = "usage: rehearse <plan.txt|name>"
 _EXPECTATION = (
     "Lines that fail here are expected only for behavior the unit itself creates; "
     "read the others before start."
@@ -35,12 +35,11 @@ def rehearse_command(args):
     if len(args) != 1:
         print("Error: {0}".format(_USAGE), file=sys.stderr)
         return 2
-    plan_path = args[0]
-    if not os.path.isfile(plan_path):
-        print("Error: missing plan file: {0}".format(plan_path), file=sys.stderr)
+    try:
+        steps = plan_inputs.resolve_plan(args[0])
+    except RunError as error:
+        print("Error: {0}".format(error), file=sys.stderr)
         return 2
-
-    steps = plan_inputs.parse_plan(plan_path)
     entries = []
     for step in steps:
         for unit_name, brief_path in step:

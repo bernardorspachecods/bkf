@@ -116,6 +116,34 @@ gamma
         self.assertEqual(status, 1)
         self.assertEqual(output.getvalue(), "01-alpha\n  $ check\n\n02-beta\n  NO GATE: only a reviewer checks this unit\n\n")
 
+    def test_gates_command_accepts_pending_plan_name(self):
+        pending_root = self.root / "pending"
+        repo = self.root / "repo"
+        folder = pending_root / repo.name / "sample"
+        folder.mkdir(parents=True)
+        (folder / "alpha.md").write_text("```gate\necho ready\n```\n")
+        (folder / "plan.txt").write_text("alpha.md\n")
+        output = io.StringIO()
+        with patch.dict(os.environ, {"HARNESS_PENDING_DIR": str(pending_root)}), \
+                patch.object(plan_inputs, "_current_repo", return_value=str(repo)), \
+                contextlib.redirect_stdout(output):
+            status = plan_inputs.gates_command(["sample"])
+        self.assertEqual(status, 0)
+        pending_output = output.getvalue()
+        path_plan = folder / "path-plan.txt"
+        path_plan.write_text("alpha.md\n")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            path_status = plan_inputs.gates_command([str(path_plan)])
+        self.assertEqual(path_status, 0)
+        self.assertEqual(pending_output, output.getvalue())
+        self.assertEqual(pending_output, "alpha\n  $ echo ready\n\n")
+
+    def test_unknown_gates_name_mentions_path_run_and_pending_plan(self):
+        with patch.object(plan_inputs, "_current_repo", return_value=str(self.root)):
+            with self.assertRaisesRegex(RunError, "path.*run.*pending plan"):
+                plan_inputs.gates_command(["missing"])
+
     def test_brief_helpers_detect_current_difference_and_preserve_text(self):
         run = self.root / "run"
         current = run / "00-input" / "units" / "01-unit.md"

@@ -45,7 +45,7 @@ def _sections(text):
 
 
 def declared_paths(text, section):
-    """Return the backticked paths listed in a brief's Removes or Creates section."""
+    """Return the backticked paths listed in a brief section."""
     paths = []
     for name, lines in _sections(text):
         if name == section:
@@ -190,6 +190,16 @@ def lint_brief(path, repo, gone=frozenset(), made=frozenset()):
     """
     text = Path(path).read_text(encoding="utf-8")
     diagnostics = []
+    changed_paths = set()
+    for section in ("creates", "changes", "removes"):
+        changed_paths.update(declared_paths(text, section))
+    if len(changed_paths) > 10 and not re.search(r"(?im)^\s*Mechanical:\s*yes\s*$", text):
+        diagnostics.append((
+            "warning",
+            "this unit lists {0} files; past about 10 files a unit that is not mechanical should be split".format(
+                len(changed_paths)
+            ),
+        ))
     for section, lines in _sections(text):
         if section == "criteria":
             for line in lines:
