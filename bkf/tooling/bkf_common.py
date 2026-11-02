@@ -116,11 +116,34 @@ def is_bundle_root_map(map_path: Path) -> bool:
         return False
 
 
+def is_linked_worktree(directory: Path) -> bool:
+    """Return whether `directory` is the root of a linked git worktree (its `.git` is a file)."""
+    return (directory / ".git").is_file()
+
+
+def in_linked_worktree(root: Path, path: Path, cache: dict[Path, bool] | None = None) -> bool:
+    """Return whether `path` lies inside a linked git worktree below `root`; `root` itself never counts."""
+    cache = {} if cache is None else cache
+    try:
+        parents = path.relative_to(root).parents
+    except ValueError:
+        return False
+    for parent in parents:
+        if parent == Path("."):
+            continue
+        directory = root / parent
+        if directory not in cache:
+            cache[directory] = is_linked_worktree(directory)
+        if cache[directory]:
+            return True
+    return False
+
+
 def nested_bundle_roots(root: Path) -> list[Path]:
     """Return the outermost nested bundle roots below `root`, never `root` itself."""
     found: list[Path] = []
     for directory, directories, filenames in os.walk(root):
-        directories.sort()
+        directories[:] = sorted(name for name in directories if not is_linked_worktree(Path(directory) / name))
         directory_path = Path(directory)
         if directory_path != root and MAP_NAME in filenames and is_bundle_root_map(directory_path / MAP_NAME):
             found.append(directory_path)
@@ -153,8 +176,12 @@ def in_nested_bundle(root: Path, path: Path) -> bool:
 
 
 def rglob_in_bundle(root: Path, base: Path, pattern: str) -> list[Path]:
-    """`base.rglob(pattern)` without anything inside nested bundles of `root`."""
-    return [path for path in base.rglob(pattern) if not in_nested_bundle(root, path)]
+    """`base.rglob(pattern)` without anything inside nested bundles or linked git worktrees of `root`."""
+    cache: dict[Path, bool] = {}
+    return [
+        path for path in base.rglob(pattern)
+        if not in_nested_bundle(root, path) and not in_linked_worktree(root, path, cache)
+    ]
 
 
 def discover_maps(root: Path) -> list[Path]:
@@ -183,7 +210,7 @@ def inventory_entries(root: Path, map_path: Path) -> list[InventoryEntry]:
 
     for directory, directories, filenames in os.walk(scope):
         directory_path = Path(directory)
-        directories.sort()
+        directories[:] = sorted(name for name in directories if not is_linked_worktree(directory_path / name))
         filenames.sort()
 
         if directory_path != scope and MAP_NAME in filenames:

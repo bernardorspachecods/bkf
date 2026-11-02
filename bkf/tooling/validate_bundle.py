@@ -24,6 +24,7 @@ from bkf_common import (
     body_size,
     discover_maps,
     find_bundles,
+    in_linked_worktree,
     inventory_entries,
     needs_navigation_map,
     nested_bundle_roots,
@@ -492,10 +493,12 @@ class Validator:
 
     def _discover_markdown_files(self) -> list[Path]:
         nested_roots = nested_bundle_roots(self.root)
+        cache: dict[Path, bool] = {}
         return sorted(
             (
                 path for path in self.root.rglob("*")
                 if path.is_file() and path.suffix.lower() == ".md"
+                and not in_linked_worktree(self.root, path, cache)
                 and not any(path.is_relative_to(nested_root) for nested_root in nested_roots)
             ),
             key=lambda path: path.relative_to(self.root).as_posix(),

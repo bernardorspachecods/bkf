@@ -61,6 +61,36 @@ class NestedBundleTests(unittest.TestCase):
             self.assertIn("== inner ==", result.stdout)
             self.assertIn("LINK_TARGET_MISSING guide.md", result.stdout)
 
+    def test_linked_worktree_is_not_a_member_of_the_root_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "MAP.md").write_text(MAP_TEXT.format(front=ROOT_FRONT), encoding="utf-8")
+            (root / "outer.md").write_text(document("Outer document."), encoding="utf-8")
+            self.assertEqual(run(INVENTORY, "--write", root).returncode, 0)
+            copy = root / ".claude" / "worktrees" / "feature"
+            copy.mkdir(parents=True)
+            (copy / "MAP.md").write_text((root / "MAP.md").read_text(encoding="utf-8"), encoding="utf-8")
+            (copy / "outer.md").write_text(document("Outer document."), encoding="utf-8")
+            (copy / ".git").write_text("gitdir: /elsewhere/.git/worktrees/feature\n", encoding="utf-8")
+
+            check = run(INVENTORY, root, "--check")
+            validation = run(VALIDATOR, root)
+
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+            self.assertEqual(validation.returncode, 0, validation.stdout)
+            self.assertNotIn("worktrees", (root / "MAP.md").read_text(encoding="utf-8"))
+
+    def test_folder_with_a_git_directory_is_still_a_member(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "MAP.md").write_text(MAP_TEXT.format(front=ROOT_FRONT), encoding="utf-8")
+            inner = root / "inner"
+            (inner / ".git").mkdir(parents=True)
+            (inner / "MAP.md").write_text(MAP_TEXT.format(front=CHILD_FRONT), encoding="utf-8")
+            self.assertEqual(run(INVENTORY, "--write", root).returncode, 0)
+
+            self.assertIn("/inner/MAP.md", (root / "MAP.md").read_text(encoding="utf-8"))
+
     def test_this_bundle_ignores_nested_broken_link(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

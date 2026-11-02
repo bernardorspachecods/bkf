@@ -122,6 +122,7 @@ def _collect_sections(root: Path, find_bundles, is_bundle_root_map, in_nested_bu
                 name
                 for name in directories
                 if not name.startswith(".")
+                and not (directory_path / name / ".git").is_file()
                 and not (
                     (directory_path / name) != bundle
                     and ((directory_path / name) / "MAP.md").is_file()
