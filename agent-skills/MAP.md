@@ -19,6 +19,7 @@ refresh the injected text and catalog.
 | States what the agent harness is for, its layers, the decisions taken about it and what is still to verify or build. The code and each skill own their own behavior. | [harness-goal.md](/agent-skills/harness-goal.md) |
 | Owns the shared rule modules whose text the workflow and work skills inject into their bodies; the skills themselves live outside this bundle. | [MAP.md](/agent-skills/modules/MAP.md) |
 | Lists what is still open after the 2026-10-26 audit of the skills against harness-goal.md and the refactor that moved the harness out of skills/: the choices that are the owner's and the small gaps left. Delete an item when it is settled. | [skills-audit.md](/agent-skills/skills-audit.md) |
+| Covers parallel group worktrees, integration context, and recovery and reading of stopped plan runs. | [run-recovery.md](/agent-skills/skills/plan/run-recovery.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 
 ## Artifact references
