@@ -36,6 +36,7 @@ class PlanRehearseTests(unittest.TestCase):
         self.output_root = self.root / "temporary-outputs"
         self.output_root.mkdir()
         self.runs = self.root / "runs"
+        self.pending = self.root / "pending"
 
     def tearDown(self):
         self.temp.cleanup()
@@ -45,6 +46,7 @@ class PlanRehearseTests(unittest.TestCase):
         environ.update({
             "TMPDIR": str(self.output_root),
             "PLAN_RUNS_DIR": str(self.runs),
+            "HARNESS_PENDING_DIR": str(self.pending),
         })
         return subprocess.run(
             [str(SCRIPT)] + list(args),
@@ -79,14 +81,28 @@ class PlanRehearseTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
-        self.assertIn("missing plan file", result.stderr)
+        self.assertIn("plan path", result.stderr)
+
+    def test_rehearse_accepts_pending_plan_name(self):
+        pending = self.pending / self.repo.name / "ready-plan"
+        pending.mkdir(parents=True)
+        (pending / "unit.md").write_text("```gate\ntrue\n```\n", encoding="utf-8")
+        (pending / "plan.txt").write_text("unit.md\n", encoding="utf-8")
+        result = self.call("rehearse", "ready-plan")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stdout,
+            "PASS unit true\n"
+            "Lines that fail here are expected only for behavior the unit itself creates; read the others before start.\n",
+        )
+        self.assertEqual(result.stderr, "")
 
     def test_rehearse_without_plan_is_usage_error(self):
         result = self.call("rehearse")
 
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
-        self.assertIn("usage: rehearse <plan.txt>", result.stderr)
+        self.assertIn("usage: rehearse <plan.txt|name>", result.stderr)
 
 
 if __name__ == "__main__":

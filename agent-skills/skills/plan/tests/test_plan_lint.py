@@ -77,6 +77,39 @@ class PlanLintTests(unittest.TestCase):
             [("warning", "does not exist now: a unit before this one must create it")],
         )
 
+    def test_quoted_grep_pattern_is_not_a_missing_script(self):
+        brief = self.brief(
+            "## Gate\n```gate\ngrep -q 'src/foo/bar.ts' README.md\n```\n"
+        )
+        self.assertEqual(plan_lint.lint_brief(brief, self.root), [])
+
+    def test_unquoted_missing_script_is_still_reported(self):
+        brief = self.brief("## Gate\n```gate\npython3 missing/check.py\n```\n")
+        self.assertEqual(
+            plan_lint.lint_brief(brief, self.root),
+            [("warning", "does not exist now: a unit before this one must create it")],
+        )
+
+    def test_large_unit_warns_unless_mechanical(self):
+        def content(count, mechanical=""):
+            files = "".join("- `src/file{0}.py`\n".format(index) for index in range(count))
+            return "## Creates\n{0}{1}## Gate\n```gate\necho ok\n```\n".format(
+                files, mechanical
+            )
+
+        eleven = self.root / "eleven.md"
+        ten = self.root / "ten.md"
+        mechanical = self.root / "mechanical.md"
+        eleven.write_text(content(11), encoding="utf-8")
+        ten.write_text(content(10), encoding="utf-8")
+        mechanical.write_text(content(11, "Mechanical: YES\n"), encoding="utf-8")
+        self.assertEqual(
+            plan_lint.lint_brief(eleven, self.root),
+            [("warning", "this unit lists 11 files; past about 10 files a unit that is not mechanical should be split")],
+        )
+        self.assertEqual(plan_lint.lint_brief(ten, self.root), [])
+        self.assertEqual(plan_lint.lint_brief(mechanical, self.root), [])
+
     def test_unknown_package_script_is_a_warning(self):
         failing = self.brief("## Gate\n```gate\nnpm run deploy\n```\n")
         self.assertEqual(
