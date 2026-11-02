@@ -31,9 +31,13 @@ When the brief has a `gate`, the script runs those commands itself after you fin
 and sends the work back, with their output and no review, if one fails. Run them
 yourself before you hand over, when you can. A command you cannot run from where you
 work (a database that is out of reach, say) is named in the handoff, not skipped.
+
 If the brief or the run gives you a way to run a command your sandbox cannot (a
 database that is out of reach, say), use it only for what it allows. If a command is
-refused, do not look for a way around it: say in the handoff what you needed.
+refused, do not look for a way around it: say in the handoff what you needed. A gate command that fails
+only because the sandbox blocks it (`initdb`, `shmget: Operation not permitted`, a database, the network)
+goes through the bridge, `.plan-porteiro/ponte <command>`, when the command is one of this unit's gate
+commands or an allowed `pnpm` script of `.plan-run.json`; never end with `BLOCKED:` for the environment before you tried it.
 
 When a gate command fails on a test that your diff did not touch, that test is not someone
 else's: if your change broke it, adapt it (its expectation, never a weaker assertion) and say so in

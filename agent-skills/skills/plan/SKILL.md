@@ -21,6 +21,11 @@ The skills of the plan, code review, council and research workflows include this
 - Report an outcome as it is: what passed, what escalated, what was skipped. Do not imply a step was done that was not.
 <!-- BKF:GENERATED-INJECTED-END -->
 
+> **Before you start**
+> - A seam of up to about 15 files decided by one gate, or 1–3 sequential units repeating one pattern, goes to [`delegate-work`](../delegate-work/SKILL.md); see [When to use](#when-to-use).
+> - About ten files is the ceiling for a non-mechanical unit; see [How big is too big](#1-the-goal-and-the-units).
+> - Rehearse the plan before `start`; see [the gate guidance](#1-the-goal-and-the-units).
+
 ## Navigation map
 
 | If you need to... | See |
@@ -136,7 +141,15 @@ you add or change a unit, run the script's `gates` command and read the list. Ev
 unit has a command that fails if it is wrong, or a reason, written in the plan, for
 why none can exist. A unit with neither is not ready to run.
 The `gates` output also shows brief lint, and `start` refuses a plan whose briefs have lint
-errors, and `resume` refuses a run whose current briefs have them. `plan-run.sh rehearse <plan.txt>` runs the plan's gates informally before `start`.
+errors, and `resume` refuses a run whose current briefs have them. Rehearse with
+`plan-run.sh rehearse <plan.txt|name>` before `start`, as required. Rehearsal catches
+gate commands that cannot run as written, such as `bkf validate` without its required
+argument. Fix unexpected failures before starting. Every unit's gate also includes the same repository-wide
+check command (for example, `pnpm check:quick`) alongside that unit's own tests;
+otherwise a defect found one unit later costs a full round. Gate commands run
+through `bash -c` (a shell). The bridge runs an exact gate command through `bash -c`,
+but invokes an allowed `pnpm` script directly as argv, without a shell; see
+[run-reference.md](run-reference.md#the-bridge).
 
 **Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
 and ask the user, when you agree the split, who the pauses are for: only for you to check the step
@@ -170,6 +183,38 @@ was wrong is a reason to revise the units with the user, not to stretch the unit
 
 You write one brief per unit. It is the only thing the implementer and the
 reviewer share, so it must stand alone.
+
+Copy this template and fill each heading. Use a `gate` fence for commands; if no
+command can decide the result, state the reason under Gate.
+
+~~~markdown
+## Result
+What exists when this unit is done, and when to stop.
+
+## Receives
+Concrete facts this unit can rely on from earlier units.
+
+## Leaves ready
+Concrete facts later units can rely on.
+
+## Removes
+`path/to/remove`
+
+## Creates
+`path/to/create`
+
+## Out of scope
+What this unit must not touch. Tests and documents made wrong by the change belong to this unit and must be adapted without weakening assertions.
+
+## Gate
+```gate
+pnpm check:quick
+pnpm test:unit
+```
+
+## Criteria
+What the reviewer judges that no command checks.
+~~~
 
 ```
 Unit brief
@@ -312,6 +357,10 @@ finishes, or stops on an escalation, you give:
 Do not restate the diff: it is the record of what changed.
 
 ## 5. Where the work lives
+
+Before `start`, check the checkout: isolated runs cut their worktree from `HEAD`,
+so `start` refuses uncommitted changes. Commit or stash them, or use `--in-place`;
+see [run-reference.md](run-reference.md#the-runs-worktree) for details.
 
 One plan is one folder, with one subfolder per unit in order. A unit's folder holds its
 brief, its rounds (the agent prompts, the outputs, the reviews and their verdicts) and
