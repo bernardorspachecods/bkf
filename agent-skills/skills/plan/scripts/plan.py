@@ -57,16 +57,18 @@ class _UnitHooks(UnitHooks):
         self.ctx = ctx
         self.step = step
 
-    def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff):
+    def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff,
+                         last_review_problems=None):
         return plan_inputs.implement_prompt(
             os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ),
-            brief, round_number, resumed, previous_problems, previous_handoff,
+            brief, round_number, resumed, previous_problems, previous_handoff, last_review_problems,
         )
 
-    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file):
+    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file,
+                      last_review_problems=None):
         return plan_inputs.review_prompt(
             os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ),
-            brief, patch, previous_problems, attempt, gate_file,
+            brief, patch, previous_problems, attempt, gate_file, last_review_problems,
         )
 
     def gate_commands(self, brief):
@@ -88,16 +90,18 @@ class _IntegrationHooks(_UnitHooks):
     def integration_brief(self, run_path, units, goal_text):
         return plan_inputs.integration_brief(run_path, units, goal_text)
 
-    def integrate_prompt(self, brief, failed, previous_problems, previous_handoff):
+    def integrate_prompt(self, brief, failed, previous_problems, previous_handoff,
+                         last_review_problems=None):
         return plan_inputs.integrate_prompt(
             os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ),
-            brief, failed, previous_problems, previous_handoff,
+            brief, failed, previous_problems, previous_handoff, last_review_problems,
         )
 
-    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file):
+    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file,
+                      last_review_problems=None):
         return plan_inputs.integration_review_prompt(
             os.environ.get("PLAN_GUIDES") or plan_inputs.guides_path(os.environ),
-            brief, patch, previous_problems, attempt, gate_file,
+            brief, patch, previous_problems, attempt, gate_file, last_review_problems,
         )
 
 

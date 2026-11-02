@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from harness.engine.run import RunDir, Settings
+from harness.engine.integration import run_integration
+from harness.engine.review import ReviewResult
 from harness.engine.loop import run_unit_loop
 
 
@@ -24,13 +26,23 @@ class Hooks:
         self.review_calls = []
         self.commands = None
 
-    def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff):
-        self.implement_calls.append((round_number, resumed, previous_problems, previous_handoff))
-        return "IMPLEMENT {0} resumed={1}\n".format(round_number, resumed)
+    def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff,
+                         last_review_problems=None):
+        self.implement_calls.append((round_number, resumed, previous_problems, previous_handoff,
+                                     last_review_problems))
+        text = "IMPLEMENT {0} resumed={1}\n".format(round_number, resumed)
+        if last_review_problems:
+            text += "previous={0} last_review={1}\n".format(previous_problems, last_review_problems)
+        return text
 
-    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file):
-        self.review_calls.append((brief, patch, previous_problems, attempt, gate_file))
-        return "# Review\nREVIEW attempt={0} gate={1}\n".format(attempt, gate_file)
+    def review_prompt(self, brief, patch, previous_problems, attempt, gate_file,
+                      last_review_problems=None):
+        self.review_calls.append((brief, patch, previous_problems, attempt, gate_file,
+                                  last_review_problems))
+        text = "# Review\nREVIEW attempt={0} gate={1}\n".format(attempt, gate_file)
+        if last_review_problems:
+            text += "last_review={0}\n".format(last_review_problems)
+        return text
 
     def gate_commands(self, brief):
         if self.commands is not None:
@@ -338,9 +350,36 @@ class UnitLoopTests(unittest.TestCase):
         self.assertEqual(self.notes()[2], "01-unit: round 1: verdict back")
         previous_round = str(self.unit_dir / "rounds" / "1")
         self.assertEqual(self.hooks.implement_calls[1], (
-            2, 0, previous_round + "/problems.md", previous_round + "/handoff.md"
+            2, 0, previous_round + "/problems.md", previous_round + "/handoff.md", None
         ))
         self.assertEqual(self.hooks.review_calls[1][2], previous_round + "/problems.md")
+
+    def test_gate_failure_does_not_forget_last_review_problems(self):
+        self.source_brief.write_text("# Unit\n```gate\n./check-round.sh\n```\n", encoding="utf-8")
+        check = self.checkout / "check-round.sh"
+        check.write_text("#!/bin/sh\n[ \"$(cat current-round)\" != 2 ]\n", encoding="utf-8")
+        check.chmod(0o755)
+        self.hooks.commands = ["./check-round.sh"]
+        os.environ["FAKE_VERDICTS"] = "back,pass"
+        self.fake.write_text(self.fake.read_text().replace(
+            "if mode == 'change': (cwd / 'tracked.txt').write_text('changed\\n')",
+            "if mode == 'change': (cwd / 'tracked.txt').write_text('changed\\n')\n"
+            " (cwd / 'current-round').write_text(str(n))"
+        ), encoding="utf-8")
+        result = self.run_loop()
+
+        self.assertTrue(result.ok, result.reason)
+        review_problems = str(self.unit_dir / "rounds" / "1" / "problems.md")
+        gate_problems = str(self.unit_dir / "rounds" / "2" / "problems.md")
+        third_implement = self.hooks.implement_calls[2]
+        third_review = self.hooks.review_calls[1]
+        self.assertEqual(third_implement[2], gate_problems)
+        self.assertEqual(third_implement[4], review_problems)
+        self.assertIn(review_problems, (self.unit_dir / "rounds" / "3" / "implement-prompt.md").read_text())
+        self.assertIn(gate_problems, (self.unit_dir / "rounds" / "3" / "implement-prompt.md").read_text())
+        self.assertEqual(third_review[2], review_problems)
+        self.assertIn(review_problems, (self.unit_dir / "rounds" / "3" / "review-prompt.md").read_text())
+        self.assertEqual(third_review[4], str(self.unit_dir / "rounds" / "3" / "gate.md"))
 
     def test_reviewer_back_at_max_rounds_escalates(self):
         class OneReview(Limits):
@@ -436,6 +475,143 @@ class UnitLoopTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual((self.unit_dir / "base").read_text(), replacement.read_text())
         self.assertEqual((self.unit_dir / "base-format").read_text(), "tree\n")
+
+
+class IntegrationLoopMemoryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.name", "Harness Test")
+        self.git("config", "user.email", "harness@example.invalid")
+        (self.repo / "base.txt").write_text("base\n", encoding="utf-8")
+        check = self.repo / "check-round.sh"
+        check.write_text("#!/bin/sh\n[ \"$(cat current-round 2>/dev/null)\" != 2 ]\n", encoding="utf-8")
+        check.chmod(0o755)
+        self.git("add", ".")
+        self.git("commit", "-qm", "initial")
+        self.run = RunDir.create(
+            self.root / "runs", "sample", str(self.repo),
+            Settings("model", "high", "review"), "none",
+        )
+        units = self.run.path / "00-input" / "units"
+        units.mkdir(parents=True)
+        (self.run.path / "00-input" / "goal.md").write_text("Goal\n", encoding="utf-8")
+        (units / "01-unit.md").write_text("# Unit\n", encoding="utf-8")
+        unit_dir = self.run.path / "01-unit"
+        unit_dir.mkdir()
+        (unit_dir / "brief.md").write_text("# Unit\n", encoding="utf-8")
+        (unit_dir / "final.patch").write_text(
+            "diff --git a/unit.txt b/unit.txt\nnew file mode 100644\n"
+            "index 0000000..f2e2f19\n--- /dev/null\n+++ b/unit.txt\n"
+            "@@ -0,0 +1 @@\n+from unit\n",
+            encoding="utf-8",
+        )
+        self.implement_prompts = []
+        self.review_prompts = []
+
+        class IntegrationHooks:
+            def __init__(inner):
+                inner.progress_lines = []
+
+            def integration_brief(inner, run_path, units, goal_text):
+                return "Integration brief\n"
+
+            def integrate_prompt(inner, brief, failed, previous_problems, previous_handoff,
+                                 last_review_problems=None):
+                previous_text = Path(previous_problems).read_text() if previous_problems else ""
+                last_review_text = Path(last_review_problems).read_text() if last_review_problems else ""
+                return "INTEGRATE previous={0} last_review={1}\n{2}{3}".format(
+                    previous_problems, last_review_problems or "", previous_text, last_review_text
+                )
+
+            def review_prompt(inner, brief, patch, previous_problems, attempt, gate_file,
+                              last_review_problems=None):
+                inner_review = (previous_problems, gate_file, last_review_problems)
+                self.review_prompts.append(inner_review)
+                review_text = Path(last_review_problems).read_text() if last_review_problems else ""
+                return "REVIEW previous={0} last_review={1} gate={2}\n{3}".format(
+                    previous_problems, last_review_problems or "", gate_file, review_text
+                )
+
+            def gate_commands(inner, brief):
+                return ["./check-round.sh"]
+
+            def progress(inner, text):
+                inner.progress_lines.append(text)
+
+        self.hooks = IntegrationHooks()
+
+        class IntegrationLimits:
+            max_rounds = 3
+            max_gate_rounds = 3
+            gate_timeout = 10
+            min_checked = 1
+
+        self.limits = IntegrationLimits()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", "-C", str(self.repo)] + list(args), check=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        ).stdout.strip()
+
+    def test_gate_failure_does_not_forget_integration_review_problems(self):
+        review_calls = []
+
+        def integrate(run, label, directory, prompt_file, out_prefix, *args):
+            prompt = Path(prompt_file).read_text(encoding="utf-8")
+            self.implement_prompts.append(prompt)
+            round_number = int(Path(prompt_file).parent.name)
+            (self.repo / "current-round").write_text(str(round_number), encoding="utf-8")
+            (self.repo / "integrated.txt").write_text("integrated {0}\n".format(round_number), encoding="utf-8")
+            Path(out_prefix + ".last-message.md").write_text("integrated\n", encoding="utf-8")
+            return type("Step", (), {"ok": True, "reason": ""})()
+
+        def review(run, label, checkout, round_dir, build_prompt, *args, **kwargs):
+            prompt = build_prompt(1)
+            Path(round_dir, "review-prompt.md").write_text(prompt, encoding="utf-8")
+            verdict = "back" if not review_calls else "pass"
+            review_calls.append(verdict)
+            problems = (
+                "## What I checked\n\n- The filter\n\n## Problems\n\n"
+                "- Keep the organization filter in `src/filter.py`.\n\nVERDICT: {0}\n"
+            ).format(verdict)
+            Path(round_dir, "problems.md").write_text(problems, encoding="utf-8")
+            return ReviewResult(verdict, "")
+
+        with patch("harness.engine.integration.run_agent_step", side_effect=integrate), patch(
+            "harness.engine.loop.run_review", side_effect=review
+        ):
+            result = run_integration(
+                self.run, self.repo, 1, ["01-unit"], hooks=self.hooks,
+                settings=self.run.settings, tier="fast", limits=self.limits,
+                goal_path=self.run.path / "00-input" / "goal.md",
+                brief_check=lambda run_path, units: None,
+                brief_differs=lambda run_path, unit: False,
+                gate_differs=lambda run_path, unit: False,
+            )
+
+        self.assertTrue(result.ok, result.reason)
+        directory = self.run.path / "S1-integration"
+        review_problems = str(directory / "rounds" / "1" / "problems.md")
+        gate_problems = str(directory / "rounds" / "2" / "problems.md")
+        self.assertEqual(len(self.implement_prompts), 2)
+        third_implement = (directory / "rounds" / "3" / "integrate-prompt.md").read_text()
+        third_review = (directory / "rounds" / "3" / "review-prompt.md").read_text()
+        self.assertIn(review_problems, third_implement)
+        self.assertIn(gate_problems, third_implement)
+        self.assertIn("Keep the organization filter", third_implement)
+        self.assertEqual(self.review_prompts[1][0], review_problems)
+        self.assertEqual(self.review_prompts[1][1], str(directory / "rounds" / "3" / "gate.md"))
+        self.assertEqual(self.review_prompts[1][2], review_problems)
+        self.assertIn(review_problems, third_review)
+        self.assertIn("Keep the organization filter", third_review)
 
 
 if __name__ == "__main__":

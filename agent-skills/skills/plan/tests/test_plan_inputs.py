@@ -182,6 +182,45 @@ gamma
         )
         self.assertEqual(plan_inputs.review_prompt("/guides", brief, "/patch", previous, 2, "/gate.md"), expected)
 
+    def test_last_review_problems_are_separately_binding_when_given(self):
+        brief = self.write("brief.md", "Do the work.\n")
+        last_review = self.write("review-problems.md", "Keep the organization filter.\n")
+        gate_problems = self.write("gate-problems.md", "Fix the failing gate.\n")
+
+        base_implement = plan_inputs.implement_prompt("/guides", brief, 3, False, gate_problems, self.write("handoff.md", "Resume.\n"))
+        implement = plan_inputs.implement_prompt(
+            "/guides", brief, 3, False, gate_problems, self.write("handoff.md", "Resume.\n"),
+            last_review_problems=last_review,
+        )
+        base_review = plan_inputs.review_prompt("/guides", brief, "/patch", "", 1, "/gate.md")
+        review = plan_inputs.review_prompt(
+            "/guides", brief, "/patch", "", 1, "/gate.md", last_review_problems=last_review,
+        )
+        base_integrate = plan_inputs.integrate_prompt("/guides", brief, "", gate_problems, "")
+        integrate = plan_inputs.integrate_prompt(
+            "/guides", brief, "", gate_problems, "", last_review_problems=last_review,
+        )
+        base_integration_review = plan_inputs.integration_review_prompt(
+            "/guides", brief, "/patch", "", 1, "/gate.md",
+        )
+        integration_review = plan_inputs.integration_review_prompt(
+            "/guides", brief, "/patch", "", 1, "/gate.md", last_review_problems=last_review,
+        )
+
+        self.assertNotIn("Keep the organization filter.", base_implement)
+        self.assertNotIn("Keep the organization filter.", base_review)
+        self.assertIn("Keep the organization filter.", implement)
+        self.assertIn("Keep the organization filter.", review)
+        self.assertNotIn("Keep the organization filter.", base_integrate)
+        self.assertNotIn("Keep the organization filter.", base_integration_review)
+        self.assertIn("Keep the organization filter.", integrate)
+        self.assertIn("Keep the organization filter.", integration_review)
+        self.assertIn("still binding until you prove they are gone", implement)
+        self.assertIn("remain binding until you prove they are gone", review)
+        self.assertIn("still binding until you prove they are gone", integrate)
+        self.assertIn("remain binding until you prove they are gone", integration_review)
+        self.assertIn("Fix the failing gate.", implement)
+
     def test_blocked_and_brief_sentences_are_in_unit_and_integration_prompts(self):
         brief = self.write("brief.md", "Do the work.\n")
         blocked = "make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt."
