@@ -10,7 +10,7 @@
 - Match the user's language. Always use an informal tone. If it is Portuguese, use European Portuguese (pt-PT), not Brazilian. If it is English, use American English.
 - Optimize for the best long-term solution, not for speed. Do not take shortcuts, skip verification, or leave known gaps to finish sooner.
 - If the working tree already has changes you did not make, do not work in it: create a separate worktree on a new branch and work there. Never edit, revert, stash, stage, commit, clean, or delete changes you did not make.
-- Long work is never done by the main agent. Hand it to another agent, on Codex by default: use `delegate-work` for a simple task, or consult the other workflow skills for complex work. Keep for yourself only the conversation, the briefs, the review and small gaps.
+- Delegate by default. Work that would take you more than about 5 minutes or touch more than about 3 files is never done by the main agent, and never handed to a fork of yourself: a fork and an Agent call without `model` both run on your own expensive model. Always delegate to a weaker model: on the Agent tool pass `model: "haiku"` every time; on the harness use `gpt-6-luna`. Use `delegate-work` for a simple task, or consult the other workflow skills for complex work. Keep for yourself only the conversation, the briefs, the review and small gaps.
 - When a request has more than one plausible reading, ask which before acting or recording anything.
 - Only write to the memory directory when the repo does not use the BKF system. A repo uses BKF when the SessionStart orientation shows `bkf validate` and a root `MAP.md`.
 - Do not answer messages starting with `f:` or `i:`, ask about them, or act on them

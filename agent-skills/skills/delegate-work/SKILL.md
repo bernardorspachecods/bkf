@@ -1,6 +1,6 @@
 ---
 name: delegate-work
-description: Hand one short, objective task to another agent, either a Claude subagent or a run of the harness on Codex or Claude, and check what comes back. Use when the user asks to delegate, or when a self-contained task suits a cheaper or parallel agent; do not use for work with several stages, a plan or a branch review (use plan, research, council or code-review), or to continue in a new chat (use handoff).
+description: "Hand one short, objective task to another agent, either a Claude subagent or a run of the harness on Codex or Claude, and check what comes back. Use before you start any self-contained task that would take you more than a few minutes or touch more than a few files, and whenever the user asks to delegate: such work is not done by the main agent and never goes to a fork of it. Do not use for work with several stages, a plan or a branch review (use plan, research, council or code-review), or to continue in a new chat (use handoff)."
 ---
 
 # Delegate work
@@ -12,6 +12,7 @@ One bounded, objective task goes to another agent; its result is checked by you,
 - Prefer this to a plan when the work is simple and quick: the cheaper agent does it and you review it at the end, which costs little because it is small. If the work has units that depend on one another and each needs its own reviewer, it is a plan.
 - Delegate only a task whose inputs fit in a brief and whose result a command can check. Advice needs only the context to answer it.
 - One agent for cohesive work. Several only when their files and outputs are independent; give each its own files, and never let implementation and review change the same target.
+- Delegating is the default, not an exception: if you are about to spend more than a few minutes on a task that fits a brief, write the brief instead. The agent is always a weaker model (`gpt-6-luna` on the harness, `haiku` on the Agent tool), never a fork or a copy of yourself.
 - A weak model (`gpt-6-luna`, Haiku) fails on long work and goes shallow on research across many sources: make more and smaller briefs.
 
 ## Brief
@@ -22,7 +23,7 @@ One bounded, objective task goes to another agent; its result is checked by you,
 
 ## Launch
 
-- **Claude subagent:** the Agent tool with the brief as the prompt; set `model` only when the user chose one, and `isolation: "worktree"` for agents that write in parallel. The report is not shown to the user: relay what matters.
+- **Claude subagent:** the Agent tool with the brief as the prompt. Always set `model: "haiku"` unless the user chose another: without `model` the subagent inherits your own expensive model. Never use `subagent_type: "fork"`, which is your own model by definition. Set `isolation: "worktree"` for agents that write in parallel. The report is not shown to the user: relay what matters.
 - **Harness agent:** [scripts/delegate-run.sh](scripts/delegate-run.sh) `<name> <brief-file> [base-ref] [model] [effort]`, started with `run_in_background: true`. Codex by default (`gpt-6-luna`, `high`; never `gpt-6.1-sol` unless the user says); `HARNESS_BACKEND=claude` runs it on `claude -p` (`sonnet`, `high`). By default it uses a sibling worktree `<repo>-delegate/<name>` on branch `delegate/<name>`; a newly created worktree runs the committed `.plan-run.json` setup before the agent starts. `DELEGATE_IN_PLACE=1` uses the checkout instead. A bridge object in that base config lets the agent run listed, unchanged pnpm scripts outside the sandbox with `.plan-porteiro/ponte pnpm <script> [args...]`; the delegated brief explains its limits. The brief must forbid git commands that change state. `DELEGATE_RERUN=1` reuses a run folder that already has a `status` file and does not prepare a reused worktree.
 - It prints the run folder, `~/.delegate-runs/<repo>/<name>/` (or under `$DELEGATE_RUNS_DIR`): `status` (`exit=0` means finished; `prepare-failed` means worktree setup stopped before launch), `last-message.md` (the agent's report), `diffstat.txt`, `worktree` and `base`. Worktree setup output is in `prepare.log`; bridge requests are logged in `porteiro.log`. In place, read the diff with `git diff $(cat <run-folder>/base)` and compare `status-before.txt` with `status-after.txt` for new files.
 - Close a small gap yourself: when the work is mostly right and what is missing is quick, simple and clear from the brief and the check (a missed case, a wrong name, a failing line), fix it directly in the checkout. Sending it back costs a new brief, a run and a second review, which is more than the fix. Then run the check again and say what you changed.
