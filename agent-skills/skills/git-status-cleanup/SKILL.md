@@ -1,34 +1,27 @@
 ---
 name: git-status-cleanup
-description: Commit selected uncommitted changes of the current worktree while preserving changes outside the chosen scope. Do not use to delete merged branches or worktrees (use git-worktree-cleanup).
+description: Commit the uncommitted changes of the current worktree, either only what this session changed (default) or everything. Do not use to delete merged branches or worktrees (use git-worktree-cleanup).
 ---
 
 # Git status cleanup
 
-## Core rules
+Commits uncommitted changes of the current worktree. One argument picks the scope.
 
-- Keep ignored files out of scope unless requested.
-- Verify the worktree and report the commit message, and anything intentionally left behind.
-- Create one commit for the selected scope, with a concise message that describes it. For a start-of-task snapshot without a better description, use `chore(worktree): snapshot existing changes`.
+## Scope
+
+| Argument | Commits | Leaves |
+|---|---|---|
+| `mine` (default) | only the changes this session made | everything else, untouched |
+| `all` | every non-ignored change, including work this session did not do | nothing |
+
+## Rules
+
+- Ignored files are out of scope.
+- One commit for the chosen scope, with a concise message that describes it. Without a better description, use `chore(worktree): snapshot existing changes`.
+- `mine`: identify the session's changes from what you edited and created, not from `git status` alone. Stage by path (or by hunk when a file mixes your changes with others'). If you cannot separate your changes from someone else's in the same file, stop and ask; do not guess.
+- Never use `--force`, `reset`, `clean` or `stash`, and never revert or discard changes you did not make.
 - If the worktree is clean, report that no commit was necessary.
-
-## Choose the commit scope
-
-### `all`
-
-When the user says `git-status-cleanup all`, commit all non-ignored changes in the worktree in one commit. This includes unrelated pre-existing changes. Ignored files remain out of scope unless the user explicitly requests them.
-
-### `only`
-
-When the user says `git-status-cleanup only`, commit only changes made for the current task and preserve unrelated pre-existing work. If isolating the task changes requires more than three separate staging groups, stop and report back to the user. Count each group that must be selectively staged or excluded as one staging group.
-
-### `pre-existing`
-
-When the user says `git-status-cleanup pre-existing`, use the snapshot captured before the current work to identify and commit only the changes that were already present then. The snapshot is whatever the user or the harness recorded before the work (for example a commit or a saved `git status` and diff); if none can be found, stop and ask the user for it instead of guessing. Preserve changes made after that snapshot in the worktree and keep them out of the commit. If the snapshot contains no changes relative to its base, report that no commit was necessary.
-
-### No mode specified
-
-If the user says `git-status-cleanup` without a mode, assume `git-status-cleanup all`.
+- Report the commit message and, for `mine`, what was left behind.
 
 ## Runtime metadata
 
