@@ -58,6 +58,30 @@ class LaunchGuardTests(unittest.TestCase):
         self.assertBlocked("sleep 1; plan-run.sh start r g p &", background=True)
         self.assertBlocked("nohup codex exec - < p.md > out &")
 
+    def test_the_loop_that_hid_three_delegations_is_blocked(self):
+        for command in (
+            "S=/s; for n in a b d; do nohup ~/.claude/skills/delegate-work/scripts/delegate-run.sh $n $S/b-$n.md HEAD > $S/r-$n.log 2>&1 & done; sleep 20",
+            "for n in a b; do delegate-run.sh $n b.md; done",
+            "while read n; do delegate-run.sh $n b; done < names",
+            "( delegate-run.sh a b & )",
+            "bash -c 'delegate-run.sh a b' &",
+            "bash -c 'nohup delegate-run.sh a b &'",
+            "xargs -P3 delegate-run.sh < names",
+            "delegate-run.sh a b; delegate-run.sh c d",
+            "delegate-run.sh a b && delegate-run.sh c d",
+        ):
+            with self.subTest(command=command):
+                self.assertBlocked(command, background=True)
+
+    def test_one_launcher_in_a_compound_or_a_shell_string_is_allowed_in_the_background(self):
+        for command in (
+            "bash -c 'delegate-run.sh a b'",
+            "cd /repo && DELEGATE_IN_PLACE=1 ~/.claude/skills/delegate-work/scripts/delegate-run.sh n b HEAD gpt-6-luna high",
+            "{ delegate-run.sh a b; }",
+        ):
+            with self.subTest(command=command):
+                self.assertAllowed(command, background=True)
+
     def test_commands_that_only_read_or_mention_the_names_are_allowed(self):
         for command in (
             "plan-run.sh status r",

@@ -16,10 +16,17 @@ LAUNCHERS = {
 WRAPPERS = {"bash", "sh", "zsh", "env", "nohup", "time", "exec", "command", "setsid"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SEPARATORS = {"&&", "||", ";", "|", "&", "\n"}
+# Words that open a command inside a compound: `do cmd`, `then cmd`, `( cmd`, `{ cmd`.
+OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "(", "time"}
+LOOPS = {"for", "while", "until", "select"}
+FANOUT = {"xargs", "parallel"}
+SHELLS = {"bash", "sh", "zsh"}
 REASON = (
     "Launch it with run_in_background: true so the state is visible in the session. "
     "A call that starts a run script, or `codex exec`, must not run in the foreground, "
-    "and must not be backgrounded by hand with nohup or a trailing &."
+    "must not be backgrounded by hand (nohup, a trailing &, a subshell), must not sit in a loop, "
+    "xargs or parallel, and must start only one run: use one Bash call per run, "
+    "several in the same response for runs in parallel."
 )
 
 
@@ -64,11 +71,16 @@ def _segments(command: str) -> list[tuple[list[str], str]]:
 
 
 def _program(words: list[str]) -> tuple[str, list[str]] | None:
-    """The program a segment runs and its arguments, skipping assignments and wrappers."""
+    """The program a segment runs and its arguments, skipping assignments, wrappers and compound openers."""
     rest = list(words)
     while rest:
         head = rest[0]
-        if ASSIGNMENT.match(head):
+        stripped = head.lstrip("({")
+        if stripped != head:
+            rest = ([stripped] if stripped else []) + rest[1:]
+        elif head in OPENERS:
+            rest = rest[1:]
+        elif ASSIGNMENT.match(head):
             rest = rest[1:]
         elif os.path.basename(head) in WRAPPERS:
             rest = rest[1:]
@@ -79,6 +91,25 @@ def _program(words: list[str]) -> tuple[str, list[str]] | None:
     return None
 
 
+def _expand_shell_strings(segments: list[tuple[list[str], str]]) -> list[tuple[list[str], str]]:
+    """Add the commands inside `bash -c '...'` and `eval '...'` as segments, so they are judged too."""
+    expanded = list(segments)
+    for words, outer in segments:
+        for position, word in enumerate(words):
+            code = None
+            if word == "-c" and position + 1 < len(words) and any(os.path.basename(w) in SHELLS for w in words[:position]):
+                code = words[position + 1]
+            elif word == "eval" and position + 1 < len(words):
+                code = " ".join(words[position + 1:])
+            if code:
+                for line in code.replace("\\\n", " ").split("\n"):
+                    inner = _segments(line)
+                    if outer == "&" and inner:
+                        inner[-1] = (inner[-1][0], "&")
+                    expanded.extend(inner)
+    return expanded
+
+
 def _launch(words: list[str]) -> bool:
     found = _program(words)
     if found is None:
@@ -86,6 +117,8 @@ def _launch(words: list[str]) -> bool:
     name, args = found
     if name == "codex":
         return bool(args) and args[0] == "exec"
+    if name in FANOUT:
+        return any(os.path.basename(arg) in LAUNCHERS or arg == "codex" for arg in args)
     if name not in LAUNCHERS:
         return False
     allowed = LAUNCHERS[name]
@@ -105,14 +138,20 @@ def check(data: dict) -> dict | None:
     segments: list[tuple[list[str], str]] = []
     for line in _without_heredoc_bodies(command).replace("\\\n", " ").split("\n"):
         segments.extend(_segments(line))
+    segments = _expand_shell_strings(segments)
     launches = [index for index, (words, _) in enumerate(segments) if _launch(words)]
     if not launches:
         return None
-    by_hand = False
+    by_hand = len(launches) > 1
     for index in launches:
         words, separator = segments[index]
         if "nohup" in [os.path.basename(word) for word in words[:3]] or separator == "&":
             by_hand = True
+        program = _program(words)
+        if program is not None and program[0] in FANOUT:
+            by_hand = True
+    if any(words and words[0] in LOOPS for words, _ in segments):
+        by_hand = True
     if tool_input.get("run_in_background") is True and not by_hand:
         return None
     return {"hookSpecificOutput": {

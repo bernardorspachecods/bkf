@@ -321,8 +321,11 @@ a tool whose folder is missing is skipped.
   `start` or `resume`, `delegate-run.sh`, or `codex exec`, whether
   called by path, behind `cd`, an environment assignment, `bash`, `env` or `nohup`. It is
   allowed only when the tool input has `run_in_background: true`; a launcher backgrounded by
-  hand (`nohup`, or a trailing `&`) is denied even then, because the session cannot show its
-  state. Commands that only mention a name (`grep`, `cat`, `echo`) and the read-only
+  hand is denied even then, because the session cannot show its state: `nohup`, a
+  trailing `&`, a subshell or `bash -c` ending in `&`, a `for`/`while` loop, `xargs`
+  or `parallel`, and a call that starts more than one launcher (one Bash call per run).
+  Compound openers (`do`, `then`, `{`, `(`) are looked through, and `bash -c`/`eval`
+  strings are judged as if written out. Commands that only mention a name (`grep`, `cat`, `echo`) and the read-only
   subcommands (`status`, `board`, `gates`, `finish`) are allowed.
   [launch_guard.py](/tooling/launch_guard.py) owns the check.
 - **audit** registers a `UserPromptSubmit` hook, `bkf hooks run audit`, with a
