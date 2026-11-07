@@ -12,7 +12,7 @@ One bounded, objective task goes to another agent; its result is checked by you,
 - Prefer this to a plan when the work is simple and quick: the cheaper agent does it and you review it at the end, which costs little because it is small. If the work has units that depend on one another and each needs its own reviewer, it is a plan.
 - Delegate only a task whose inputs fit in a brief and whose result a command can check. Advice needs only the context to answer it.
 - One agent for cohesive work. Several only when their files and outputs are independent; give each its own files, and never let implementation and review change the same target.
-- Delegating is the default, not an exception: if you are about to spend more than a few minutes on a task that fits a brief, write the brief instead. The agent is always a weaker model (`gpt-6-luna` on the harness, `haiku` on the Agent tool), never a fork or a copy of yourself.
+- Delegating is the default, not an exception: if you are about to spend more than a few minutes on a task that fits a brief, write the brief instead. The agent is always a weaker model, never a fork or a copy of yourself. The default path is the harness agent on Codex (`gpt-6-luna`); use a Claude subagent (`haiku`) only when the user asks for it or the harness cannot run the task.
 - A weak model (`gpt-6-luna`, Haiku) fails on long work and goes shallow on research across many sources: make more and smaller briefs.
 
 ## Brief
