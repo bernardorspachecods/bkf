@@ -49,16 +49,22 @@ def rehearse_command(args):
             )
 
     if entries:
-        commands = [command for _, command in entries]
+        # Identical commands (such as the repository-wide check repeated in every
+        # unit) run once: the checkout is the same for all of them.
+        commands = list(dict.fromkeys(command for _, command in entries))
         timeout = float(os.environ.get("PLAN_GATE_TIMEOUT", "900"))
         with tempfile.TemporaryDirectory(prefix="plan-rehearse-") as output:
             result = run_gate(_repository_root(), timeout, output, commands)
-        for (unit_name, command), command_result in zip(entries, result["commands"]):
-            if command_result["exit_code"] == 0:
+        exit_codes = {
+            command: command_result["exit_code"]
+            for command, command_result in zip(commands, result["commands"])
+        }
+        for unit_name, command in entries:
+            if exit_codes[command] == 0:
                 print("PASS {0} {1}".format(unit_name, command))
             else:
                 print("FAIL {0} {1} (exit {2})".format(
-                    unit_name, command, command_result["exit_code"]
+                    unit_name, command, exit_codes[command]
                 ))
     print(_EXPECTATION)
     return 0

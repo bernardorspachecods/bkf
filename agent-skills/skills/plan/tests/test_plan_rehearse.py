@@ -76,6 +76,23 @@ class PlanRehearseTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         self.assertFalse(self.runs.exists())
 
+    def test_rehearse_runs_identical_commands_once(self):
+        counter = self.root / "counter.txt"
+        command = "echo x >> {0}".format(counter)
+        for name in ("first.md", "second.md"):
+            (self.plan_dir / name).write_text(
+                "```gate\n{0}\n```\n".format(command), encoding="utf-8"
+            )
+        result = self.call("rehearse", str(self.plan))
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stdout,
+            "PASS first {0}\nPASS second {0}\n".format(command)
+            + "Lines that fail here are expected only for behavior the unit itself creates; read the others before start.\n",
+        )
+        self.assertEqual(counter.read_text(encoding="utf-8"), "x\n")
+
     def test_rehearse_missing_plan_is_usage_error(self):
         result = self.call("rehearse", str(self.plan_dir / "missing.txt"))
 
