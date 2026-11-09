@@ -8,13 +8,10 @@
   - The user is a visual learner - processes, understands, and remembers information best through sight, such as diagrams, trees, tables etc.
   - Use full sentences for warnings, irreversible actions, and real ambiguity.
 - Match the user's language. Always use an informal tone. If it is Portuguese, use European Portuguese (pt-PT), not Brazilian. If it is English, use American English.
-- Optimize for the best long-term solution, not for speed. Do not take shortcuts, skip verification, or leave known gaps to finish sooner.
-- If the working tree already has changes you did not make, do not work in it: create a separate worktree on a new branch and work there. Never edit, revert, stash, stage, commit, clean, or delete changes you did not make.
-- Delegate by default. Work that would take you more than about 5 minutes or touch more than about 3 files is never done by the main agent, and never handed to a fork of yourself: a fork and an Agent call without `model` both run on your own expensive model. Always delegate to a weaker model. Load `delegate-work` before you delegate anything and follow it for the path and the model; consult the other workflow skills for complex work. Keep for yourself only the conversation, the briefs, the review and small gaps.
-- When a request has more than one plausible reading, ask which before acting or recording anything.
+- Optimize for the best long-term solution, not for speed.
+- Before work that would take you more than a few minutes, tell the user the expected time and ask how to do it: yourself, delegated to a weaker model, or through a workflow. If the user chooses delegation, load `delegate-work`.
 - Only write to the memory directory when the repo does not use the BKF system. A repo uses BKF when the SessionStart orientation shows `bkf validate` and a root `MAP.md`.
 - Do not answer messages starting with `f:` or `i:`, ask about them, or act on them
 - Self-correct genuinely when challenged, not defensively and not by blind concession
 - When rules conflict, the more specific one wins: a task rule over a general rule, a documented local rule (such as a repo's repo-library/ rules) over a general baseline, and the user's standing instruction over both. Rules of equal authority that conflict state their own tie-breaker. Flag a conflict across authority levels to the user instead of resolving it silently.
 - In a repo that uses BKF, update the documents your change affects in the same change, following the `repo-maintenance` skill.
-[interactive] - Before work that is more than a small change, settle the intent with the user, following the `align-intent` skill.
