@@ -143,7 +143,9 @@ Rehearse before every `start` and fix unexpected failures; see
 Gate commands run through `bash -c`, so shell syntax works in a gate line.
 Every unit's gate also includes the same repository-wide check command (for example,
 `pnpm check:quick`) alongside that unit's own tests; otherwise a defect found one
-unit later costs a full round. For script behavior, including lint refusals and how
+unit later costs a full round. A check too slow for every gate (the full database suite) goes in `regression.gate` next
+to `plan.txt`: the script runs it at the `-p` checkpoints and before the final review, not after every unit; see
+[run-reference.md](run-reference.md#gate). For script behavior, including lint refusals and how
 gate commands run, see [run-reference.md](run-reference.md#gate).
 
 **Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
@@ -191,6 +193,9 @@ What exists when this unit is done, and when to stop.
 
 ## Receives
 Concrete facts this unit can rely on from earlier units.
+```premise
+grep -q "photo" db/schema.sql
+```
 
 ## Leaves ready
 Concrete facts later units can rely on.
@@ -217,7 +222,7 @@ What the reviewer judges that no command checks.
 ```
 Unit brief
 ├─ Result        what exists when it is done, and when to stop
-├─ Receives      what it can rely on from other units (a fact, not "look at what they did")
+├─ Receives      what it can rely on from other units (a fact, not "look at what they did"), each proved by a `premise` line
 ├─ Leaves ready  what other units may rely on from it
 ├─ Removes       paths it deletes or moves away, in backticks, one per line (a folder ends in `/`)
 ├─ Creates       paths it adds or moves to that a gate runs, in backticks, one per line
@@ -232,9 +237,13 @@ Unit brief
   fixed then: what one unit leaves ready is exactly what the next receives. The
   producing unit's review checks that it left that ready, so a unit never starts
   on a contract that was not met. A fact about the repository that the brief
-  relies on (a file contains X, a command exists) is proved by a command in the
-  gate, such as a `grep`; a premise that is false makes the implementer stop with
-  `BLOCKED:` and costs a round, not a deviation found at the final review.
+  relies on (a file contains X, a command exists, a column is where the brief says) is proved by a command in a
+  fence tagged `premise`, such as a `grep`, one command per line. The script runs it before the unit's first
+  round, in the checkout as the earlier units left it, and stops the unit at once, with no implementer launched, if
+  one fails: a false premise then costs seconds, not a whole implementation round that ends in `BLOCKED:`.
+  A command in the `gate` runs only after the implementation, so it proves nothing about the start. `gates` warns
+  when `Receives` states facts and the brief has no `premise`. Rehearsal runs the lines too, but a unit that
+  depends on an earlier one may fail them before `start`, because the earlier unit has not run.
 - **The gate is a fenced block tagged `gate`,** one command per line:
 
   ````
@@ -351,7 +360,8 @@ Do not restate the diff: it is the record of what changed.
 ## 5. Where the work lives
 
 Before `start`, check the checkout: isolated runs cut their worktree from `HEAD`,
-so `start` refuses uncommitted changes. Commit or stash them, or use `--in-place`;
+so `start` refuses uncommitted changes. Commit or stash them, use `--from <ref>` to cut
+from a commit and ignore them, or use `--in-place`;
 see [run-reference.md](run-reference.md#the-runs-worktree) for details.
 
 One plan is one folder, with one subfolder per unit in order. A unit's folder holds its
@@ -382,7 +392,7 @@ The scripts of the plan, research, council and code-review skills run on one eng
 - **State** is in `~/.<workflow>-runs/<repo>/<name>/` (`~/.plan-runs`, `~/.research-runs`, `~/.council-runs`, `~/.review-runs`), `<repo>` being the name of the repository's folder. A run made before that layout is still found in `~/.<workflow>-runs/<name>/`. `<WORKFLOW>_RUNS_DIR` or `HARNESS_RUNS_DIR` names the folder that holds the runs themselves, without the repository level, and `<WORKFLOW>_GUIDES` replaces the folder of role guides (by default the `roles/` folder of the skill). `start` creates the folder and fails if it exists: do not create it by hand. It is never under `/tmp`, which the sandbox leaves writable.
 - **A worktree of its own.** A run whose agents read or write the repository (a plan, a code review) gets a git worktree at `<run>/tree`, so the repository's checkout stays as it is; its skill says on which branch or revision and how to opt out (`--in-place`). `finish` removes the worktree, and `finish --discard` also deletes the plan's branch.
 - **Progress.** `status.log` is the event history; `status` prints it and `board` prints a board of the steps and their agents, which is also saved as `board.txt`. Progress lines go to stderr.
-- **A run that stops** (an agent failed, a review escalated, the account ran out of quota) writes `STOPPED` in `status.log` with the reason. Read the rounds in the run folder, fix the cause (usually the brief or the inputs, under `00-input/`), then `resume <name>`: finished steps stay done and the unfinished one runs again. A run that was killed is detected on `resume` and continues the same way.
+- **A run that stops** (an agent failed, a review escalated, the account ran out of quota) writes `STOPPED` in `status.log` with the reason. Read the rounds in the run folder, fix the cause (usually the brief or the inputs, under `00-input/`), then `resume <name>`: finished steps stay done and the unfinished one runs again. In a plan the agents of the unit that stopped keep their conversation and `resume --say "<text>"` (or `--say-file`) tells them what you changed or decided; see Conversations in the plan's run-reference. A run that was killed is detected on `resume` and continues the same way.
 - **A stalled agent.** An agent that writes nothing to its events and stderr files for `HARNESS_AGENT_STALL_TIMEOUT` seconds (default 1200, 0 turns it off) is ended and the run stops with `STALLED` in `status.log`, so the script exits and the coordinator is told. An agent that keeps writing is not ended, however slow. Fix the cause (a login, the network), then `resume`.
 - **Usage limit.** The run stops with the reason `usage limit reached` and `status.log` gets `QUOTA: <the text after "try again at">`, as the agent wrote it, not parsed. Wake once, a little after that time, and `resume`: run `harness quota-wait '<that text>' && <script> resume <name>` with `run_in_background: true`. `quota-wait` sleeps until the reset plus a margin (`--margin`, default 120 seconds) with no model, so the agent is woken once, when it can resume. It reads `H:MM AM|PM` and `YYYY-MM-DD HH:MM`, with an optional `UTC`; a time without `UTC` is the local time, and a clock time that passed less than 6 hours ago counts as reached. For any other text it exits 2 without waiting: work out the time yourself and set one wake-up for it plus 2 minutes, never one at the time itself or before it, and if the quota is still out when it fires, add 2 minutes more instead of guessing again.
 - **Lock.** A live script holds `<run>/.lock`; a second `resume`, a `finish` or a recovery command refuses while it does. A lock whose process is gone is replaced.

@@ -47,14 +47,8 @@ def _check_active(run):
 
 
 def _check_repository(run, command):
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False,
-        )
-    except OSError:
-        result = None
-    root = result.stdout.rstrip("\n") if result is not None and result.returncode == 0 else ""
+    from harness.engine.checkout import main_repo
+    root = main_repo() or ""
     if root != run.repo:
         raise RunError("run {0} inside the plan's repository: {1}".format(command, run.repo))
 

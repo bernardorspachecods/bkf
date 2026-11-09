@@ -12,6 +12,7 @@ from .converge import gate_signature, problem_files
 from .agentstep import run_agent_step
 from .diffbase import make_patch, snapshot_base
 from .metrics import record_metrics
+from .resources import shm_problem
 from .review import run_review
 
 
@@ -34,6 +35,20 @@ class UnitHooks:
     def gate_commands(self, brief):
         raise NotImplementedError
 
+    def implement_continuation(self, brief, brief_changed, round_number, resumed, previous_problems,
+                               earlier_problems, say):
+        """The next message to an implementer whose conversation continues, or None to start a new conversation."""
+        return None
+
+    def review_continuation(self, brief, brief_changed, patch, previous_problems, attempt, gate_file,
+                            last_review_problems):
+        """The next message to a reviewer whose conversation continues, or None to start a new conversation."""
+        return None
+
+    def premise_commands(self, brief):
+        """Commands that prove the facts the brief relies on, run before the first round; none by default."""
+        return []
+
     def progress(self, text):
         raise NotImplementedError
 
@@ -50,6 +65,34 @@ def _write(path, text):
 def _read(path):
     with open(path, "r", encoding="utf-8", newline="") as source:
         return source.read()
+
+
+def _optional(hooks, name, *args):
+    """What a hook returns, or None when the workflow's hooks do not define it (then no conversation is continued)."""
+    method = getattr(hooks, name, None)
+    return method(*args) if method is not None else None
+
+
+def say_text(run):
+    """What the coordinator said in the `resume` being run (``--say``), or an empty string."""
+    path = os.path.join(os.fspath(run.path), "say.md")
+    return _read(path).strip() if os.path.isfile(path) else ""
+
+
+def earlier_problems(directory):
+    """The newest problems file an earlier attempt of this unit left, or an empty string."""
+    attempts = sorted(
+        (name for name in os.listdir(directory) if name.startswith("rounds.attempt-")),
+        reverse=True,
+    ) if os.path.isdir(directory) else []
+    for attempt in attempts:
+        base = os.path.join(directory, attempt)
+        rounds = sorted((name for name in os.listdir(base) if name.isdigit()), key=int, reverse=True)
+        for number in rounds:
+            candidate = os.path.join(base, number, "problems.md")
+            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                return candidate
+    return ""
 
 
 def _call_with_last_review(method, args, last_review_problems, fallback_args=None):
@@ -146,12 +189,28 @@ def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
             fallback_args,
         )
 
+    unit_dir = os.path.dirname(os.path.dirname(round_dir))
+    brief_file = os.path.join(unit_dir, "brief.md")
+
+    def build_continuation(attempt):
+        return _optional(
+            hooks, "review_continuation",
+            brief_file, os.path.isfile(os.path.join(unit_dir, "brief-changed")),
+            os.path.join(round_dir, "diff.patch"), last_review_problems or previous_problems, attempt,
+            gate_file if gate_file and os.path.getsize(gate_file) else "", last_review_problems,
+        )
+
     result = run_review(
         run, label, checkout, round_dir, build_prompt, settings.model,
         settings.review_effort, tier, limits.min_checked,
         previous_problems or None,
         allow_brief=True,
+        session=os.path.join(unit_dir, "session-review.json"),
+        build_continuation=build_continuation,
     )
+    changed = os.path.join(unit_dir, "brief-changed")
+    if os.path.isfile(changed):
+        os.remove(changed)
     return result.verdict, result.reason
 
 
@@ -200,8 +259,41 @@ def run_unit_loop(
 
     os.makedirs(rounds_path, exist_ok=True)
     brief_path = os.path.join(directory, "brief.md")
+    changed_marker = os.path.join(directory, "brief-changed")
+    if os.path.isfile(changed_marker):
+        os.remove(changed_marker)
+    if os.path.isfile(brief_path) and _read(brief_path) != _read(source_brief):
+        _write(changed_marker, "the brief changed after the conversation began\n")
     shutil.copyfile(source_brief, brief_path)
     commands = hooks.gate_commands(brief_path)
+
+    exhausted = shm_problem()
+    if exhausted:
+        reason = "{0}: not started, {1}".format(unit, exhausted)
+        _write(os.path.join(directory, "status"), "blocked\n")
+        run.note(reason)
+        return LoopResult(False, reason)
+
+    premises = hooks.premise_commands(brief_path)
+    if premises:
+        premise_dir = os.path.join(directory, "premise")
+        hooks.progress("{0} unidade {1} · premissas".format(step_prefix, unit))
+        data = run_gate(checkout, limits.gate_timeout, premise_dir, premises)
+        failed = [item for item in data["commands"] if item["exit_code"] != 0]
+        if failed:
+            reason = (
+                "{0}: the premise `{1}` is false at this unit's start ({2} of {3} premise command(s) failed); "
+                "no implementer was launched. Output in {4}: correct the brief or the checkout, then resume"
+            ).format(unit, failed[0]["command"], len(failed), len(premises), premise_dir)
+            _write(os.path.join(directory, "status"), "blocked\n")
+            run.note(reason)
+            return LoopResult(False, reason)
+
+    # An earlier attempt's handoff goes to the first round of a retried unit, so the new implementer need not
+    # explore again what the earlier one settled.
+    earlier_handoff = os.path.join(directory, "handoff.md")
+    if resumed and os.path.isfile(earlier_handoff):
+        previous_handoff = earlier_handoff
 
     while True:
         round_count += 1
@@ -218,6 +310,15 @@ def run_unit_loop(
             last_review_problems if last_review_problems != previous_problems else None,
         )
         _write(prompt_path, prompt)
+        continuation_path = os.path.join(round_dir, "implement-continue.md")
+        continuation = _optional(
+            hooks, "implement_continuation",
+            brief_path, os.path.isfile(changed_marker) and round_count == 1, round_count, resumed and round_count == 1,
+            previous_problems, earlier_problems(directory) if resumed and round_count == 1 else "",
+            say_text(run) if resumed and round_count == 1 else "",
+        )
+        if continuation:
+            _write(continuation_path, continuation)
         start_epoch = int(time.time())
         result_prefix = os.path.join(round_dir, "implement")
         with hooks.around_implement(checkout, unit, base_path, brief_path):
@@ -225,7 +326,10 @@ def run_unit_loop(
                 run, unit, checkout, prompt_path, result_prefix,
                 settings.model, settings.effort, "workspace-write", tier,
                 "{0}: implementer exit=<exit> (see {1}/implement.stderr.log)".format(unit, round_dir),
+                session=os.path.join(directory, "session-implement.json"),
+                continuation=continuation_path if continuation else None,
             )
+
         if not step_result.ok:
             return LoopResult(False, step_result.reason)
 

@@ -1,5 +1,6 @@
 """Run one agent step or a parallel group of agents."""
 
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import NamedTuple, Optional
@@ -20,6 +21,33 @@ def tier_from_environment(environ=None):
     return environment["HARNESS_CODEX_TIER"] or None
 
 
+def _load_session(path, backend, directory):
+    """The saved conversation id, when it is for this backend and folder; None otherwise."""
+    try:
+        with open(path, "r", encoding="utf-8") as source:
+            data = json.load(source)
+    except (OSError, ValueError, UnicodeError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not data["id"]:
+        return None
+    if data.get("backend") != agent.resolve_backend(backend) or data.get("directory") != os.fspath(directory):
+        return None
+    return data["id"]
+
+
+def _save_session(path, backend, directory, backend_class, events_path):
+    identifier = backend_class().session_id(events_path)
+    if not identifier:
+        return
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as output:
+            json.dump({"backend": agent.resolve_backend(backend), "id": identifier,
+                       "directory": os.fspath(directory)}, output)
+            output.write("\n")
+    except OSError:
+        pass
+
+
 def run_agent_step(
     run,
     label,
@@ -33,14 +61,36 @@ def run_agent_step(
     reason_when_not_quota,
     backend=None,
     web=False,
+    session=None,
+    continuation=None,
 ):
-    status = agent.run_agent(
-        directory, prompt_file, out_prefix, model, effort, sandbox, tier, backend, web
-    )
+    """Run one agent. With ``session`` (a file) the agent's conversation is kept there across runs: when the file holds
+    a conversation for this backend and folder and ``continuation`` (a prompt file) is given, the agent resumes it with
+    that prompt instead of starting over with ``prompt_file``; a conversation that cannot be resumed is started anew."""
+    events_path = out_prefix + ".events.jsonl"
+    backend_class = agent.get_backend(backend)
+    status = None
+    if session is not None and continuation is not None and backend_class is not None:
+        identifier = _load_session(session, backend, directory)
+        if identifier:
+            status = agent.run_agent(
+                directory, continuation, out_prefix, model, effort, sandbox, tier, backend, web,
+                resume_id=identifier, track=True,
+            )
+            if status != 0 and status != agent.STALLED_EXIT and not backend_class().started(events_path) \
+                    and backend_class().quota_text(events_path) is None:
+                run.note("{0}: the conversation {1} could not be resumed; starting a new one".format(label, identifier))
+                status = None
+    if status is None:
+        status = agent.run_agent(
+            directory, prompt_file, out_prefix, model, effort, sandbox, tier, backend, web,
+            track=session is not None,
+        )
+    if session is not None and backend_class is not None:
+        _save_session(session, backend, directory, backend_class, events_path)
     if status == 0:
         return StepResult(True, "", None)
 
-    events_path = out_prefix + ".events.jsonl"
     if status == agent.STALLED_EXIT:
         reason = "{0}: STALLED: the agent wrote nothing for {1:g} minutes and was ended (see {2})".format(
             label, agent.stall_seconds() / 60, events_path
@@ -48,7 +98,6 @@ def run_agent_step(
         run.note(reason)
         return StepResult(False, reason, None)
 
-    backend_class = agent.get_backend(backend)
     quota = backend_class().quota_text(events_path) if backend_class is not None else None
     if quota is not None:
         quota = quota.rstrip("\r\n")

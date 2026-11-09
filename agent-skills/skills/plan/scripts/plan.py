@@ -10,6 +10,7 @@ from harness.engine.backend import require_backend
 from harness.engine.agentstep import run_agent_step
 from harness.engine.bridge import porteiro
 from harness.engine.checkout import commit_all, create_tree, prepare_tree, remove_tree, uncommitted
+from harness.gate import run_gate
 from harness.engine.diffbase import make_patch, snapshot_base, snapshot_tree
 from harness.engine.group import remove_worktrees, run_group
 from harness.engine.integration import run_integration
@@ -74,6 +75,22 @@ class _UnitHooks(UnitHooks):
     def gate_commands(self, brief):
         return plan_inputs.gate_commands([brief])
 
+    def implement_continuation(self, brief, brief_changed, round_number, resumed, previous_problems,
+                               earlier_problems, say):
+        return plan_inputs.implement_continuation(
+            brief, brief_changed, round_number, resumed, previous_problems, earlier_problems, say)
+
+    def review_continuation(self, brief, brief_changed, patch, previous_problems, attempt, gate_file,
+                            last_review_problems):
+        return plan_inputs.review_continuation(
+            brief, brief_changed, patch, previous_problems, attempt, gate_file, last_review_problems)
+
+    def integrate_continuation(self, brief, failed, previous_problems, earlier_problems, say, resumed):
+        return plan_inputs.integrate_continuation(brief, failed, previous_problems, earlier_problems, say, resumed)
+
+    def premise_commands(self, brief):
+        return plan_inputs.premise_commands([brief])
+
     def progress(self, text):
         self.ctx.progress(text)
 
@@ -108,9 +125,10 @@ class _IntegrationHooks(_UnitHooks):
 class PlanWorkflow(Workflow):
     name = "plan"
     command = "plan-run.sh"
-    usage_start = "usage: start [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name> [<goal.md> <plan.txt>]"
+    usage_start = "usage: start [-m model] [-e effort] [-r review-effort] [-p checkpoints] [--from <ref>] <name> [<goal.md> <plan.txt>]"
     repo_hint = "run start inside the repository the plan changes"
     start_flags = ("--in-place",)
+    start_value_flags = ("--from",)
 
     def resolve_start_args(self, name, args, repo):
         if args:
@@ -151,15 +169,17 @@ class PlanWorkflow(Workflow):
 
     def _isolate(self, ctx):
         """Give the run a worktree of its own, on the branch plan/<name>, and set it up as the repository says."""
-        dirty = uncommitted(ctx.repo)
+        source = ctx.values.get("--from")
+        dirty = [] if source else uncommitted(ctx.repo)
         if dirty:
             raise RunError(
                 "the checkout has {0} uncommitted change(s), so a worktree cut from HEAD would not hold them: "
-                "commit or stash them, or start with --in-place to work in the checkout. First: {1}".format(
+                "commit or stash them, start with --from <ref> to cut the worktree from a commit and ignore them, "
+                "or start with --in-place to work in the checkout. First: {1}".format(
                     len(dirty), "; ".join(dirty[:3]))
             )
         branch = "plan/{0}".format(ctx.run.name)
-        tree = create_tree(ctx.run.path, ctx.repo, branch)
+        tree = create_tree(ctx.run.path, ctx.repo, branch, source or "HEAD")
         try:
             ctx.note("worktree {0} on branch {1}".format(tree, branch))
             for note in prepare_tree(ctx.run.path, ctx.repo, tree, float(os.environ.get("PLAN_PREPARE_TIMEOUT", "1800"))):
@@ -183,7 +203,7 @@ class PlanWorkflow(Workflow):
         steps = plan_inputs.parse_plan(plan)
         if "--in-place" not in ctx.flags and not os.environ.get("PLAN_IN_PLACE"):
             self._isolate(ctx)
-        plan_inputs.write_inputs(ctx.run.path, goal, steps)
+        plan_inputs.write_inputs(ctx.run.path, goal, steps, Path(plan).parent / "regression.gate")
         base = ctx.run.path / "plan-base"
         base.mkdir(parents=True, exist_ok=True)
         snapshot_base(base, ctx.checkout)
@@ -309,6 +329,20 @@ class PlanWorkflow(Workflow):
             label = step_units[0] if len(step_units) == 1 else "paralelo · {0}".format(", ".join(step_units))
             steps.append(Step(index, label, run_step))
         return steps
+
+    def regression(self, ctx, label):
+        """Run the plan's `regression.gate` in the run's checkout; the failure text, or None when it passes."""
+        commands = plan_inputs.regression_commands(ctx.run.path)
+        if not commands:
+            return None
+        out = ctx.run.path / "regression-{0}".format(label)
+        ctx.note("regression check after {0}: {1} command(s)".format(label, len(commands)))
+        data = run_gate(ctx.checkout, _limits().gate_timeout, out, commands)
+        failed = [item for item in data["commands"] if item["exit_code"] != 0]
+        if not failed:
+            return None
+        return "{0} of {1} command(s) failed (first: {2}); the plan broke something outside its units' own gates. Output in {3}; repair it, then resume.".format(
+            len(failed), len(commands), failed[0]["command"], out)
 
     def after_step(self, ctx, step):
         path = ctx.run.path / "state-after-S{0}".format(step.number)

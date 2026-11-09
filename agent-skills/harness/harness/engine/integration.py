@@ -10,7 +10,7 @@ from typing import NamedTuple
 from .agentstep import run_agent_step
 from .diffbase import make_patch, snapshot_base
 from .converge import gate_signature, problem_files
-from .loop import _call_with_last_review, run_gate_round, run_review_round
+from .loop import _call_with_last_review, earlier_problems, run_gate_round, run_review_round, say_text
 from ..verdict import read_blocked
 
 
@@ -70,6 +70,7 @@ def run_integration(
     directory.mkdir(parents=True, exist_ok=True)
     base = directory / "base"
     rounds_path = directory / "rounds"
+    resumed = base.is_file()
     if base.is_file():
         if rounds_path.is_dir():
             shutil.move(str(rounds_path), str(directory / "rounds.attempt-{0}".format(int(time.time()))))
@@ -118,10 +119,24 @@ def run_integration(
                 last_review_problems if last_review_problems != previous_problems else None,
             ))
             prefix = round_dir / "integrate"
+            first_after_resume = resumed and round_number == 1
+            continuation = None
+            if hasattr(hooks, "integrate_continuation"):
+                continuation = hooks.integrate_continuation(
+                    brief_path, failed, previous_problems,
+                    earlier_problems(directory) if first_after_resume else "",
+                    say_text(run) if first_after_resume else "",
+                    first_after_resume,
+                )
+            continuation_path = round_dir / "integrate-continue.md"
+            if continuation:
+                _write(continuation_path, continuation)
             result = run_agent_step(
                 run, label, repo, os.fspath(prompt_path), os.fspath(prefix), settings.model, settings.effort,
                 "workspace-write", tier,
                 "{0}: integrator exit=<exit> (see {1}/integrate.stderr.log)".format(label, round_dir),
+                session=os.fspath(directory / "session-integrate.json"),
+                continuation=os.fspath(continuation_path) if continuation else None,
             )
             if not result.ok:
                 return IntegrationResult(False, result.reason)

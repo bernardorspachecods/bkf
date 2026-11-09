@@ -145,6 +145,14 @@ class BridgeTests(unittest.TestCase):
             "not allowed: only the pnpm scripts listed in .plan-run.json at the unit's base and the gate commands of the brief",
         )
 
+    def test_refusal_of_a_gate_command_variant_names_the_gate_commands(self):
+        gate = "pnpm --filter @hub/api test:db"
+        mode, reason = self.allowed(["pnpm", "--filter", "@hub/api", "test:db", "--", "one.test.ts"], [gate])
+        self.assertIsNone(mode)
+        self.assertIn("exactly as written", reason)
+        self.assertIn(gate, reason)
+        self.assertNotIn("exactly as written", self.allowed(["pnpm", "other"], [gate])[1])
+
     def test_timeout_returns_142_and_kills_the_process_group(self):
         self.write_config({"bridge": {"pnpmScripts": []}})
         self.base_file.write_text(self.tree() + "\n", encoding="utf-8")

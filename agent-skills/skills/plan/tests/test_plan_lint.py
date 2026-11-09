@@ -90,6 +90,15 @@ class PlanLintTests(unittest.TestCase):
             [("warning", "does not exist now: a unit before this one must create it")],
         )
 
+    def test_receives_without_a_premise_fence_warns(self):
+        warning = ("warning", "Receives states facts but the brief has no `premise` fence: a false fact is found only after a whole implementation round")
+        bare = self.brief("## Receives\nThe table has `name` and `photo`.\n\n## Gate\n```gate\necho ok\n```\n")
+        self.assertEqual(plan_lint.lint_brief(bare, self.root), [warning])
+        proved = self.brief("## Receives\nThe table has `name`.\n```premise\ngrep -q name schema.sql\n```\n\n## Gate\n```gate\necho ok\n```\n")
+        self.assertEqual(plan_lint.lint_brief(proved, self.root), [])
+        nothing = self.brief("## Receives\nNothing.\n\n## Gate\n```gate\necho ok\n```\n")
+        self.assertEqual(plan_lint.lint_brief(nothing, self.root), [])
+
     def test_large_unit_warns_unless_mechanical(self):
         def content(count, mechanical=""):
             files = "".join("- `src/file{0}.py`\n".format(index) for index in range(count))

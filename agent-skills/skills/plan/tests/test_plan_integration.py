@@ -202,10 +202,19 @@ class PlanIntegrationCommandTests(unittest.TestCase):
         self.assertFalse((self.integration / "status").exists())
         self.assert_refusal_preserves_checkout()
 
+    def test_accept_works_from_a_worktree_of_the_plan_repository(self):
+        other = self.root / "other"
+        self.git("worktree", "add", "--detach", str(other), "HEAD")
+        with self.assertRaisesRegex(RunError, "^(?!run accept-integration inside)"):
+            self.call(
+                accept_integration, "sample", "1", "--why", "reviewed",
+                working_directory=other,
+            )
+
     def test_accept_requires_the_plan_repository(self):
         other = self.root / "other"
         other.mkdir()
-        self.git("worktree", "add", "--detach", str(other), "HEAD")
+        subprocess.run(["git", "-C", str(other), "init", "-q"], check=True)
         with self.assertRaisesRegex(RunError, "run accept-integration inside the plan's repository"):
             self.call(
                 accept_integration, "sample", "1", "--why", "reviewed",

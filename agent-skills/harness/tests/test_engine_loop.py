@@ -49,6 +49,11 @@ class Hooks:
             return self.commands
         return ["test -f ready"] if "gate" in Path(brief).read_text() else []
 
+    premises = ()
+
+    def premise_commands(self, brief):
+        return list(self.premises)
+
     def progress(self, text):
         self.progress_lines.append(text)
 
@@ -99,6 +104,7 @@ class UnitLoopTests(unittest.TestCase):
             "FAKE_VERDICT": "pass",
             "FAKE_IMPL": "change",
             "FAKE_GATE_READY_ROUND": "0",
+            "HARNESS_SHM_MIN_FREE": "0",
         })
         self.path_patch.start()
         self.addCleanup(self.path_patch.stop)
@@ -196,6 +202,39 @@ class UnitLoopTests(unittest.TestCase):
         self.assertFalse((round_dir / "review-prompt.md").exists())
         self.assertIn(result.reason, (self.run.path / "status.log").read_text())
         self.assertEqual(self.hooks.progress_lines[-1], "S1 unidade 01-unit · ronda 1 · bloqueada")
+
+    def test_a_false_premise_stops_before_any_implementer_is_launched(self):
+        self.hooks.premises = ["test -f missing-file"]
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertIn("the premise `test -f missing-file` is false at this unit's start", result.reason)
+        self.assertIn("no implementer was launched", result.reason)
+        self.assertEqual((self.unit_dir / "status").read_text(), "blocked\n")
+        self.assertEqual(self.hooks.implement_calls, [])
+        self.assertTrue((self.unit_dir / "premise" / "gate-1.log").is_file())
+
+    def test_exhausted_shared_memory_stops_before_any_implementer_is_launched(self):
+        with patch("harness.engine.loop.shm_problem", return_value="only 1 of 32 segments are free"):
+            result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "01-unit: not started, only 1 of 32 segments are free")
+        self.assertEqual((self.unit_dir / "status").read_text(), "blocked\n")
+        self.assertEqual(self.hooks.implement_calls, [])
+
+    def test_a_true_premise_lets_the_unit_run(self):
+        self.hooks.premises = ["test -f tracked.txt"]
+        self.assertTrue(self.run_loop().ok)
+
+    def test_a_retried_unit_gets_the_earlier_handoff_in_its_first_round(self):
+        os.environ["FAKE_BLOCKED"] = "the brief was wrong"
+        self.addCleanup(lambda: os.environ.pop("FAKE_BLOCKED", None))
+        self.assertFalse(self.run_loop().ok)
+        os.environ.pop("FAKE_BLOCKED")
+        self.hooks.implement_calls.clear()
+        self.assertTrue(self.run_loop().ok)
+        round_number, resumed, previous_problems, previous_handoff, _ = self.hooks.implement_calls[0]
+        self.assertEqual((round_number, resumed, previous_problems), (1, 1, ""))
+        self.assertEqual(Path(previous_handoff), self.unit_dir / "handoff.md")
 
     def test_brief_verdict_escalates_with_brief_reason(self):
         os.environ["FAKE_VERDICT"] = "brief"
@@ -564,7 +603,7 @@ class IntegrationLoopMemoryTests(unittest.TestCase):
     def test_gate_failure_does_not_forget_integration_review_problems(self):
         review_calls = []
 
-        def integrate(run, label, directory, prompt_file, out_prefix, *args):
+        def integrate(run, label, directory, prompt_file, out_prefix, *args, **kwargs):
             prompt = Path(prompt_file).read_text(encoding="utf-8")
             self.implement_prompts.append(prompt)
             round_number = int(Path(prompt_file).parent.name)

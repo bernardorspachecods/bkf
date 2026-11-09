@@ -25,6 +25,8 @@ def run_review(
     min_checked,
     previous_problems=None,
     allow_brief=False,
+    session=None,
+    build_continuation=None,
 ):
     """Run up to three reviewer attempts and persist a usable review."""
     round_path = os.fspath(round_dir)
@@ -41,6 +43,11 @@ def run_review(
         with open(prompt_path, "w", encoding="utf-8", newline="") as prompt:
             prompt.write(build_prompt(attempt))
 
+        continuation_path = os.path.join(round_path, "review-continue.md")
+        continuation = build_continuation(attempt) if build_continuation is not None else None
+        if continuation:
+            with open(continuation_path, "w", encoding="utf-8", newline="") as text:
+                text.write(continuation)
         step = run_agent_step(
             run,
             label,
@@ -54,6 +61,8 @@ def run_review(
             "{0}: review exit=<exit> (see {1}/review.stderr.log)".format(
                 label, round_path
             ),
+            **({"session": session, "continuation": continuation_path if continuation else None}
+               if session is not None else {}),
         )
         if not step.ok:
             return ReviewResult(None, step.reason)

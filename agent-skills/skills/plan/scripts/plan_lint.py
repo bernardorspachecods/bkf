@@ -211,6 +211,13 @@ def lint_brief(path, repo, gone=frozenset(), made=frozenset()):
                 if re.search(r"\bonly\s+touch(?:es)?\b|\bthe\s+diff\s+only\b|\bmay\s+only\s+change\b", line, re.IGNORECASE):
                     diagnostics.append(("error", "write the scope by exclusion"))
                     break
+    receives = [line for line in dict(_sections(text)).get("receives", []) if line.strip()]
+    if receives and not re.fullmatch(r"(?i)\W*(none|nothing|n/a)\W*", " ".join(receives).strip()) \
+            and not re.search(r"(?m)^```premise[ \t]*$", text):
+        diagnostics.append((
+            "warning",
+            "Receives states facts but the brief has no `premise` fence: a false fact is found only after a whole implementation round",
+        ))
     gone, made = apply_declarations(gone, made, text)
     scripts = _package_scripts(repo)
     for command in _gate_commands(text):

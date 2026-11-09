@@ -107,8 +107,17 @@ class Backend:
 
     executable = None
 
-    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False):
+    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False,
+                  resume_id=None, track=False):
         raise NotImplementedError
+
+    def session_id(self, events_path) -> Optional[str]:
+        """The id a later run can resume this agent's conversation by, read from its events; None when it has none."""
+        return None
+
+    def started(self, events_path) -> bool:
+        """Whether the agent began a conversation turn: a resume of a session that does not exist never does."""
+        return True
 
     def quota_text(self, events_path) -> Optional[str]:
         return None
@@ -133,10 +142,32 @@ class CodexBackend(Backend):
 
     executable = "codex"
 
-    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False):
+    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False,
+                  resume_id=None, track=False):
         command = ["exec"]
         if tier:
             command.extend(["-c", 'service_tier="{0}"'.format(tier)])
+        if resume_id:
+            # `codex exec resume` takes neither -C nor -s: the folder is the process's (the caller starts the
+            # agent there) and the sandbox goes through the configuration.
+            command.extend(
+                [
+                    "resume",
+                    "--skip-git-repo-check",
+                    "-m",
+                    model,
+                    "-c",
+                    'model_reasoning_effort="{0}"'.format(effort),
+                    "-c",
+                    'sandbox_mode="{0}"'.format(sandbox),
+                    "--json",
+                    "-o",
+                    last_message,
+                    resume_id,
+                    "-",
+                ]
+            )
+            return command
         command.extend(
             [
                 "--skip-git-repo-check",
@@ -155,6 +186,30 @@ class CodexBackend(Backend):
             ]
         )
         return command
+
+    def session_id(self, events_path) -> Optional[str]:
+        try:
+            with open(events_path, "r", encoding="utf-8") as events:
+                for line in events:
+                    if '"thread.started"' not in line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(event, dict) and event.get("type") == "thread.started" \
+                            and isinstance(event.get("thread_id"), str):
+                        return event["thread_id"]
+        except (OSError, UnicodeError):
+            return None
+        return None
+
+    def started(self, events_path) -> bool:
+        try:
+            with open(events_path, "r", encoding="utf-8") as events:
+                return any('"turn.started"' in line for line in events)
+        except (OSError, UnicodeError):
+            return False
 
     def quota_text(self, events_path) -> Optional[str]:
         try:
@@ -193,11 +248,14 @@ class ClaudeBackend(Backend):
 
     executable = "claude"
 
-    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False):
-        command = [
-            "-p", "--output-format", "stream-json", "--verbose", "--no-session-persistence",
-            "--model", model, "--effort", effort, "--permission-mode", "dontAsk",
-        ]
+    def arguments(self, directory, model, effort, sandbox, tier, last_message, web=False,
+                  resume_id=None, track=False):
+        command = ["-p", "--output-format", "stream-json", "--verbose"]
+        if resume_id:
+            command.extend(["--resume", resume_id])
+        elif not track:
+            command.append("--no-session-persistence")
+        command.extend(["--model", model, "--effort", effort, "--permission-mode", "dontAsk"])
         if sandbox == "workspace-write":
             command.extend(["--settings", _CLAUDE_SANDBOX])
             tools = "Read,Glob,Grep,Write(./**),Edit(./**),Bash"
@@ -207,6 +265,29 @@ class ClaudeBackend(Backend):
             tools += ",WebFetch,WebSearch"
         command.extend(["--allowedTools", tools])
         return command
+
+    def session_id(self, events_path) -> Optional[str]:
+        try:
+            with open(events_path, "r", encoding="utf-8") as events:
+                for line in events:
+                    if '"session_id"' not in line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(event, dict) and isinstance(event.get("session_id"), str):
+                        return event["session_id"]
+        except (OSError, UnicodeError):
+            return None
+        return None
+
+    def started(self, events_path) -> bool:
+        try:
+            with open(events_path, "r", encoding="utf-8") as events:
+                return any('"subtype":"init"' in line.replace(" ", "") for line in events)
+        except (OSError, UnicodeError):
+            return False
 
     def finish(self, events_path, last_message_path):
         """Write the text of the final `result` event as the last message."""
@@ -311,8 +392,14 @@ def run_agent(
     bridge_base_file=None,
     bridge_log=None,
     bridge_unit=None,
+    resume_id=None,
+    track=False,
 ):
-    """Inject prompt rules, run a backend in the foreground, and return its status."""
+    """Inject prompt rules, run a backend in the foreground, and return its status.
+
+    ``resume_id`` continues that conversation with the prompt as its next message; ``track`` keeps the conversation
+    on disk so a later run can resume it (Codex always does, Claude only when asked).
+    """
     backend_class = get_backend(backend)
     if backend_class is None:
         print("backend not implemented: {0}".format(resolve_backend(backend)), file=sys.stderr)
@@ -331,7 +418,7 @@ def run_agent(
     stderr_path = out_prefix + ".stderr.log"
     last_message_path = out_prefix + ".last-message.md"
     command = [backend_class.executable] + backend_class().arguments(
-        directory, model, effort, sandbox, tier, last_message_path, web
+        directory, model, effort, sandbox, tier, last_message_path, web, resume_id, track
     )
     bridge_context = (
         porteiro(directory, bridge_unit, bridge_base_file, [], bridge_log)

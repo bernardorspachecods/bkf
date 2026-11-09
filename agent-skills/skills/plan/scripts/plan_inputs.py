@@ -57,12 +57,14 @@ def parse_plan(plan_path):
     return steps
 
 
-def write_inputs(run_path, goal_path, steps):
+def write_inputs(run_path, goal_path, steps, regression_path=None):
     """Copy the goal and unit briefs into a run's input folder."""
     run_path = Path(run_path)
     units_path = run_path / "00-input" / "units"
     units_path.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(goal_path, run_path / "00-input" / "goal.md")
+    if regression_path is not None and Path(regression_path).is_file():
+        shutil.copyfile(regression_path, run_path / "00-input" / "regression.gate")
     order = []
     index = 0
     for step in steps:
@@ -77,8 +79,22 @@ def write_inputs(run_path, goal_path, steps):
         output.write("".join(name + "\n" for name in order))
 
 
-def gate_commands(brief_paths):
-    """Return unique commands from all tagged gate fences, in encounter order."""
+def regression_commands(run_path):
+    """The commands of the run's copy of `regression.gate`: one per line, blank lines and `#` comments skipped."""
+    path = Path(run_path) / "00-input" / "regression.gate"
+    if not path.is_file():
+        return []
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+    return [line for line in lines if line and not line.startswith("#")]
+
+
+def premise_commands(brief_paths):
+    """The commands of the briefs' ``premise`` fences: facts the unit relies on, proved before its first round."""
+    return gate_commands(brief_paths, "premise")
+
+
+def gate_commands(brief_paths, tag="gate"):
+    """Return unique commands from all fences tagged ``tag`` (``gate`` by default), in encounter order."""
     commands = []
     seen = set()
     for brief_path in brief_paths:
@@ -86,7 +102,7 @@ def gate_commands(brief_paths):
         with open(brief_path, "r", encoding="utf-8", newline="") as source:
             for line in source:
                 line = line.rstrip("\r\n")
-                if re.fullmatch(r"```gate[ \t]*", line):
+                if re.fullmatch(r"```" + re.escape(tag) + r"[ \t]*", line):
                     active = True
                     continue
                 if active and re.fullmatch(r"```[ \t]*", line):
@@ -105,9 +121,8 @@ def _run_path(name, environ=None):
 
 
 def _current_repo():
-    result = subprocess.run(["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE,
-                            stderr=subprocess.DEVNULL, universal_newlines=True, check=False)
-    return result.stdout.rstrip("\n") if result.returncode == 0 else None
+    from harness.engine.checkout import main_repo
+    return main_repo()
 
 
 def resolve_plan(target):
@@ -318,6 +333,11 @@ def implement_prompt(guides, brief, round_number, resumed, previous_problems, pr
         text += "- The brief has a `gate`. After you finish, the script runs those commands itself and sends the work back, without a review, if any fails. Run them yourself first when you can.\n"
     if round_number == 1 and resumed:
         text += "\nAn earlier attempt at this unit was stopped. The checkout may already hold its work. Judge it against the brief, keep what is right and fix the rest.\n"
+        if previous_handoff and not previous_problems and os.path.isfile(previous_handoff):
+            text += (
+                "\nThe brief may have been corrected since that attempt. Its handoff, which says what it found and where "
+                "it stopped, so you do not explore again what it already settled:\n\n{0}\n"
+            ).format(_read_text(previous_handoff))
     if previous_problems:
         text += (
             "\nThe script's gate or a reviewer sent your work back. The work from the earlier round is in the checkout. "
@@ -332,6 +352,104 @@ def implement_prompt(guides, brief, round_number, resumed, previous_problems, pr
         ).format(last_review_problems, _read_text(last_review_problems))
     text += "\nIf the brief cannot be followed because a command cannot pass at this step or a rule forbids what the result requires, make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of repeating the attempt.\n"
     return text
+
+
+_BLOCKED_REMINDER = (
+    "\nIf the brief cannot be followed because a command cannot pass at this step or a rule forbids what the result "
+    "requires, make your last line `BLOCKED: <the sentence of the brief that conflicts and what you saw>` instead of "
+    "repeating the attempt.\n"
+)
+
+
+def _resume_notes(resumed, earlier_problems, say, brief, brief_changed):
+    """The sentences a continued conversation needs after the run stopped and was resumed."""
+    text = ""
+    if resumed:
+        text += (
+            "\nThe run stopped and was resumed: this is the same unit and your earlier work is in the checkout. "
+            "The checkout may have been edited since, so check again anything you rely on before you go on.\n"
+        )
+        if earlier_problems and os.path.isfile(earlier_problems):
+            text += "\nThe last problems found before it stopped (`{0}`):\n\n{1}\n".format(
+                earlier_problems, _read_text(earlier_problems))
+    if say:
+        text += "\nThe coordinator says:\n\n{0}\n".format(say)
+    if brief_changed:
+        text += (
+            "\nThe brief was corrected since you began. Judge against this one from now on:\n\n{0}\n"
+        ).format(_read_text(brief))
+    return text
+
+
+def implement_continuation(brief, brief_changed, round_number, resumed, previous_problems, earlier_problems, say):
+    """The next message to an implementer that keeps its conversation, or None when there is nothing to add."""
+    if round_number == 1 and not resumed:
+        return None
+    text = "# Continue this unit\n"
+    if previous_problems and os.path.isfile(previous_problems):
+        text += (
+            "\nThe script's gate or a reviewer sent your work back. The work of your earlier round is in the checkout. "
+            "Fix the problems below and only those, keeping what was fine, and verify again.\n\n"
+            "Problems from the gate or the review:\n\n{0}\n"
+        ).format(_read_text(previous_problems))
+    text += _resume_notes(resumed, earlier_problems, say, brief, brief_changed)
+    text += (
+        "\nSame rules as before. Your final message is the handoff in the form the guide gives, and nothing else.\n"
+    )
+    return text + _BLOCKED_REMINDER
+
+
+def integrate_continuation(brief, failed_patches, previous_problems, earlier_problems, say, resumed):
+    """The next message to an integrator that keeps its conversation, or None when there is nothing to add."""
+    if not resumed and not previous_problems and not failed_patches:
+        return None
+    text = "# Continue this integration\n"
+    if failed_patches:
+        text += (
+            "\nThe diffs of these units did not apply to the checkout. Bring what each one meant into the checkout, "
+            "resolving the conflict, and change nothing else:\n{0}\n"
+        ).format(failed_patches)
+    if previous_problems and os.path.isfile(previous_problems):
+        text += (
+            "\nA reviewer or the gate found problems in the combined result. Fix those and only those, then verify "
+            "again.\n\n{0}\n"
+        ).format(_read_text(previous_problems))
+    text += _resume_notes(resumed, earlier_problems, say, brief, False)
+    text += "\nSame rules as before. Your final message is the handoff, and nothing else.\n"
+    return text + _BLOCKED_REMINDER
+
+
+def review_continuation(brief, brief_changed, patch, previous_problems, attempt, gate_file, last_review_problems):
+    """The next message to a reviewer that keeps its conversation."""
+    form = (
+        '\nYour final message is the review, and nothing else. Begin it with "## What I checked", one line per thing '
+        "you went through and where you found it. Then list the problems. Its last line must be exactly one of:\n"
+        "VERDICT: pass\nVERDICT: back\nVERDICT: escalate\n"
+        "(`VERDICT: brief` when the diff is fine but the brief asks for something contradictory or impossible.)\n"
+    )
+    if attempt > 1:
+        return (
+            "# Your last message was not a usable review\n\nIt had no \"## What I checked\" section or no verdict line. "
+            "Give the review again, in the form below, from what you already examined.\n" + form
+        )
+    text = "# Review this unit again\n\nThe work was corrected or the run was resumed. The diff of the unit now, new files included: {0}\n".format(patch)
+    if gate_file:
+        text += (
+            "The script ran the brief's `gate` commands again outside your sandbox and every one passed: {0}. "
+            "They are binding; do not run them again.\n"
+        ).format(gate_file)
+    if brief_changed:
+        text += "\nThe brief was corrected. Judge against this one from now on:\n\n{0}\n".format(_read_text(brief))
+    if last_review_problems and os.path.isfile(last_review_problems):
+        text += (
+            "\nThe problems you listed in your last review stay binding until you prove they are gone "
+            "(`{0}`):\n\n{1}\n"
+        ).format(last_review_problems, _read_text(last_review_problems))
+    text += (
+        "\nCheck whether those problems are gone and whether the corrections brought new ones. The repository is your "
+        "current directory: open it read-only, change nothing, and do not open any handoff.\n"
+    )
+    return text + form
 
 
 def review_prompt(guides, brief, patch, previous_problems, attempt, gate_file,

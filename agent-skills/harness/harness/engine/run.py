@@ -107,6 +107,10 @@ class RunDir:
     def pause_here(self, step):
         if (self.path / ".paused-S{0}".format(step)).exists():
             return False
+        return self.checkpoint(step)
+
+    def checkpoint(self, step):
+        """Whether the run is set to pause after this step, whether or not it already has."""
         if self.pause == "each":
             return True
         if not self.pause or self.pause == "none":

@@ -1,11 +1,12 @@
 """A run's worktree: created on a branch, set up as declared, committed, and taken away."""
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from harness.engine.checkout import commit_all, create_tree, prepare_tree, remove_tree, uncommitted
+from harness.engine.checkout import commit_all, create_tree, main_repo, prepare_tree, remove_tree, uncommitted
 from harness.engine.run import RunError
 
 
@@ -34,6 +35,17 @@ class CheckoutTests(unittest.TestCase):
         (self.repo / ".plan-run.json").write_text(json.dumps({"worktree": section}), encoding="utf-8")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-qm", "declare")
+
+    def test_main_repo_is_the_main_checkout_even_inside_a_worktree(self):
+        tree = create_tree(self.run_path, self.repo, "plan/x")
+        here = os.getcwd()
+        try:
+            os.chdir(tree)
+            self.assertEqual(Path(main_repo()).resolve(), self.repo.resolve())
+            os.chdir(self.repo)
+            self.assertEqual(Path(main_repo()).resolve(), self.repo.resolve())
+        finally:
+            os.chdir(here)
 
     def test_uncommitted_lists_changed_and_untracked_files_but_not_ignored_ones(self):
         self.assertEqual(uncommitted(self.repo), [])

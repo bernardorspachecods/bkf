@@ -126,7 +126,7 @@ class IntegrationTests(unittest.TestCase):
     def test_blocked_integrator_stops_before_diff_gate_and_review(self):
         (self.run.path / "01-unit" / "final.patch").write_text("not a patch\n", encoding="utf-8")
 
-        def integrator(run, label, directory, prompt_file, out_prefix, *args):
+        def integrator(run, label, directory, prompt_file, out_prefix, *args, **kwargs):
             Path(out_prefix + ".last-message.md").write_text(
                 "BLOCKED: the combined brief requires an impossible command\n", encoding="utf-8"
             )
@@ -168,7 +168,7 @@ class IntegrationTests(unittest.TestCase):
         patch_path = self.run.path / "01-unit" / "final.patch"
         patch_path.write_text("not a git patch\n", encoding="utf-8")
 
-        def integrator(run, label, directory, prompt_file, out_prefix, *args):
+        def integrator(run, label, directory, prompt_file, out_prefix, *args, **kwargs):
             goal.write_text("LATE-GOAL\n", encoding="utf-8")
             (self.repo / "integrated.txt").write_text("combined\n", encoding="utf-8")
             Path(out_prefix + ".last-message.md").write_text("handoff\n", encoding="utf-8")
@@ -249,7 +249,7 @@ class IntegrationTests(unittest.TestCase):
         patch_path.write_text("not a git patch\n", encoding="utf-8")
         prompts = {}
 
-        def integrator(run, label, directory, prompt_file, out_prefix, *args):
+        def integrator(run, label, directory, prompt_file, out_prefix, *args, **kwargs):
             prompts["integrator"] = Path(prompt_file).read_text(encoding="utf-8")
             (self.repo / "integrated.txt").write_text("combined\n", encoding="utf-8")
             Path(out_prefix + ".last-message.md").write_text("handoff\n", encoding="utf-8")
@@ -308,7 +308,7 @@ class IntegrationTests(unittest.TestCase):
         self.hooks.commands = ["test -e ready"]
         prompt_calls = []
 
-        def integrator(run, label, directory, prompt_file, out_prefix, *args):
+        def integrator(run, label, directory, prompt_file, out_prefix, *args, **kwargs):
             prompt_calls.append(Path(prompt_file).read_text(encoding="utf-8"))
             (self.repo / "ready").write_text("yes\n", encoding="utf-8")
             Path(out_prefix + ".last-message.md").write_text("handoff\n", encoding="utf-8")
@@ -338,7 +338,7 @@ class IntegrationTests(unittest.TestCase):
             "S1 integração · ronda 2 · gate PASS",
         ])
 
-    def _integrator(self, run, label, directory, prompt_file, out_prefix, *args):
+    def _integrator(self, run, label, directory, prompt_file, out_prefix, *args, **kwargs):
         (self.repo / "integrated.txt").write_text(Path(prompt_file).read_text() + "\n", encoding="utf-8")
         Path(out_prefix + ".last-message.md").write_text("handoff\n", encoding="utf-8")
         return StepResult(True, "", None)

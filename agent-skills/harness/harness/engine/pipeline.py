@@ -11,7 +11,7 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 
-from .checkout import remove_tree
+from .checkout import main_repo, remove_tree
 from .layout import find_run, new_run_parent
 from .lock import acquire, is_active
 from .run import RunDir, RunError, Settings, valid_name, valid_pause
@@ -137,14 +137,7 @@ def load_run(workflow, name):
 
 
 def _repo():
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, check=False,
-        )
-    except OSError:
-        return None
-    return result.stdout.rstrip("\n") if result.returncode == 0 else None
+    return main_repo()
 
 
 def _pipeline(ctx, workflow):
@@ -158,26 +151,34 @@ def _pipeline(ctx, workflow):
             stage = "step {0}".format(key)
             ctx._active_stage = stage
             marker = "S{0}".format(key)
+            retried = False
             if run.is_done(marker):
-                continue
-            ctx.note("start step {0}: {1} ({2} {3})".format(
-                key, step.label, run.settings.model, run.settings.effort
-            ))
-            ctx.progress("{0} {1}".format(marker, step.label))
-            try:
-                step.run(ctx)
-            except Stop as stopped:
-                ctx.note("STOPPED at step {0}: {1}".format(key, stopped.reason))
-                ctx.note(workflow.fix_hint(ctx))
-                ctx.progress("{0} parou".format(marker))
-                print("STOPPED at step {0} ({1}): {2}\nSee {3}/status.log".format(
-                    key, step.label, stopped.reason, run.path
+                # A step whose regression check failed is done but not through its checkpoint: check it now,
+                # and pause as the checkpoint says, which the failed run never reached.
+                if not (run.checkpoint(key) and not run.is_done("R-S{0}".format(key))):
+                    continue
+                retried = True
+            if not retried:
+                ctx.note("start step {0}: {1} ({2} {3})".format(
+                    key, step.label, run.settings.model, run.settings.effort
                 ))
+                ctx.progress("{0} {1}".format(marker, step.label))
+                try:
+                    step.run(ctx)
+                except Stop as stopped:
+                    ctx.note("STOPPED at step {0}: {1}".format(key, stopped.reason))
+                    ctx.note(workflow.fix_hint(ctx))
+                    ctx.progress("{0} parou".format(marker))
+                    print("STOPPED at step {0} ({1}): {2}\nSee {3}/status.log".format(
+                        key, step.label, stopped.reason, run.path
+                    ))
+                    return 1
+                run.mark_done(marker)
+                ctx.note("done step {0}".format(key))
+                ctx.progress("{0} concluído".format(marker))
+                workflow.after_step(ctx, step)
+            if run.checkpoint(key) and _regression_failed(ctx, workflow, run, "S{0}".format(key), marker):
                 return 1
-            run.mark_done(marker)
-            ctx.note("done step {0}".format(key))
-            ctx.progress("{0} concluído".format(marker))
-            workflow.after_step(ctx, step)
             if run.pause_here(key):
                 run.mark_paused(key)
                 ctx.note("PAUSED after step {0}: read {1}, then: {2} resume {3}".format(
@@ -191,6 +192,8 @@ def _pipeline(ctx, workflow):
 
         stage = "final review"
         ctx._active_stage = stage
+        if not run.is_done("report") and _regression_failed(ctx, workflow, run, "final", "final"):
+            return 1
         final_step = workflow.final_step(ctx) if not run.is_done("report") else None
         if final_step is not None:
             ctx.note("start final review ({0} {1})".format(run.settings.model, run.settings.effort))
@@ -213,15 +216,34 @@ def _pipeline(ctx, workflow):
         return _record_crash(ctx, stage, error)
 
 
-def _options(args, defaults=None, flags=()):
+def _regression_failed(ctx, workflow, run, label, shown):
+    """Run the workflow's plan-wide regression check once per checkpoint; True (after reporting it) when it fails."""
+    marker = "R-" + label
+    if run.is_done(marker):
+        return False
+    failure = workflow.regression(ctx, label)
+    if failure is None:
+        run.mark_done(marker)
+        return False
+    ctx.note("STOPPED at the regression check after {0}: {1}".format(shown, failure))
+    ctx.progress("{0} regressão falhou".format(shown))
+    print("STOPPED at the regression check after {0}: {1}\nSee {2}/status.log".format(shown, failure, run.path))
+    return True
+
+
+def _options(args, defaults=None, flags=(), value_flags=()):
     values = dict(defaults or {})
     values["flags"] = set()
+    values["values"] = {}
     index = 0
     while index < len(args) and args[index].startswith("-"):
         option = args[index]
         if option in flags:
             values["flags"].add(option)
             index += 1
+        elif option in value_flags and index + 1 < len(args):
+            values["values"][option] = args[index + 1]
+            index += 2
         elif option in ("-m", "-e", "-r", "-p") and index + 1 < len(args):
             key = {"-m": "model", "-e": "effort", "-r": "review_effort", "-p": "pause"}[option]
             values[key] = args[index + 1]
@@ -238,7 +260,7 @@ def _check_pause(text):
 
 def _start(workflow, args):
     options, rest = _options(args, {"model": "gpt-6-luna", "effort": "high", "review_effort": "", "pause": ""},
-                             workflow.start_flags)
+                             workflow.start_flags, workflow.start_value_flags)
     if len(rest) < 1:
         raise RunError(workflow.usage_start)
     name, workflow_args = rest[0], rest[1:]
@@ -262,6 +284,7 @@ def _start(workflow, args):
 
     def start(ctx):
         ctx.flags = frozenset(options["flags"])
+        ctx.values = dict(options["values"])
         try:
             workflow.start(ctx, workflow_args)
         except RunError:
@@ -279,11 +302,26 @@ def _start(workflow, args):
         raise
 
 
+def _said(values):
+    """The message given with ``--say`` or ``--say-file`` to the agents the resume continues, or an empty string."""
+    if "--say" in values and "--say-file" in values:
+        raise RunError("use --say or --say-file, not both")
+    if "--say-file" in values:
+        try:
+            return Path(values["--say-file"]).read_text(encoding="utf-8").strip()
+        except OSError as error:
+            raise RunError("cannot read {0}: {1}".format(values["--say-file"], error))
+    return values.get("--say", "").strip()
+
+
 def _resume(workflow, args):
-    options, rest = _options(args)
+    options, rest = _options(args, value_flags=("--say", "--say-file"))
     if len(rest) != 1:
-        raise RunError("usage: resume [-m model] [-e effort] [-r review-effort] [-p checkpoints] <name>")
+        raise RunError(
+            "usage: resume [-m model] [-e effort] [-r review-effort] [-p checkpoints] "
+            "[--say <text> | --say-file <file>] <name>")
     run = load_run(workflow, rest[0])
+    said = _said(options["values"])
 
     def resume(ctx):
         if "pause" in options:
@@ -301,7 +339,15 @@ def _resume(workflow, args):
         ctx.settings = settings
         _resume_detection(run)
         ctx.note("resume")
-        return _pipeline(ctx, workflow)
+        say_path = run.path / "say.md"
+        if said:
+            say_path.write_text(said + "\n", encoding="utf-8")
+            ctx.note("the coordinator says: {0}".format(said))
+        try:
+            return _pipeline(ctx, workflow)
+        finally:
+            if said and say_path.exists():
+                say_path.unlink()
     return _run_locked(run, workflow, resume)
 
 

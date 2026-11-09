@@ -33,6 +33,7 @@ class Context:
         self.settings = run.settings
         self.repo = run.repo
         self.flags = frozenset()
+        self.values = {}
         self.workflow = workflow
 
     @property
@@ -63,6 +64,7 @@ class Workflow:
     command = None
     usage_start = None
     start_flags = ()
+    start_value_flags = ()
     repo_hint = None
 
     def resolve_start_args(self, name, args, repo):
@@ -85,6 +87,10 @@ class Workflow:
         raise NotImplementedError
 
     def after_step(self, ctx, step):
+        return None
+
+    def regression(self, ctx, label):
+        """Run the plan-wide regression check; return the text of the failure, or None when it passes or there is none."""
         return None
 
     def board(self, ctx):

@@ -20,6 +20,26 @@ def _git(directory, args, **options):
     )
 
 
+def main_repo():
+    """The root of the main checkout of the repository the command runs in, even from inside one of its worktrees.
+
+    ``git rev-parse --show-toplevel`` gives the worktree's own root there, which would put the runs folder and the
+    kept records in the worktree. None outside a repository.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True, check=False,
+        )
+    except OSError:
+        return None
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) < 2:
+        return None
+    common, top = lines[0], lines[1]
+    return os.path.dirname(common) if os.path.basename(common) == ".git" else top
+
+
 def tree_path(run_path):
     return Path(run_path) / "tree"
 

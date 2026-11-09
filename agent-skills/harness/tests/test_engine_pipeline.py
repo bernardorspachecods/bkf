@@ -70,6 +70,11 @@ class PipelineTests(unittest.TestCase):
                             raise Stop("gate failed")
                         (ctx.run.path / "second").write_text("ok\\n")
                     return [Step(1, "agent step", first), Step(2, "gate step", second)]
+                def regression(self, ctx, label):
+                    (ctx.run.path / "regression-calls").open("a").write(label + "\\n")
+                    if (ctx.run.path / "regression-red").exists():
+                        return "regression red after " + label
+                    return None
                 def final_step(self, ctx):
                     def finish(ctx):
                         (ctx.run.path / "report.md").write_text("ready\\n")
@@ -140,6 +145,53 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue((self.runs / "stopped" / ".done-S2").is_file())
         self.assertTrue((self.runs / "stopped" / "second").is_file())
+
+    def test_regression_runs_at_checkpoints_and_before_the_final_review_and_stops_when_red(self):
+        code, out, _ = self.call("start", "-p", "1", "reg")
+        run = self.runs / "reg"
+        self.assertEqual(code, 3)
+        self.assertEqual((run / "regression-calls").read_text(), "S1\n")
+        self.assertEqual(self.call("resume", "reg")[0], 0)
+        self.assertEqual((run / "regression-calls").read_text(), "S1\nfinal\n")
+
+        code, out, _ = self.call("start", "-p", "none", "red", "stop")
+        (self.runs / "red" / "regression-red").touch()
+        (self.runs / "red" / "stop").unlink()
+        code, out, _ = self.call("resume", "red")
+        self.assertEqual(code, 1)
+        self.assertIn("STOPPED at the regression check after final: regression red after final", out)
+        self.assertFalse((self.runs / "red" / ".done-report").exists())
+        (self.runs / "red" / "regression-red").unlink()
+        self.assertEqual(self.call("resume", "red")[0], 0)
+
+    def test_a_red_regression_at_a_checkpoint_is_retried_on_resume_without_rerunning_the_step(self):
+        run = self.runs / "cp"
+        self.call("start", "-p", "none", "cp", "stop")
+        (run / "stop").unlink()
+        (run / "pause").write_text("2\n")
+        (run / "regression-red").touch()
+        self.assertEqual(self.call("resume", "cp")[0], 1)
+        self.assertTrue((run / ".done-S2").is_file())
+        self.assertFalse((run / ".paused-S2").exists())
+        (run / "regression-red").unlink()
+        self.assertEqual(self.call("resume", "cp")[0], 3)
+        self.assertTrue((run / ".paused-S2").is_file())
+
+    def test_say_reaches_the_resumed_run_and_is_removed_after_it(self):
+        self.call("start", "talk", "stop")
+        run = self.runs / "talk"
+        (run / "stop").unlink()
+        code, _, err = self.call("resume", "--say", "the table exists now", "talk")
+        self.assertEqual(code, 0)
+        self.assertIn("the coordinator says: the table exists now", (run / "status.log").read_text())
+        self.assertFalse((run / "say.md").exists())
+        note = self.root / "note.txt"
+        note.write_text("from a file\n", encoding="utf-8")
+        self.call("resume", "--say-file", str(note), "talk")
+        self.assertIn("the coordinator says: from a file", (run / "status.log").read_text())
+        code, _, err = self.call("resume", "--say", "a", "--say-file", str(note), "talk")
+        self.assertEqual(code, 1)
+        self.assertIn("use --say or --say-file, not both", err)
 
     def test_finish_requires_ready_file(self):
         self.call("start", "unfinished", "stop")

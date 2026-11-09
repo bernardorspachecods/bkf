@@ -297,14 +297,8 @@ def _copy_record(source, destination):
 
 
 def _repo_root():
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, universal_newlines=True, check=False,
-        )
-    except OSError:
-        return None
-    return result.stdout.rstrip("\n") if result.returncode == 0 else None
+    from harness.engine.checkout import main_repo
+    return main_repo()
 
 
 def _record_matches(source, destination):

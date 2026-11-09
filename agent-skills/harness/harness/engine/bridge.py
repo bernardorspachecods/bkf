@@ -124,6 +124,19 @@ def porteiro_script_allowed(checkout, base_file, script):
     return True, ""
 
 
+def _gate_hint(gate_commands, argv):
+    """A sentence naming the gate commands a refused request looks like, or "" when it resembles none.
+
+    A request that starts like a gate command but is not equal to it (a test file added, a flag changed) is
+    refused, and the pnpm-script reason alone then blames the wrong thing.
+    """
+    start = argv[:2]
+    near = [command for command in gate_commands if command.split()[:2] == start]
+    if not near:
+        return ""
+    return "; gate commands run only exactly as written in the brief, and this unit's are: " + " | ".join(near)
+
+
 def porteiro_allowed(checkout, base_file, gate_commands, argv):
     """Return (mode, reason) using the plan runner's allow rules."""
     argv = list(argv)
@@ -135,12 +148,12 @@ def porteiro_allowed(checkout, base_file, gate_commands, argv):
     if argv[0] == "pnpm" and len(argv) >= 2:
         allowed, reason = porteiro_script_allowed(checkout, base_file, argv[1])
         if not allowed:
-            return None, reason
+            return None, reason + _gate_hint(gate_commands, argv)
         return "argv", ""
     return None, (
         "not allowed: only the pnpm scripts listed in .plan-run.json at the unit's base "
         "and the gate commands of the brief"
-    )
+    ) + _gate_hint(gate_commands, argv)
 
 
 def _group_exists(process_group):

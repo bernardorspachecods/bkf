@@ -186,12 +186,45 @@ gamma
             plan_inputs.implement_prompt("/guides", brief, 1, True, "", ""),
             expected_base + "\nAn earlier attempt at this unit was stopped. The checkout may already hold its work. Judge it against the brief, keep what is right and fix the rest.\n" + blocked_sentence,
         )
+        earlier = self.write("earlier-handoff.md", "BLOCKED: the table has no photo column.\n")
+        resumed_with_handoff = plan_inputs.implement_prompt("/guides", brief, 1, True, "", earlier)
+        self.assertIn("BLOCKED: the table has no photo column.", resumed_with_handoff)
+        self.assertIn("so you do not explore again what it already settled", resumed_with_handoff)
+        self.assertEqual(
+            plan_inputs.premise_commands([self.write("p.md", "x\n```premise\ngrep -q a b\n```\n```gate\ncheck\n```\n")]),
+            ["grep -q a b"],
+        )
         problems = self.write("problems.md", "Fix this.\n")
         handoff = self.write("handoff.md", "I changed it.\n")
         self.assertEqual(
             plan_inputs.implement_prompt("/guides", brief, 2, False, problems, handoff),
             expected_base + "\nThe script's gate or a reviewer sent your work back. The work from the earlier round is in the checkout. Fix the problems below and only those, keeping what was fine, and verify again.\n\nProblems from the gate or the review:\n\nFix this.\n\n\nYour handoff from the previous round, for you to resume from:\n\nI changed it.\n\n" + blocked_sentence,
         )
+
+    def test_continuation_prompts_carry_only_what_changed(self):
+        brief = self.write("brief.md", "Do the work.\n")
+        problems = self.write("problems.md", "Fix this.\n")
+        self.assertIsNone(plan_inputs.implement_continuation(brief, False, 1, False, "", "", ""))
+        back = plan_inputs.implement_continuation(brief, False, 2, False, problems, "", "")
+        self.assertIn("Fix this.", back)
+        self.assertNotIn("Do the work.", back)
+        self.assertNotIn("The run stopped and was resumed", back)
+        self.assertIn("BLOCKED:", back)
+        earlier = self.write("earlier.md", "Old problem.\n")
+        resumed = plan_inputs.implement_continuation(brief, True, 1, True, "", earlier, "the column exists now")
+        self.assertIn("The run stopped and was resumed", resumed)
+        self.assertIn("Old problem.", resumed)
+        self.assertIn("The coordinator says:\n\nthe column exists now", resumed)
+        self.assertIn("The brief was corrected", resumed)
+        self.assertIn("Do the work.", resumed)
+        patch_file = self.write("diff.patch", "diff\n")
+        again = plan_inputs.review_continuation(brief, False, patch_file, problems, 1, "", problems)
+        self.assertIn(str(patch_file), again)
+        self.assertIn("VERDICT: pass", again)
+        self.assertIn("Fix this.", again)
+        self.assertIn("not a usable review", plan_inputs.review_continuation(brief, False, patch_file, "", 2, "", ""))
+        self.assertIsNone(plan_inputs.integrate_continuation(brief, "", "", "", "", False))
+        self.assertIn("The coordinator says", plan_inputs.integrate_continuation(brief, "", "", "", "go on", True))
 
     def test_review_prompt_matches_bash(self):
         brief = self.write("brief.md", "Do the work.\n")
