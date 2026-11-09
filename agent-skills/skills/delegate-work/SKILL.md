@@ -5,39 +5,33 @@ description: "Hand one short, objective task to another agent, either a Claude s
 
 # Delegate work
 
-One bounded, objective task goes to another agent; its result is checked by you, not by its own report.
-
 ## Decide
 
-- Prefer this to a plan when the work is simple and quick: the cheaper agent does it and you review it at the end, which costs little because it is small. If the work has units that depend on one another and each needs its own reviewer, it is a plan.
-- Delegate only a task whose inputs fit in a brief and whose result a command can check. Advice needs only the context to answer it.
-- One agent for cohesive work. Several only when their files and outputs are independent; give each its own files, and never let implementation and review change the same target.
-- If a task that fits a brief would take you more than a few minutes, tell the user the expected time and ask whether to delegate it or do it yourself; write the brief only if they choose delegation. The agent is always a weaker model. The default path is the harness agent on Codex (`gpt-6-luna`); use a Claude subagent (`haiku`) only when the user asks for it or the harness cannot run the task.
-- A weak model (`gpt-6-luna`, Haiku) fails on long work and goes shallow on research across many sources: make more and smaller briefs.
+- Prefer delegation for simple, quick work; use a plan when dependent units need separate reviewers.
+- Delegate only if input fits a brief and a command checks the result; advice needs only context. Use one agent for cohesive work, several only for independent files and outputs. Never let implementation and review change the same target.
+- If a brief-sized task takes more than a few minutes, tell the user the expected time and ask whether to delegate or do it yourself; brief only if they choose. Agents are weaker: default to the Codex harness (`gpt-6-luna`); use a Claude subagent (`haiku`) only if requested or the harness cannot run the task. Split long work or multi-source research into smaller briefs for weak models.
 
 ## Brief
 
-- Write it by the rules of [handoff](../handoff/SKILL.md) for sources, access and pasted material. Give the objective, the files the agent owns, what it must not touch, and the check that decides: a test or script.
-- When an authoritative plan already holds these, use its unit as the brief.
-- A transient brief goes in the scratchpad, not in the repository; save it there only if the user asks.
+- Follow [handoff](../handoff/SKILL.md) for sources, access and pasted material. Include objective, owned/excluded files and a deciding test or script; use an authoritative plan's unit if it has these.
+- Keep transient briefs in the scratchpad, not the repository; save only if asked.
 
 ## Launch
 
-- **Claude subagent:** the Agent tool with the brief as the prompt. Always set `model: "haiku"` unless the user chose another: without `model` the subagent inherits your own expensive model. Set `isolation: "worktree"` for agents that write in parallel. The report is not shown to the user: relay what matters.
-- **Harness agent:** [scripts/delegate-run.sh](scripts/delegate-run.sh) `<name> <brief-file> [base-ref] [model] [effort]`, started with `run_in_background: true`. Codex by default (`gpt-6-luna`, `high`; never `gpt-6.1-sol` unless the user says); `HARNESS_BACKEND=claude` runs it on `claude -p` (`sonnet`, `high`). By default it uses a sibling worktree `<repo>-delegate/<name>` on branch `delegate/<name>`; a newly created worktree runs the committed `.plan-run.json` setup before the agent starts. `DELEGATE_IN_PLACE=1` uses the checkout instead. A bridge object in that base config lets the agent run listed, unchanged pnpm scripts outside the sandbox with `.plan-porteiro/ponte pnpm <script> [args...]`; the delegated brief explains its limits. The brief must forbid git commands that change state. `DELEGATE_RERUN=1` reuses a run folder that already has a `status` file and does not prepare a reused worktree.
-- **One Bash call per task, each with `run_in_background: true`.** That is the only way the user sees each task in the footer of their shell and is notified when it ends. Never launch with `nohup`, `&`, `disown`, `setsid`, `tmux`, a `for` loop or a subshell, and never put several tasks in one call: the harness cannot track them, so they run invisibly. For parallel tasks, send the Bash calls in the same response. After launching, check that each task shows as a background task; if one does not, stop it and relaunch it correctly.
-- It prints the run folder, `~/.delegate-runs/<repo>/<name>/` (or under `$DELEGATE_RUNS_DIR`): `status` (`exit=0` means finished; `prepare-failed` means worktree setup stopped before launch), `last-message.md` (the agent's report), `diffstat.txt`, `worktree` and `base`. Worktree setup output is in `prepare.log`; bridge requests are logged in `porteiro.log`. In place, read the diff with `git diff $(cat <run-folder>/base)` and compare `status-before.txt` with `status-after.txt` for new files.
-- Close a small gap yourself: when the work is mostly right and what is missing is quick, simple and clear from the brief and the check (a missed case, a wrong name, a failing line), fix it directly in the checkout. Sending it back costs a new brief, a run and a second review, which is more than the fix. Then run the check again and say what you changed.
-- Send it back only when the gap is large, needs the agent's context, or shows the brief was wrong (write a new brief or resume the agent in the same checkout). Do not rewrite the agent's work wholesale in its place.
+- **Claude subagent:** use the Agent tool with the brief as prompt. Always set `model: "haiku"` unless the user chose another, or it inherits your expensive model. Set `isolation: "worktree"` for parallel writers. Relay relevant findings; the report is not shown to the user.
+- **Harness agent:** run [scripts/delegate-run.sh](scripts/delegate-run.sh) `<name> <brief-file> [base-ref] [model] [effort]` with `run_in_background: true`. Default: Codex `gpt-6-luna`, `high`; never `gpt-6.1-sol` unless user says. `HARNESS_BACKEND=claude` runs `claude -p` (`sonnet`, `high`). Default sibling worktree `<repo>-delegate/<name>` uses branch `delegate/<name>`; a new worktree runs committed `.plan-run.json` setup before launch. `DELEGATE_IN_PLACE=1` uses the checkout. Base-config bridge: listed, unchanged pnpm scripts run outside sandbox via `.plan-porteiro/ponte pnpm <script> [args...]`; the delegated brief explains its limits. Forbid git state-changing commands. `DELEGATE_RERUN=1` reuses a run folder with `status`, without worktree setup.
+- **Launch restrictions:** one Bash call per task, each with `run_in_background: true`; this alone shows the task in the user's shell footer and sends a completion notification. Never launch with `nohup`, `&`, `disown`, `setsid`, `tmux`, a `for` loop or subshell, or put several tasks in one call (the harness cannot track them). For parallel tasks, send Bash calls in the same response. Check each launch shows as a background task; if not, stop and relaunch it correctly.
+- Run folder `~/.delegate-runs/<repo>/<name>/` (or `$DELEGATE_RUNS_DIR`) has `status` (`exit=0` finished; `prepare-failed` setup stopped), `last-message.md`, `diffstat.txt`, `worktree`, `base`; setup log: `prepare.log`; bridge log: `porteiro.log`. In place, read `git diff $(cat <run-folder>/base)` and compare `status-before.txt`/`status-after.txt` for new files.
+- If the work is mostly right and the gap is quick and clear from the brief and check, fix it in the checkout, rerun the check and say what changed. Return large gaps, ones needing agent context, or a wrong brief; write a new brief or resume the agent in the same checkout. Never rewrite its work wholesale.
 - Do not commit or merge unless the user says so.
 
 ## Reconcile
 
-- Run the named check yourself, in the checkout the agent worked in, and judge by its result: a report is a reading. If you cannot run it, say the work is unverified.
-- Read the actual diff against the brief: out-of-scope changes, missed requirements, conclusions without evidence. Report unresolved conflicts and incomplete work plainly.
-- Treat a silent running agent as pending; stop it only for an error, a timeout, a block or an instruction from the user.
-- Tests of the launcher are in [tests/](tests/test-delegate-run.sh).
+- Run the named check in the agent's checkout; trust its result, not report. If it cannot run, say unverified.
+- Check diff against brief for scope, missed requirements and unsupported conclusions; report conflicts or gaps.
+- A silent agent is pending; stop only for an error, timeout, block or user instruction.
+- Launcher tests: [tests/](tests/test-delegate-run.sh).
 
 ## Runtime metadata
 
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).
+Invocation/display metadata: [agents/openai.yaml](agents/openai.yaml).

@@ -17,114 +17,52 @@ The skills of the plan, code review, council and research workflows include this
 - A failed or escalated run is not a block. Read the rounds, fix the cause (usually the brief or the inputs), and resume. If an agent cannot proceed without missing guidance or a major assumption, ask the user. If no replacement agent is available, report the work as incomplete and say so.
 - Report an outcome as it is: what passed, what escalated, what was skipped. Do not imply a step was done that was not.
 <!-- BKF:GENERATED-INJECTED-END -->
-
 > **Before you start**
-> - A seam of up to about 15 files decided by one gate, or 1–3 sequential units repeating one pattern, goes to [`delegate-work`](../delegate-work/SKILL.md); see [When to use](#when-to-use).
-> - About ten files is the ceiling for a non-mechanical unit; see [How big is too big](#1-the-goal-and-the-units).
-> - Rehearse the plan before `start`; see [the gate guidance](#1-the-goal-and-the-units).
-
-## Navigation map
-
-| If you need to... | See |
-| --- | --- |
-| Decide whether the work is a plan or a single task | [When to use](#when-to-use) |
-| Understand the principles behind the stages | [How to read this](#how-to-read-this) |
-| Write and confirm the goal, and split it into units | [1. The goal and the units](#1-the-goal-and-the-units) |
-| Write the brief that one unit's implementer and reviewer share | [2. The unit brief](#2-the-unit-brief) |
-| Brief the agents that implement and review | [3. Delegating](#3-delegating) |
-| Report to the user at the end or on an escalation | [4. What the user receives](#4-what-the-user-receives) |
-| Find the plan's folder and what each unit keeps | [5. Where the work lives](#5-where-the-work-lives) |
+> - A seam of up to about 15 files decided by one gate, or 1–3 sequential units repeating one pattern, goes to [`delegate-work`](../delegate-work/SKILL.md).
+> - About ten files is the ceiling for a non-mechanical unit; rehearse before `start` (both in section 1).
 
 ## When to use
 
-Use this when the user has an agreed goal that needs several pieces of work
-done in a coordinated way, such as a feature split into database, UI and UX. A
-single task is not a plan: brief it and run it. A simple, quick task, or several
-independent ones that need no review of each unit, goes to [delegate-work](../delegate-work/SKILL.md)
-instead: you review the result yourself at the end, which costs little because the work is
-small. The plan is for units that depend on one another and need a reviewer each, with you
-only coordinating. To explore options before the goal is agreed, hold a discussion first.
+Use it when the user has an agreed goal that needs several pieces of work done in a coordinated way, such as a feature split into database, UI and UX. A single task is not a plan: brief it and run it. A simple, quick task, or several independent ones that need no review of each unit, goes to [delegate-work](../delegate-work/SKILL.md): you review the result at the end, which is cheap because the work is small. A plan is for units that depend on one another and need a reviewer each, with you only coordinating. To explore options before the goal is agreed, hold a discussion first.
 
-**One plan is one goal split into units.** Each unit is small and isolated, so
-that it can be implemented, reviewed and read on its own. The plan is the
-ordered list of units and what connects them.
+**One plan is one goal split into units.** Each unit is small and isolated, so it can be implemented, reviewed and read on its own. The plan is the ordered list of units and what connects them.
 
-**The format is the user's choice.** Do not choose it for them: ask whether they
-want a plan kept in the conversation or a plan that runs on a script with units,
-and explain the difference neutrally. A plan kept in the conversation stays there;
-the rest of this guide is for the plan that runs.
+**The format is the user's choice.** Ask whether they want a plan kept in the conversation or one that runs on a script with units, and explain the difference neutrally. A plan kept in the conversation stays there; the rest of this guide is for the plan that runs.
 
 ## How to read this
 
-These are principles with reasons, not a procedure. You can judge; what goes
-wrong in long work is losing the thread, not deciding. Adapt to the task, and
-keep what the reasons protect.
+These are principles with reasons, not a procedure. Adapt to the task and keep what the reasons protect.
 
-- **Small, isolated units.** A unit that nobody can review with attention is too
-  big. Split it until a reviewer holding only its brief and its diff can judge it.
-- **Code decides what code can decide.** An agent checking another agent's work
-  is a second opinion, not evidence: two models agreeing is one more guess. A
-  unit passes when commands that cannot be talked out of a result pass, run by
-  the script and not by an agent. An agent judges only what no command can.
+- **Small, isolated units.** Split a unit until a reviewer holding only its brief and its diff can judge it.
+- **Code decides what code can decide.** An agent checking another agent's work is a second opinion, not evidence. A unit passes when commands that cannot be talked out of a result pass, run by the script and not by an agent. An agent judges only what no command can.
 
 ## 1. The goal and the units
 
-Write the goal in one place and have the user confirm it. It is the intent as
-`align-intent` defines it: what is wanted and why, what exists when it is done,
-what is out of scope, what is already decided, and when to stop and ask. Do not
-describe the units there.
+Write the goal in one place and have the user confirm it. It is the intent as `align-intent` defines it: what is wanted and why, what exists when it is done, what is out of scope, what is already decided, and when to stop and ask. Do not describe the units there.
 
-**Split the goal into units** with the user. A good split follows the seams of
-the work (data, interface, behaviour), not the order of effort. Test each unit:
+**Split the goal into units** with the user, along the seams of the work (data, interface, behaviour), not the order of effort. Test each unit:
 
 - Can you say what exists when it is done and when it stops?
 - Can a reviewer judge it from its brief and its diff, without the other units?
 - If it fails review, can it be redone without redoing the others?
 
-If a unit fails a test, split it again or merge it with the one it cannot be
-separated from.
+If a unit fails a test, split it again or merge it with the one it cannot be separated from.
 
-Each unit costs a full review round, so size units by their work and risk. Make
-it a separate unit when it has review criteria of its own that a reviewer can
-judge apart from its neighbours, when a dependency or worthwhile parallelism
-separates it, when the user wants a checkpoint there, or when merging it would
-overload one brief. Otherwise fold it into the unit that consumes it. Give the
-reason for each cut.
+Each unit costs a full review round. Make something a separate unit when it has review criteria of its own, when a dependency or worthwhile parallelism separates it, when the user wants a checkpoint there, or when merging it would overload one brief. Otherwise fold it into the unit that consumes it. Give the reason for each cut.
 
-**How big is too big.** What decides how slow a unit is, in practice, is not how many
-files it touches but how many new things it designs at once: a migration, fixtures and
-tests that depend on each other, or several groups of scenarios. A unit that repeats a
-pattern already settled across many files is mechanical and fast. So:
+**How big is too big.** What slows a unit is not how many files it touches but how many new things it designs at once (a migration, fixtures and tests that depend on each other, several groups of scenarios).
 
-- **A unit designs one new thing:** one migration, one script, one tool, one set of tests. Repeating
-  a pattern already settled across many files is mechanical and can be larger.
+- **A unit designs one new thing:** one migration, script, tool or set of tests. Repeating an already-settled pattern across many files is mechanical and can be larger.
 - **About ten files is the ceiling for work that is not mechanical.** Past it, split.
-- **Split on the seams the agent would otherwise cross:** a unit that makes the agent
-  read a different group of modules for each part is several units.
+- **Split on the seams the agent would otherwise cross:** a unit that reads a different group of modules for each part is several units.
 
-Long rounds also carry a much larger context, which slows every step further. The run
-records the size of each implementation round; read it after a plan and correct these
-limits. The measurements so far are in [run-reference.md](run-reference.md#running-a-plan).
+Long rounds carry a larger context, which slows every step. The run records the size of each implementation round; read it after a plan and correct these limits. Measurements so far: [run-reference.md](run-reference.md#running-a-plan).
 
-**When the split depends on something you do not yet know,** such as how many
-modules cross a boundary or what a move would break, do not write a unit for
-what you cannot yet describe. Run a small plan first that only reads and
-reports, and write the real plan, with every brief, after the user has read the
-report. Adding units by hand to a run in progress is possible but leaves the
-contracts between units unfixed and can misalign step numbers; two plans keep
-each one complete when it starts.
+**When the split depends on something you do not yet know** (how many modules cross a boundary, what a move would break), do not write a unit for it. Run a small plan that only reads and reports, and write the real plan, with every brief, after the user has read the report. Adding units by hand to a run in progress leaves contracts unfixed and can misalign step numbers.
 
-**Order and parallelism.** You decide which units come first and which run together, and tell the user.
-Units run one at a time in the run's own worktree by default. Two units may run
-together only if they share nothing: each then runs in its own copy of the
-repository, and their diffs are brought together afterwards. That costs an
-integration agent, and a review of the combined result, for the group. Run in
-series when unsure, and when the group is only two small units, which is cheaper
-and sees more. Parallel pays when the units are big and truly independent. Read
-[run-recovery.md](run-recovery.md) only when a step has several briefs on one line or a run is stopped.
+**Order and parallelism.** You decide which units come first and which run together, and tell the user. Units run one at a time in the run's own worktree by default. Two units may run together only if they share nothing: each runs in its own copy of the repository and their diffs are brought together afterwards, which costs an integration agent and a review of the combined result. Run in series when unsure, and when the group is only two small units. Parallel pays when units are big and truly independent. Read [run-recovery.md](run-recovery.md) only when a step has several briefs on one line or a run is stopped.
 
-You write the order in a plan file, one step per line; units on the same line run
-together:
+Write the order in a plan file, one step per line; units on the same line run together:
 
 ```
 database.md
@@ -132,60 +70,22 @@ ui.md  ux.md      # run together
 tests.md
 ```
 
-**You always read the gates; the user does not have to.** The user steers the goal
-and judges at the end that what the plan reached is what they wanted. They do not
-read the commands that decide each unit; you do. Before `start`, and again whenever
-you add or change a unit, run the script's `gates` command and read the list. Every
-unit has a command that fails if it is wrong, or a reason, written in the plan, for
-why none can exist. A unit with neither is not ready to run.
-Rehearse before every `start` and fix unexpected failures; see
-[run-reference.md](run-reference.md#rehearsal) for what rehearsal and `gates` do.
-Gate commands run through `bash -c`, so shell syntax works in a gate line.
-Every unit's gate also includes the same repository-wide check command (for example,
-`pnpm check:quick`) alongside that unit's own tests; otherwise a defect found one
-unit later costs a full round. A check too slow for every gate (the full database suite) goes in `regression.gate` next
-to `plan.txt`: the script runs it at the `-p` checkpoints and before the final review, not after every unit; see
-[run-reference.md](run-reference.md#gate). For script behavior, including lint refusals and how
-gate commands run, see [run-reference.md](run-reference.md#gate).
+**You always read the gates; the user does not have to.** Before `start`, and whenever you add or change a unit, run the script's `gates` command and read the list. Every unit has a command that fails if it is wrong, or a reason, written in the plan, why none can exist. A unit with neither is not ready. Rehearse before every `start` and fix unexpected failures; see [run-reference.md](run-reference.md#rehearsal). Gate commands run through `bash -c`, so shell syntax works.
+Every unit's gate also includes the same repository-wide check command (for example `pnpm check:quick`) alongside its own tests; otherwise a defect found one unit later costs a full round. A check too slow for every gate (the full database suite) goes in `regression.gate` next to `plan.txt`: the script runs it at the `-p` checkpoints and before the final review. Script behavior, including lint refusals: [run-reference.md](run-reference.md#gate).
 
-**Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause
-and ask the user, when you agree the split, who the pauses are for: only for you to check the step
-(rerun what the reviewer's sandbox could not, read the diff, then resume without
-reporting unless a fundamental decision changes), or also for the user to read
-it. Write the answer in the plan and follow it. Step numbers count the lines of
-`plan.txt`; when you add or move a unit, recompute them before you resume.
+**Checkpoints.** A run can pause after chosen steps (`-p`). Suggest where to pause and, when you agree the split, ask who the pauses are for: only for you to check the step (rerun what the reviewer's sandbox could not, read the diff, resume without reporting unless a fundamental decision changes), or also for the user. Write the answer in the plan and follow it. Step numbers count the lines of `plan.txt`; when you add or move a unit, recompute them before you resume.
 
-**Pilot by kind of unit.** Pause after the first unit of each kind (moving files, changing a
-rule, a migration, an interface), read it, and only then release the rest of that kind. A kind that
-is new to the plan fails in ways the briefs cannot predict, and fails once instead of in every unit.
+**Pilot by kind of unit.** Pause after the first unit of each kind (moving files, changing a rule, a migration, an interface), read it, and only then release the rest of that kind.
 
-**Have the briefs read before they run.** This is required when there are more than
-three briefs, when the briefs are not variations of one template, or when any unit
-is above the size ceiling. For up to three briefs that follow one template, it is
-optional; if you skip it, say so in the report. A cheap agent (a Haiku subagent is
-enough) that reads every brief and answers only two questions catches most
-contradictions: are there two sentences that cannot both be obeyed, and is there a
-criterion that someone holding only the diff and the gate result cannot judge? It is
-a probabilistic check, so it adds to reading the gates, never replaces it.
+**Have the briefs read before they run.** Required when there are more than three briefs, when they are not variations of one template, or when any unit is above the size ceiling; otherwise optional (if you skip it, say so in the report). A cheap agent (a Haiku subagent is enough) reads every brief and answers only two questions: are there two sentences that cannot both be obeyed, and is there a criterion that someone holding only the diff and the gate result cannot judge? It is a probabilistic check: it adds to reading the gates, never replaces it.
 
-**Agree the plan before anything runs.** Present the finished plan: the split with
-the reason for each cut, the order, the pauses and the model. You suggest the pauses
-and say what each costs; the user decides the pauses and the model. Wait for their
-agreement on scope, outputs, sequence and settings before the first unit starts. That
-agreement authorizes the units in scope but does not waive a checkpoint the user
-asked for. If a later request conflicts with the settings, stop and reconcile the
-plan first.
+**Agree the plan before anything runs.** Present the split with the reason for each cut, the order, the pauses and the model. You suggest the pauses and say what each costs; the user decides the pauses and the model. Wait for their agreement on scope, outputs, sequence and settings before the first unit starts. That agreement does not waive a checkpoint the user asked for. If a later request conflicts with the settings, stop and reconcile the plan first.
 
-**The plan can change, with a reason on record.** A unit that shows the split
-was wrong is a reason to revise the units with the user, not to stretch the unit.
+**The plan can change, with a reason on record.** A unit that shows the split was wrong is a reason to revise the units with the user, not to stretch the unit.
 
 ## 2. The unit brief
 
-You write one brief per unit. It is the only thing the implementer and the
-reviewer share, so it must stand alone.
-
-Copy this template and fill each heading. Use a `gate` fence for commands; if no
-command can decide the result, state the reason under Gate.
+One brief per unit. It is the only thing the implementer and the reviewer share, so it must stand alone. Copy this template and fill each heading. Use a `gate` fence for commands; if no command can decide the result, state the reason under Gate.
 
 ~~~markdown
 ## Result
@@ -219,94 +119,19 @@ pnpm test:unit
 What the reviewer judges that no command checks.
 ~~~
 
-```
-Unit brief
-├─ Result        what exists when it is done, and when to stop
-├─ Receives      what it can rely on from other units (a fact, not "look at what they did"), each proved by a `premise` line
-├─ Leaves ready  what other units may rely on from it
-├─ Removes       paths it deletes or moves away, in backticks, one per line (a folder ends in `/`)
-├─ Creates       paths it adds or moves to that a gate runs, in backticks, one per line
-├─ Out of scope  what it must not touch
-├─ Gate          the commands the script runs; the unit cannot pass if one fails
-└─ Criteria      what the reviewer judges that no command checks
-```
-
-- **Receives and leaves ready are how units touch.** Write them as concrete
-  facts: "the table has `name`, `photo`, `bio`", not "the database is done". You
-  write every brief before the run starts, so the two sides of each contract are
-  fixed then: what one unit leaves ready is exactly what the next receives. The
-  producing unit's review checks that it left that ready, so a unit never starts
-  on a contract that was not met. A fact about the repository that the brief
-  relies on (a file contains X, a command exists, a column is where the brief says) is proved by a command in a
-  fence tagged `premise`, such as a `grep`, one command per line. The script runs it before the unit's first
-  round, in the checkout as the earlier units left it, and stops the unit at once, with no implementer launched, if
-  one fails: a false premise then costs seconds, not a whole implementation round that ends in `BLOCKED:`.
-  A command in the `gate` runs only after the implementation, so it proves nothing about the start. `gates` warns
-  when `Receives` states facts and the brief has no `premise`. Rehearsal runs the lines too, but a unit that
-  depends on an earlier one may fail them before `start`, because the earlier unit has not run.
-- **The gate is a fenced block tagged `gate`,** one command per line:
-
-  ````
-  ```gate
-  pnpm check:quick
-  node --test scripts/audit-write-inventory.test.mjs
-  ```
-  ````
-
-  The script's gate behavior is in [run-reference.md](run-reference.md#gate).
-  Following the `core-code-principles` module, write every criterion that a command can
-  decide as a gate line: a test, a script, a query, a comparison of the behaviour
-  before and after.
-- **When the checking tool does not exist yet,** make building it a unit that
-  comes first, and put the commands of the unit that uses it in that later unit.
-- **Put the proof that a check can fail where the reviewer sees it.** The `core-code-principles` module
-  requires a check to be able to fail. The proof is in the diff (a test run against a broken copy) or in
-  the gate (a line that runs the check against a case it must reject). Never in the handoff or in a
-  sentence the implementer attests: the reviewer sees only the brief, the diff and the gate result. No
-  criterion may depend on what the implementer reports.
-- **A number is a gate line, not a criterion:** a score, a count or a duration that
-  the reviewer would have to take from the implementer goes in the gate or out of the
-  brief. When a gate command is slow (tens of minutes), the brief tells the implementer
-  to measure only what it touches and leaves the full measurement to the gate, and says
-  why: otherwise the implementer pays the same measurement the gate then repeats.
-- **Criteria are what the gate cannot decide:** whether the diff stays in scope,
-  whether what the unit leaves ready is there as stated, whether prose is accurate,
-  how a page looks. Say who judges each: the reviewer by reading, or the user.
-  The reviewer does not run the gate again and does not send back or escalate
-  because it could not run a command; it reports what it could not check.
-- **Closed cases for open problems.** For a tool whose correctness has no end
-  (a static analysis, a parser), list in the gate the cases it must get right, and
-  record the limits it is known to have. A reviewer who finds a new case reports
-  it with a command that fails, to be added to the gate, instead of sending the
-  unit back for a case the brief never asked for.
-- **Out of scope is as important as the result.** It keeps a diff small enough to review. Write it by
-  exclusion: say what must not be touched (HTTP routes, migrations, other apps), and do not list
-  the only files that may change, because the radius of a change is never known beforehand. Add the
-  clause every unit needs: tests and documents that the change makes wrong belong to this unit and
-  are adapted, without weakening an assertion. A brief that forbids the one file its own required
-  behavior breaks makes the unit loop until the cap.
-- **State what each step leaves true.** A gate or a criterion written with the end state of the plan
-  in mind is false half way: a command that checks a rule a later unit closes cannot pass now, and a
-  rule such as "this number only changes in X" is wrong when the step creates a temporary exception.
-  Check every gate line against two states: the one the unit finds and the one it leaves. Write the
-  exceptions into the brief and into the unit that closes them. List what the unit deletes or moves
-  under Removes and what it adds under Creates; see [run-reference.md](run-reference.md#brief-lint)
-  for how `gates` checks those paths.
-  For the script timing behind this check, see [run-reference.md](run-reference.md#gate) and
-  [run-reference.md](run-reference.md#rehearsal).
-  Units on the same line do not see each other's changes. A tool that only bridges the transition
-  names, in the brief of the unit that creates it, the unit that removes it and the gate that
-  replaces it.
+- **Receives and leaves ready are how units touch.** Write concrete facts ("the table has `name`, `photo`, `bio`"), not "the database is done". You write every brief before the run, so the two sides of each contract are fixed: what one unit leaves ready is exactly what the next receives, and the producing unit's review checks it. A fact about the repository that the brief relies on (a file contains X, a command exists) is proved by a command in a `premise` fence, one per line. The script runs it before the unit's first round, in the checkout as earlier units left it, and stops the unit at once, with no implementer launched, if one fails. A `gate` command runs only after implementation, so it proves nothing about the start. `gates` warns when `Receives` states facts and the brief has no `premise`. Rehearsal runs the lines too, but a unit that depends on an earlier one may fail them before `start`.
+- **The gate is a fenced block tagged `gate`,** one command per line (script behavior: [run-reference.md](run-reference.md#gate)). Following the `core-code-principles` module, write every criterion a command can decide as a gate line: a test, a script, a query, a comparison of behaviour before and after.
+- **When the checking tool does not exist yet,** make building it a unit that comes first; the commands that use it go in a later unit.
+- **Put the proof that a check can fail where the reviewer sees it:** in the diff (a test run against a broken copy) or in the gate (a line that runs the check against a case it must reject). Never in the handoff or a sentence the implementer attests: the reviewer sees only the brief, the diff and the gate result.
+- **A number is a gate line, not a criterion:** a score, count or duration the reviewer would have to take from the implementer goes in the gate or out of the brief. When a gate command is slow (tens of minutes), the brief tells the implementer to measure only what it touches and leaves the full measurement to the gate.
+- **Criteria are what the gate cannot decide:** whether the diff stays in scope, whether what the unit leaves ready is there as stated, whether prose is accurate, how a page looks. Say who judges each: the reviewer by reading, or the user. The reviewer does not run the gate again and does not send back or escalate because it could not run a command; it reports what it could not check.
+- **Closed cases for open problems.** For a tool whose correctness has no end (a static analysis, a parser), list in the gate the cases it must get right and record its known limits. A reviewer who finds a new case reports it with a command that fails, to be added to the gate, instead of sending the unit back.
+- **Out of scope is as important as the result.** Write it by exclusion (HTTP routes, migrations, other apps); do not list the only files that may change, because the radius of a change is never known beforehand. Add the clause every unit needs: tests and documents the change makes wrong belong to this unit and are adapted without weakening an assertion. A brief that forbids the one file its own required behavior breaks makes the unit loop until the cap.
+- **State what each step leaves true.** A gate or criterion written with the plan's end state in mind is false half way: a command checking a rule a later unit closes cannot pass now. Check every gate line against two states, the one the unit finds and the one it leaves, and write the exceptions into the brief and into the unit that closes them. List what the unit deletes or moves under Removes and what it adds under Creates; see [run-reference.md](run-reference.md#brief-lint) for how `gates` checks them, and [run-reference.md](run-reference.md#gate) and [#rehearsal](run-reference.md#rehearsal) for the timing. Units on the same line do not see each other's changes. A tool that only bridges the transition names, in the brief of the unit that creates it, the unit that removes it and the gate that replaces it.
 
 ## 3. Delegating
 
-Each agent gets a short brief. The method lives in the guide for its role, so
-the brief points to it and never explains it. The briefs are the same shape every
-time, so they are built from fixed templates: you write only the goal, the unit
-briefs and their order, and a script builds the agent briefs, runs each unit and
-stops when a review escalates. That script is [plan-run.sh](scripts/plan-run.sh); [run-reference.md](run-reference.md)
-has its options and behavior. Read it before the first `start`. Read
-[run-recovery.md](run-recovery.md) only when a step has several briefs on one line or a run is stopped.
+Each agent gets a short brief that points to the guide for its role and never explains the method. A script builds the agent briefs from fixed templates, runs each unit and stops when a review escalates; you write only the goal, the unit briefs and their order. That script is [plan-run.sh](scripts/plan-run.sh); read [run-reference.md](run-reference.md) before the first `start`, and [run-recovery.md](run-recovery.md) only when a step has several briefs on one line or a run is stopped.
 
 | Role | Does | Receives |
 | --- | --- | --- |
@@ -324,82 +149,33 @@ Parallel group:  unit A ─► review ─┐
                  unit B ─► review ─┴─► Integration ─► Review of the combined result ─► next step
 ```
 
-Rules that hold whatever the number of agents:
-
-- **Brief problems go to the coordinator.** When a unit signals that its brief
-  may be wrong, revisit the brief before resuming; the script's signals are in
-  [run-reference.md](run-reference.md#brief-problems).
-- Gate and review execution, including the gate-failure cap, is described in
-  [run-reference.md](run-reference.md#gate).
-- **The reviewer does not see the implementer's reasoning or handoff.** The brief, the diff and the gate result are
-  all it needs.
-- **The handoff is a log, not evidence.** It helps the implementer resume when a
-  unit is sent back, and helps you read the run. What a unit left ready is attested
-  by its review, not by its handoff.
+- **Brief problems go to the coordinator.** When a unit signals its brief may be wrong, revisit the brief before resuming; signals: [run-reference.md](run-reference.md#brief-problems). Gate and review execution, including the gate-failure cap: [run-reference.md](run-reference.md#gate).
+- **The reviewer does not see the implementer's reasoning or handoff.** The brief, the diff and the gate result are all it needs.
+- **The handoff is a log, not evidence.** It helps the implementer resume and helps you read the run. What a unit left ready is attested by its review.
 - **Each agent writes only its own files.** Two agents never touch the same file.
-- **Git state is not touched by agents.** They do not commit, stage, stash or
-  reset. The run records a base before the unit starts, and the diff is read from it.
+- **Agents do not touch git state:** no commit, stage, stash or reset. The run records a base before the unit starts, and the diff is read from it.
 
 ## 4. What the user receives
 
-The user judges at the end whether the plan got where it should. When the run
-finishes, or stops on an escalation, you give:
+When the run finishes, or stops on an escalation, give:
 
-1. **Whether the goal is met.** Yes, in part or no, in a line or two. The last
-   review writes it, not the implementer, who tends to think so.
-2. **What each unit did.** Its result in a line, where it differs from its brief,
-   and the verification that ran. Take this from the reviews and the diff, not
-   from the implementers' own handoffs: a handoff is the author's account and can
-   be too optimistic.
-3. **Weak points and next step.** What is thin, what was left out and what
-   deserves attention. It is the seed of the next goal. What appears outside the
-   focus is not chased midway; it goes here.
+1. **Whether the goal is met.** Yes, in part or no, in a line or two. The last review writes it, not the implementer.
+2. **What each unit did.** Its result in a line, where it differs from its brief, and the verification that ran. Take this from the reviews and the diff, not from the handoffs, which are the author's optimistic account.
+3. **Weak points and next step.** What is thin, what was left out, what deserves attention. What appears outside the focus is not chased midway; it goes here.
 
-Do not restate the diff: it is the record of what changed.
+Do not restate the diff.
 
 ## 5. Where the work lives
 
-Before `start`, check the checkout: isolated runs cut their worktree from `HEAD`,
-so `start` refuses uncommitted changes. Commit or stash them, use `--from <ref>` to cut
-from a commit and ignore them, or use `--in-place`;
-see [run-reference.md](run-reference.md#the-runs-worktree) for details.
+Before `start`, check the checkout: isolated runs cut their worktree from `HEAD`, so `start` refuses uncommitted changes. Commit or stash them, use `--from <ref>` to cut from a commit and ignore them, or use `--in-place`; see [run-reference.md](run-reference.md#the-runs-worktree).
 
-One plan is one folder, with one subfolder per unit in order. A unit's folder holds its
-brief, its rounds (the agent prompts, the outputs, the reviews and their verdicts) and
-its handoff, so the user can open one unit and see only it. The plan's goal, the order
-of the units and a status log sit at the top. A plan that is ready but not yet launched
-is kept as its source files (the goal, the order and the briefs) in
-`~/.plan-runs-pending/<repo>/<name>/`, and `plan-run.sh start <name>` moves it into the run when
-it is time. The run's code lives in its own worktree on the branch `plan/<name>`, which the
-user merges at the end; [run-reference.md](run-reference.md) says how. Where the folder is, and
-how it is created, is in the Run commands section below.
+One plan is one folder with one subfolder per unit, in order. A unit's folder holds its brief, its rounds (prompts, outputs, reviews, verdicts) and its handoff. The goal, the order and a status log sit at the top. A plan that is ready but not launched is kept as source files (goal, order, briefs) in `~/.plan-runs-pending/<repo>/<name>/`; `plan-run.sh start <name>` moves it into the run. The run's code lives in its own worktree on the branch `plan/<name>`, which the user merges at the end.
 
-When the plan is done, the user chooses: keep the record, which is copied into
-`records/plans/` in the repository, or delete the run. Until they choose, it stays where it is.
-`finish` removes the run folder and the worktree. When the plan is merged, also remove what
-`finish` does not: the plan's branches (unless `finish --discard` already deleted them) and any
-background process or temporary database the plan started.
+When the plan is done, the user chooses: keep the record (copied into `records/plans/` in the repository) or delete the run. Until then it stays where it is. `finish` removes the run folder and the worktree. When the plan is merged, also remove what `finish` does not: the plan's branches (unless `finish --discard` already deleted them) and any background process or temporary database the plan started.
 
 ## Run commands
 
-<!-- inject: ../../modules/run-commands.md -->
-<!-- BKF:GENERATED-INJECTED -->
-## Run commands
-
-The scripts of the plan, research, council and code-review skills run on one engine, `agent-skills/harness`. Each takes the same commands: `<script> start ...`, `resume`, `status <name>`, `board <name>` and `finish <name>`. Start each `start` and `resume` with Bash `run_in_background: true` and stay quiet until it ends; the `guard` hook of `bkf hooks` refuses a launch in the foreground or one backgrounded by hand, including from an agent inside a run.
-
-- **Backend.** Agents are Codex by default. `HARNESS_BACKEND=claude` runs a whole run on `claude -p`: give `-m` a Claude model such as `sonnet` and `-e` an effort from `low` to `max`. Write access is then confined to the agent's working directory, a reviewer can only read, and the quota signal is Claude's `rate_limit_event`. Set the variable on every `resume` too, or the run goes back to Codex. A run refuses to start when the backend's command is not installed.
-- **State** is in `~/.<workflow>-runs/<repo>/<name>/` (`~/.plan-runs`, `~/.research-runs`, `~/.council-runs`, `~/.review-runs`), `<repo>` being the name of the repository's folder. A run made before that layout is still found in `~/.<workflow>-runs/<name>/`. `<WORKFLOW>_RUNS_DIR` or `HARNESS_RUNS_DIR` names the folder that holds the runs themselves, without the repository level, and `<WORKFLOW>_GUIDES` replaces the folder of role guides (by default the `roles/` folder of the skill). `start` creates the folder and fails if it exists: do not create it by hand. It is never under `/tmp`, which the sandbox leaves writable.
-- **A worktree of its own.** A run whose agents read or write the repository (a plan, a code review) gets a git worktree at `<run>/tree`, so the repository's checkout stays as it is; its skill says on which branch or revision and how to opt out (`--in-place`). `finish` removes the worktree, and `finish --discard` also deletes the plan's branch.
-- **Progress.** `status.log` is the event history; `status` prints it and `board` prints a board of the steps and their agents, which is also saved as `board.txt`. Progress lines go to stderr.
-- **A run that stops** (an agent failed, a review escalated, the account ran out of quota) writes `STOPPED` in `status.log` with the reason. Read the rounds in the run folder, fix the cause (usually the brief or the inputs, under `00-input/`), then `resume <name>`: finished steps stay done and the unfinished one runs again. In a plan the agents of the unit that stopped keep their conversation and `resume --say "<text>"` (or `--say-file`) tells them what you changed or decided; see Conversations in the plan's run-reference. A run that was killed is detected on `resume` and continues the same way.
-- **A stalled agent.** An agent that writes nothing to its events and stderr files for `HARNESS_AGENT_STALL_TIMEOUT` seconds (default 1200, 0 turns it off) is ended and the run stops with `STALLED` in `status.log`, so the script exits and the coordinator is told. An agent that keeps writing is not ended, however slow. Fix the cause (a login, the network), then `resume`.
-- **Usage limit.** The run stops with the reason `usage limit reached` and `status.log` gets `QUOTA: <the text after "try again at">`, as the agent wrote it, not parsed. Wake once, a little after that time, and `resume`: run `harness quota-wait '<that text>' && <script> resume <name>` with `run_in_background: true`. `quota-wait` sleeps until the reset plus a margin (`--margin`, default 120 seconds) with no model, so the agent is woken once, when it can resume. It reads `H:MM AM|PM` and `YYYY-MM-DD HH:MM`, with an optional `UTC`; a time without `UTC` is the local time, and a clock time that passed less than 6 hours ago counts as reached. For any other text it exits 2 without waiting: work out the time yourself and set one wake-up for it plus 2 minutes, never one at the time itself or before it, and if the quota is still out when it fires, add 2 minutes more instead of guessing again.
-- **Lock.** A live script holds `<run>/.lock`; a second `resume`, a `finish` or a recovery command refuses while it does. A lock whose process is gone is replaced.
-- **When it prints `READY`** the result is in the run folder. `finish <name>` copies the record to `records/<plans|reviews|councils|research>/<name>/` in the repository, checks the copy and removes the run folder; `finish --discard <name>` deletes the run.
-- **Limits** (environment variables): a review is capped at `<WORKFLOW>_MAX_ROUNDS` rounds (default 3), and must give at least `<WORKFLOW>_MIN_CHECKED` lines (default 3) under `## What I checked`, or it is repeated and then fails. Counts start again at every `resume`.
-- **Sandbox.** Runs use the `workspace-write` sandbox. It confines writes to the agent's folder, but an agent can still read files outside the checkout, such as the login sessions of CLI tools in the home folder, and reach HTTPS, so it can use any session left open. The repository's own rules say what to keep logged out.
-<!-- BKF:GENERATED-INJECTED-END -->
+Before the first `start` or `resume`, read [run-commands.md](../../modules/run-commands.md): it holds the shared commands, state folders, stop and quota handling, and the `guard` hook rule that `start` and `resume` need `run_in_background: true`.
 
 The plan's own options and commands, and the list of its script and test files, are in [run-reference.md](run-reference.md).
 

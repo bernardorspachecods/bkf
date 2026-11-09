@@ -5,8 +5,6 @@ description: Commit the uncommitted changes of the current worktree, either only
 
 # Git status cleanup
 
-Commits uncommitted changes of the current worktree. One argument picks the scope.
-
 ## Scope
 
 | Argument | Commits | Leaves |
