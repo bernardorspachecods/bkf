@@ -1,3 +1,5 @@
+import contextlib
+import io
 import subprocess
 import sys
 import tempfile
@@ -20,6 +22,13 @@ class Limits:
     max_gate_rounds = 2
     gate_timeout = 5
     min_checked = 1
+
+
+def call_fixture(fixture, *args):
+    output, errors = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+        code = fixture.call(*args)
+    return code, output.getvalue(), errors.getvalue()
 
 
 class Hooks:
@@ -430,6 +439,68 @@ class IntegrationTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("round cap 2 reached", result.reason)
         self.assertNotIn("same files", result.reason)
+
+    def test_parallel_unit_takeover_closes_only_that_unit_then_integrates(self):
+        from plan_test_support import PlanRunFixture
+        fixture = PlanRunFixture(self)
+        self.addCleanup(fixture.close)
+        fixture.add_brief("a", "## Result\nCreate A.\n\nUNIT-A-REVIEW-MARKER\n")
+        fixture.add_brief("b", "## Result\nCreate B.\n\nUNIT-B-REVIEW-MARKER\n")
+        plan = fixture.write_plan("a.md b.md")
+        fixture.env["FAKE_REVIEW_RULES"] = '[{"marker":"UNIT-B-REVIEW-MARKER","scope":"02-b","verdicts":["back","back","pass"]}]'
+        fixture.env["FAKE_IMPLS_BY_PROMPT"] = '{"UNIT-A-REVIEW-MARKER":"echo A > a.txt","UNIT-B-REVIEW-MARKER":"echo B > b.txt"}'
+        code, out, _ = call_fixture(fixture, "start", "unit-takeover", str(fixture.goal), str(plan))
+        run = fixture.runs / "unit-takeover"
+        self.assertEqual(code, 1, out)
+        self.assertTrue((run / ".done-01-a").is_file())
+        self.assertFalse((run / ".done-02-b").exists())
+        self.assertEqual((run / "02-b/status").read_text(), "takeover\n")
+        self.assertEqual((fixture.state / "implementations").read_text(), "3")
+        (run / "worktrees/02-b/b.txt").write_text("coordinator fixed B\n", encoding="utf-8")
+
+        code, out, err = call_fixture(fixture, "close", "unit-takeover")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("READY:", out)
+        self.assertTrue((run / ".done-01-a").is_file(), "entries=" + repr(sorted(path.name for path in run.iterdir())) + ", statuses=" + repr([(name, (run / name / "status").read_text() if (run / name / "status").exists() else "") for name in ("01-a", "02-b")]))
+        self.assertTrue((run / ".done-02-b").is_file(), "entries=" + repr(sorted(path.name for path in run.iterdir())))
+        self.assertTrue((run / ".done-S1-integration").is_file())
+        self.assertEqual((fixture.state / "implementations").read_text(), "3")
+        self.assertEqual((fixture.state / "reviews").read_text(), "1")
+        self.assertEqual((run / "02-b/closed-by-coordinator").read_text(), "reviewed: yes\n")
+        self.assertIn("delta.patch", (fixture.state / "prompts.log").read_text())
+
+    def test_parallel_integration_takeover_closes_and_marks_step_done(self):
+        from plan_test_support import PlanRunFixture
+        fixture = PlanRunFixture(self)
+        self.addCleanup(fixture.close)
+        fixture.add_brief("a")
+        fixture.add_brief("b")
+        fixture.goal.write_text("Goal\n\nINTEGRATION-TAKEOVER-MARKER\n", encoding="utf-8")
+        plan = fixture.write_plan("a.md b.md")
+        fixture.env["FAKE_REVIEW_RULES"] = '[{"marker":"INTEGRATION-TAKEOVER-MARKER","scope":"S1-integration","verdicts":["back","pass"]}]'
+        code, out, _ = call_fixture(fixture,
+            "start", "--takeover-after", "1", "integration-takeover", str(fixture.goal), str(plan)
+        )
+        run = fixture.runs / "integration-takeover"
+        directory = run / "S1-integration"
+        self.assertEqual(code, 1, out)
+        self.assertTrue((run / ".done-01-a").is_file(), "entries=" + repr(sorted(path.name for path in run.iterdir())))
+        self.assertTrue((run / ".done-02-b").is_file(), "entries=" + repr(sorted(path.name for path in run.iterdir())))
+        self.assertEqual((directory / "status").read_text(), "takeover\n")
+        self.assertTrue((directory / "takeover-base").is_file())
+        (run / "tree/coordinator.txt").write_text("integration correction\n", encoding="utf-8")
+
+        code, out, err = call_fixture(fixture, "close", "integration-takeover")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("READY:", out)
+        self.assertEqual((directory / "status").read_text(), "passed\n")
+        self.assertEqual((directory / "closed-by-coordinator").read_text(), "reviewed: yes\n")
+        self.assertFalse((directory / "takeover").exists())
+        self.assertFalse((directory / "closing").exists())
+        self.assertTrue((run / ".done-S1-integration").is_file())
+        self.assertTrue((run / ".done-report").is_file())
 
 
 if __name__ == "__main__":

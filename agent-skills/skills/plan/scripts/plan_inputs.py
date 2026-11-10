@@ -419,7 +419,8 @@ def integrate_continuation(brief, failed_patches, previous_problems, earlier_pro
     return text + _BLOCKED_REMINDER
 
 
-def review_continuation(brief, brief_changed, patch, previous_problems, attempt, gate_file, last_review_problems):
+def review_continuation(brief, brief_changed, patch, previous_problems, attempt, gate_file, last_review_problems,
+                       delta_patch=None):
     """The next message to a reviewer that keeps its conversation."""
     form = (
         '\nYour final message is the review, and nothing else. Begin it with "## What I checked", one line per thing '
@@ -433,6 +434,11 @@ def review_continuation(brief, brief_changed, patch, previous_problems, attempt,
             "Give the review again, in the form below, from what you already examined.\n" + form
         )
     text = "# Review this unit again\n\nThe work was corrected or the run was resumed. The diff of the unit now, new files included: {0}\n".format(patch)
+    if delta_patch:
+        text += (
+            "\nThe coordinator corrected the unit after your last review. The changes made since then are in {0}. "
+            "The unit's diff now is the patch at {1}. Check the listed problems and whether the changes brought new ones.\n"
+        ).format(delta_patch, patch)
     if gate_file:
         text += (
             "The script ran the brief's `gate` commands again outside your sandbox and every one passed: {0}. "

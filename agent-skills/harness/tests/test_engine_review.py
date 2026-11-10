@@ -94,6 +94,17 @@ class ReviewTests(unittest.TestCase):
                     "unit-a: round {0}: verdict {1}".format(verdict, verdict),
                 )
 
+    def test_backend_reaches_the_agent_only_when_given(self):
+        from harness.engine.agentstep import StepResult
+        for backend, expected in (("claude", {"backend": "claude"}), (None, {})):
+            with self.subTest(backend=backend):
+                with mock.patch("harness.engine.review.run_agent_step",
+                                return_value=StepResult(False, "stop", None)) as step:
+                    run_review(self.run, "unit-a", str(self.directory), str(self.round_dir),
+                               lambda attempt: "prompt\n", "model", "high", "priority", 1, backend=backend)
+                kwargs = step.call_args.kwargs
+                self.assertEqual({k: v for k, v in kwargs.items() if k == "backend"}, expected)
+
     def test_brief_verdict_requires_explicit_opt_in(self):
         self.install_codex(
             "import pathlib, sys\n"

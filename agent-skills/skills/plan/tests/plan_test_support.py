@@ -40,6 +40,7 @@ class PlanRunFixture:
             "PLAN_GUIDES": str(self.guides),
             "FAKE_STATE": str(self.state),
             "FAKE_IMPLS": "{}",
+            "FAKE_REVIEW_VERDICTS": "[\"pass\"]",
         })
         self.test_case = test_case
 
@@ -97,10 +98,15 @@ import subprocess
 import sys
 
 args = sys.argv[1:]
-directory = pathlib.Path(args[args.index("-C") + 1])
+directory = pathlib.Path(args[args.index("-C") + 1]) if "-C" in args else pathlib.Path.cwd()
 output = pathlib.Path(args[args.index("-o") + 1])
 prompt = sys.stdin.read()
 state = pathlib.Path(os.environ["FAKE_STATE"])
+with (state / "codex-args.log").open("a", encoding="utf-8") as args_log:
+    args_log.write(" ".join(args) + "\\n")
+with (state / "prompts.log").open("a", encoding="utf-8") as prompt_log:
+    prompt_log.write(prompt + "\\n---\\n")
+print(json.dumps({"type": "thread.started", "thread_id": "fake-review"}))
 
 def next_count(name):
     count_file = state / name
@@ -124,15 +130,27 @@ elif prompt.startswith("# Review"):
     effort = next((value.partition("=")[2].strip('"') for value in args if value.startswith('model_reasoning_effort=')), "")
     with effort_file.open("a", encoding="utf-8") as efforts:
         efforts.write("model_reasoning_effort=" + effort + "\\n")
-    next_count("reviews")
+    rules = json.loads(os.environ.get("FAKE_REVIEW_RULES", "[]"))
+    rule = next((item for item in rules if item["marker"] in prompt or
+                 (item.get("scope") and item["scope"] in str(output))), None)
+    if rule:
+        rule_number = rules.index(rule)
+        review_number = next_count("rule-" + str(rule_number) + "-reviews")
+        verdicts = rule["verdicts"]
+    else:
+        review_number = next_count("reviews")
+        verdicts = json.loads(os.environ.get("FAKE_REVIEW_VERDICTS", '["pass"]'))
+    verdict = verdicts[min(review_number - 1, len(verdicts) - 1)]
     remove = os.environ.get("FAKE_REMOVE_BRIEF_ON_REVIEW")
     if remove:
         pathlib.Path(remove).unlink(missing_ok=True)
-    output.write_text("## What I checked\\n\\n- patch\\n- prompt\\n- result\\n\\n## Problems\\n\\nnone\\n\\nVERDICT: pass\\n", encoding="utf-8")
+    output.write_text("## What I checked\\n\\n- patch\\n- prompt\\n- result\\n\\n## Problems\\n\\nnone\\n\\nVERDICT: " + verdict + "\\n", encoding="utf-8")
 else:
     count = next_count("implementations")
     scripts = json.loads(os.environ.get("FAKE_IMPLS", "{}"))
-    script = scripts.get(str(count), "echo change >> seed.txt")
+    prompt_scripts = json.loads(os.environ.get("FAKE_IMPLS_BY_PROMPT", "{}"))
+    script = next((value for marker, value in prompt_scripts.items() if marker in prompt),
+                  scripts.get(str(count), "echo change >> seed.txt"))
     completed = subprocess.run(["bash", "-c", script], cwd=str(directory), check=False)
     if completed.returncode:
         raise SystemExit(completed.returncode)

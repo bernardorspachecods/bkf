@@ -59,6 +59,8 @@ def board_state_row(run_path, kind, label, step, step_done, step_stopped, width)
             state += " · {0} rondas".format(rounds)
     elif status == "escalated":
         icon, state = "✗", "escalada"
+    elif status == "takeover":
+        icon, state = "◷", "à espera do coordenador"
     elif match:
         phase, round_text = match.groups()
         round_number = int(round_text)

@@ -64,6 +64,10 @@ class PlanBoardTests(unittest.TestCase):
         )
         self.assertEqual(self.board(), expected)
 
+    def test_board_shows_takeover_waiting_for_coordinator(self):
+        self.unit("01-alpha", "takeover")
+        self.assert_board("  ◷ 01-alpha       à espera do coordenador\n", "  ○ 02-beta        pendente\n")
+
     def test_board_folds_finished_steps_and_keeps_full_board_available(self):
         (self.run_path / "00-input" / "order").write_text(
             "01-alpha\n02-beta\n03-gamma\n", encoding="utf-8"

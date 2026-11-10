@@ -11,6 +11,7 @@ import traceback
 from contextlib import contextmanager
 from pathlib import Path
 
+from .backend import require_backend
 from .checkout import main_repo, remove_tree
 from .layout import find_run, new_run_parent
 from .lock import acquire, is_active
@@ -231,6 +232,13 @@ def _regression_failed(ctx, workflow, run, label, shown):
     return True
 
 
+_OPTION_KEYS = {
+    "-m": "model", "-e": "effort", "-r": "review_effort", "-p": "pause",
+    "--review-model": "review_model", "--review-backend": "review_backend",
+    "--takeover-after": "takeover_after", "--takeover-review": "takeover_review",
+}
+
+
 def _options(args, defaults=None, flags=(), value_flags=()):
     values = dict(defaults or {})
     values["flags"] = set()
@@ -244,13 +252,34 @@ def _options(args, defaults=None, flags=(), value_flags=()):
         elif option in value_flags and index + 1 < len(args):
             values["values"][option] = args[index + 1]
             index += 2
-        elif option in ("-m", "-e", "-r", "-p") and index + 1 < len(args):
-            key = {"-m": "model", "-e": "effort", "-r": "review_effort", "-p": "pause"}[option]
+        elif option in _OPTION_KEYS and index + 1 < len(args):
+            key = _OPTION_KEYS[option]
             values[key] = args[index + 1]
             index += 2
         else:
             break
     return values, args[index:]
+
+
+def _check_reviewer(model, backend):
+    """A reviewer on another backend needs its own model: the run's model belongs to the implementer's backend."""
+    if backend and not model:
+        raise RunError("--review-backend needs --review-model: the run's model is for the implementer's backend")
+    if backend and backend not in agent.BACKENDS:
+        raise RunError("bad --review-backend: {0} (use one of {1})".format(backend, ", ".join(sorted(agent.BACKENDS))))
+    if backend:
+        require_backend(backend)
+
+
+def _check_takeover(after, review):
+    try:
+        valid_after = int(after) >= 0
+    except (TypeError, ValueError):
+        valid_after = False
+    if not valid_after:
+        raise RunError("bad --takeover-after: {0} (use a non-negative integer)".format(after))
+    if review not in ("reviewer", "none"):
+        raise RunError("bad --takeover-review: {0} (use reviewer or none)".format(review))
 
 
 def _check_pause(text):
@@ -259,7 +288,9 @@ def _check_pause(text):
 
 
 def _start(workflow, args):
-    options, rest = _options(args, {"model": "gpt-6-luna", "effort": "high", "review_effort": "", "pause": ""},
+    options, rest = _options(args, {"model": "gpt-6-luna", "effort": "high", "review_effort": "", "pause": "",
+                                    "review_model": "", "review_backend": "", "takeover_after": "2",
+                                    "takeover_review": "reviewer"},
                              workflow.start_flags, workflow.start_value_flags)
     if len(rest) < 1:
         raise RunError(workflow.usage_start)
@@ -267,6 +298,8 @@ def _start(workflow, args):
     if not valid_name(name):
         raise RunError("bad run name: {0}".format(name))
     _check_pause(options["pause"])
+    _check_reviewer(options["review_model"], options["review_backend"])
+    _check_takeover(options["takeover_after"], options["takeover_review"])
     repo = _repo()
     workflow_args = workflow.resolve_start_args(name, workflow_args, repo)
     workflow.validate_start(workflow_args)
@@ -277,7 +310,9 @@ def _start(workflow, args):
     if existing.exists():
         raise RunError("run already exists: {0} (finish it, or resume it)".format(existing))
     run = RunDir.create(parent, name, repo, Settings(
-        options["model"], options["effort"], options["review_effort"]
+        options["model"], options["effort"], options["review_effort"],
+        options["review_model"], options["review_backend"],
+        options["takeover_after"], options["takeover_review"],
     ), options["pause"])
 
     failed = {"start": False}
@@ -318,7 +353,8 @@ def _resume(workflow, args):
     options, rest = _options(args, value_flags=("--say", "--say-file"))
     if len(rest) != 1:
         raise RunError(
-            "usage: resume [-m model] [-e effort] [-r review-effort] [-p checkpoints] "
+            "usage: resume [-m model] [-e effort] [-r review-effort] [--review-model model] "
+            "[--review-backend backend] [--takeover-after N] [--takeover-review MODE] [-p checkpoints] "
             "[--say <text> | --say-file <file>] <name>")
     run = load_run(workflow, rest[0])
     said = _said(options["values"])
@@ -331,7 +367,13 @@ def _resume(workflow, args):
         settings = Settings(
             options.get("model", current.model), options.get("effort", current.effort),
             options.get("review_effort", current.review_effort),
+            options.get("review_model", current.review_model),
+            options.get("review_backend", current.review_backend),
+            options.get("takeover_after", current.takeover_after),
+            options.get("takeover_review", current.takeover_review),
         )
+        _check_reviewer(settings.review_model, settings.review_backend)
+        _check_takeover(settings.takeover_after, settings.takeover_review)
         if _repo() != run.repo:
             raise RunError("run resume inside the {0}'s repository: {1}".format(workflow.name, run.repo))
         workflow.validate_resume(run)
@@ -349,6 +391,18 @@ def _resume(workflow, args):
             if said and say_path.exists():
                 say_path.unlink()
     return _run_locked(run, workflow, resume)
+
+
+def _close(workflow, args):
+    if len(args) != 1:
+        raise RunError("usage: close <name>")
+    run = load_run(workflow, args[0])
+    waiting = [path for path in run.path.iterdir() if path.is_dir() and (path / "takeover").is_file()]
+    if not waiting:
+        raise RunError("no unit of {0} is waiting for a takeover".format(args[0]))
+    for directory in waiting:
+        (directory / "closing").write_text("\n", encoding="utf-8")
+    return _resume(workflow, [args[0]])
 
 
 def _finish(workflow, args):
@@ -380,12 +434,14 @@ def main(definition_path, argv):
     try:
         workflow = _load_workflow(definition_path)
         if not argv:
-            raise RunError("usage: {0} start|resume|status|board|finish ...".format(workflow.command))
+            raise RunError("usage: {0} start|resume|close|status|board|finish ...".format(workflow.command))
         command, args = argv[0], argv[1:]
         if command == "start":
             return _start(workflow, args)
         if command == "resume":
             return _resume(workflow, args)
+        if command == "close":
+            return _close(workflow, args)
         if command == "status":
             if len(args) != 1:
                 raise RunError("usage: status <name>")
@@ -403,7 +459,7 @@ def main(definition_path, argv):
         extra = workflow.commands().get(command)
         if extra is not None:
             return extra(args)
-        raise RunError("usage: {0} start|resume|status|board|finish ...".format(workflow.command))
+        raise RunError("usage: {0} start|resume|close|status|board|finish ...".format(workflow.command))
     except RunError as error:
         print("Error: {0}".format(error), file=sys.stderr)
         return 1

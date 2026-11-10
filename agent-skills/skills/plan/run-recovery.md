@@ -22,6 +22,7 @@ A rule the unit reviewers must apply goes in the briefs of the units still to ru
 
 ## Reading and changing a stopped run
 
+- A unit in `takeover` is waiting for you, not stuck: apply what the reviewer listed in the checkout the message names, then `plan-run.sh close <name>` (see Takeover in [run-reference.md](/agent-skills/skills/plan/run-reference.md#takeover)).
 - A stopped unit (`BLOCKED`, `escalate`, `STALLED`, an error) is a conversation you continue: its agents keep their context, so read what stopped it, fix the cause, and `resume` with `--say "<what you changed or decided>"`. Without it the agent still resumes and still knows the problems, but not your answer.
 - Stop a run only through the task that runs `resume` (`TaskStop`), never by killing its processes: a signal can leave the test databases it started running, and orphan clusters hold shared memory until `initdb` fails with "No space left on device" (the script checks for this before each unit and says which `ipcrm` to run). Edit `state-after-S<n>` only with the run stopped. A watcher that waits for a condition reads only and has a time limit (`until` without a limit never ends).
 - A plan that runs for more than a day falls behind its base branch. Bring the base in between steps, not only at the end: at the end every commit of the plan touches the same files as dozens of commits on the base, and auto-merged lockfiles come out corrupt. After the merge regenerate the lockfile from the base's, then run the repository's install and checks.

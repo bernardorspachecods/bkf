@@ -10,7 +10,8 @@ from unittest.mock import patch
 from pathlib import Path
 
 from harness.cli import main as cli_main
-from harness.engine.pipeline import main
+from harness.engine.run import RunDir, RunError
+from harness.engine.pipeline import _check_reviewer, _check_takeover, _options, main
 
 
 class PipelineTests(unittest.TestCase):
@@ -132,6 +133,45 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.call("board", "sample")[1], "BOARD\n")
         self.assertEqual(self.call("finish", "--discard", "sample")[1], "Removed {0}\n".format(run))
 
+    def test_start_uses_takeover_defaults_and_accepts_an_explicit_zero(self):
+        self.assertEqual(self.call("start", "defaults")[0], 0)
+        defaults = RunDir.load(self.runs, "defaults").settings
+        self.assertEqual((defaults.takeover_after, defaults.takeover_review), ("2", "reviewer"))
+
+        self.assertEqual(self.call("start", "--takeover-after", "0", "never")[0], 0)
+        never = RunDir.load(self.runs, "never").settings
+        self.assertEqual((never.takeover_after, never.takeover_review), ("0", "reviewer"))
+
+    def test_resume_keeps_stored_takeover_values_or_replaces_them_when_given(self):
+        self.assertEqual(self.call("start", "--takeover-after", "1", "--takeover-review", "none", "resume-settings")[0], 0)
+        self.assertEqual(self.call("resume", "resume-settings")[0], 0)
+        run = RunDir.load(self.runs, "resume-settings")
+        self.assertEqual((run.settings.takeover_after, run.settings.takeover_review), ("1", "none"))
+
+        self.assertEqual(
+            self.call("resume", "--takeover-after", "2", "--takeover-review", "reviewer", "resume-settings")[0],
+            0,
+        )
+        run = RunDir.load(self.runs, "resume-settings")
+        self.assertEqual((run.settings.takeover_after, run.settings.takeover_review), ("2", "reviewer"))
+
+    def test_start_and_resume_validate_takeover_options(self):
+        for value in ("-1", "x", "1.5", ""):
+            with self.subTest(option="--takeover-after", value=value):
+                code, _, err = self.call("start", "--takeover-after", value, "invalid-after")
+                self.assertEqual(code, 1)
+                self.assertIn("bad --takeover-after:", err)
+        code, _, err = self.call("start", "--takeover-review", "fast", "invalid-review")
+        self.assertEqual(code, 1)
+        self.assertIn("bad --takeover-review: fast", err)
+
+        self.assertEqual(self.call("start", "validation-resume")[0], 0)
+        for option, value in (("--takeover-after", "x"), ("--takeover-review", "fast")):
+            with self.subTest(resume_option=option, value=value):
+                code, _, err = self.call("resume", option, value, "validation-resume")
+                self.assertEqual(code, 1)
+                self.assertIn("bad " + option, err)
+
     def test_pause_resume_and_stopped_resume(self):
         code, out, _ = self.call("start", "-p", "each", "paused")
         self.assertEqual(code, 3)
@@ -206,7 +246,24 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("run already exists:", err)
         code, _, err = self.call("unknown")
         self.assertEqual(code, 1)
-        self.assertIn("usage: tiny-run.sh start|resume|status|board|finish ...", err)
+        self.assertIn("usage: tiny-run.sh start|resume|close|status|board|finish ...", err)
+
+    def test_close_requires_a_unit_waiting_for_takeover(self):
+        self.call("start", "no-takeover")
+        code, _, err = self.call("close", "no-takeover")
+        self.assertEqual(code, 1)
+        self.assertIn("no unit of no-takeover is waiting for a takeover", err)
+
+    def test_close_marks_waiting_units_and_reuses_resume_path(self):
+        self.call("start", "waiting")
+        run = self.runs / "waiting"
+        unit = run / "01-unit"
+        unit.mkdir()
+        (unit / "takeover").write_text("problems.md\n", encoding="utf-8")
+        code, _, err = self.call("close", "waiting")
+        self.assertEqual(code, 0, err)
+        self.assertEqual((unit / "closing").read_text(), "\n")
+        self.assertTrue(run.joinpath("status.log").read_text().count("\tresume\n") >= 1)
 
     def test_resume_lock_and_finish_lock(self):
         run = self.runs / "locked"
@@ -246,6 +303,40 @@ class PipelineTests(unittest.TestCase):
             os.chdir(previous)
         self.assertEqual(code, 0)
         self.assertIn("READY:", stdout.getvalue())
+
+
+class ReviewerOptionTests(unittest.TestCase):
+    def test_options_read_the_reviewers_model_and_backend(self):
+        options, rest = _options(
+            ["--review-model", "haiku", "--review-backend", "claude", "-r", "low", "name"],
+            {"review_model": "", "review_backend": "", "review_effort": ""},
+        )
+        self.assertEqual((options["review_model"], options["review_backend"], options["review_effort"]),
+                         ("haiku", "claude", "low"))
+        self.assertEqual(rest, ["name"])
+
+    def test_options_read_takeover_values(self):
+        options, rest = _options(["--takeover-after", "1", "--takeover-review", "none", "name"])
+        self.assertEqual((options["takeover_after"], options["takeover_review"]), ("1", "none"))
+        self.assertEqual(rest, ["name"])
+
+    def test_takeover_validation_rejects_bad_values_and_accepts_supported_values(self):
+        for value in ("-1", "x", "1.5", ""):
+            with self.subTest(after=value), self.assertRaisesRegex(RunError, "bad --takeover-after"):
+                _check_takeover(value, "reviewer")
+        with self.assertRaisesRegex(RunError, "bad --takeover-review: fast"):
+            _check_takeover("1", "fast")
+        for value in ("0", "1", "2"):
+            _check_takeover(value, "reviewer")
+            _check_takeover(value, "none")
+
+    def test_a_reviewer_backend_needs_its_own_model_and_a_known_backend(self):
+        _check_reviewer("", "")
+        _check_reviewer("some-model", "")
+        with self.assertRaisesRegex(RunError, "--review-backend needs --review-model"):
+            _check_reviewer("", "claude")
+        with self.assertRaisesRegex(RunError, "bad --review-backend: nope"):
+            _check_reviewer("m", "nope")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,10 @@ from typing import NamedTuple
 from .agentstep import run_agent_step
 from .diffbase import make_patch, snapshot_base
 from .converge import gate_signature, problem_files
-from .loop import _call_with_last_review, earlier_problems, run_gate_round, run_review_round, say_text
+from .loop import (
+    _call_with_last_review, close_takeover, earlier_problems, run_gate_round,
+    run_review_round, say_text, start_takeover,
+)
 from ..verdict import read_blocked
 
 
@@ -52,6 +55,18 @@ def run_integration(
     units = list(units)
     label = "S{0}-integration".format(step)
     directory = Path(run.path) / label
+    takeover_marker = directory / "takeover"
+    closing_marker = directory / "closing"
+    step_prefix = "S{0}".format(step)
+    progress_label = "integração"
+    if takeover_marker.is_file() and closing_marker.is_file():
+        ok, reason = close_takeover(
+            run, label, repo, str(directory), hooks, settings, tier, limits,
+            step_prefix, progress_label,
+        )
+        return IntegrationResult(ok, reason)
+    if takeover_marker.is_file():
+        takeover_marker.unlink()
     try:
         brief_check(run.path, units)
     except Exception as error:
@@ -207,6 +222,13 @@ def run_integration(
                 ),
             )
         hooks.progress("S{0} integração · ronda {1} · devolvida".format(step, round_number))
+        current_problems = str(round_dir / "problems.md")
+        if int(settings.takeover_after) > 0 and reviews >= int(settings.takeover_after):
+            ok, reason = start_takeover(
+                run, label, str(directory), repo, current_problems, reviews,
+                str(brief_path), step_prefix, progress_label, hooks,
+            )
+            return IntegrationResult(ok, reason)
         current_review_files = problem_files(_read(round_dir / "problems.md"))
         if current_review_files and current_review_files == previous_review_files:
             _write(directory / "status", "escalated\n")

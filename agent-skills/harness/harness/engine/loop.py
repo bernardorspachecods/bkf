@@ -10,7 +10,7 @@ from ..gate import run_gate
 from ..verdict import read_blocked
 from .converge import gate_signature, problem_files
 from .agentstep import run_agent_step
-from .diffbase import make_patch, snapshot_base
+from .diffbase import make_patch, snapshot_base, snapshot_tree
 from .metrics import record_metrics
 from .resources import shm_problem
 from .review import run_review
@@ -107,6 +107,20 @@ def _call_with_last_review(method, args, last_review_problems, fallback_args=Non
     return method(*(fallback_args if fallback_args is not None else args))
 
 
+def _call_with_delta(method, args, delta_patch):
+    """Pass the optional delta to hooks that support it, preserving older hook signatures."""
+    if delta_patch is None:
+        return method(*args)
+    try:
+        parameters = inspect.signature(method).parameters.values()
+    except (TypeError, ValueError):
+        parameters = ()
+    if any(parameter.name == "delta_patch" or parameter.kind == inspect.Parameter.VAR_KEYWORD
+           for parameter in parameters):
+        return method(*args, delta_patch=delta_patch)
+    return method(*args)
+
+
 def _gate_problems(round_dir):
     gate_text = _read(os.path.join(round_dir, "gate.md"))
     return (
@@ -168,7 +182,7 @@ def run_gate_round(run, label, checkout, round_dir, commands, hooks, limits,
 
 def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
                      limits, previous_problems, gate_file, progress_prefix,
-                     last_review_problems=None):
+                     last_review_problems=None, delta_patch=None):
     """Run one shared review stage and return its validated verdict and reason."""
     _write(os.path.join(os.path.dirname(os.path.dirname(round_dir)), "status"),
            "reviewing round {0}\n".format(os.path.basename(round_dir)))
@@ -193,20 +207,25 @@ def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
     brief_file = os.path.join(unit_dir, "brief.md")
 
     def build_continuation(attempt):
-        return _optional(
-            hooks, "review_continuation",
-            brief_file, os.path.isfile(os.path.join(unit_dir, "brief-changed")),
-            os.path.join(round_dir, "diff.patch"), last_review_problems or previous_problems, attempt,
-            gate_file if gate_file and os.path.getsize(gate_file) else "", last_review_problems,
+        continuation = getattr(hooks, "review_continuation", None)
+        if continuation is None:
+            return None
+        return _call_with_delta(
+            continuation,
+            (brief_file, os.path.isfile(os.path.join(unit_dir, "brief-changed")),
+             os.path.join(round_dir, "diff.patch"), last_review_problems or previous_problems, attempt,
+             gate_file if gate_file and os.path.getsize(gate_file) else "", last_review_problems),
+            delta_patch,
         )
 
     result = run_review(
-        run, label, checkout, round_dir, build_prompt, settings.model,
+        run, label, checkout, round_dir, build_prompt, settings.review_model or settings.model,
         settings.review_effort, tier, limits.min_checked,
         previous_problems or None,
         allow_brief=True,
         session=os.path.join(unit_dir, "session-review.json"),
         build_continuation=build_continuation,
+        backend=settings.review_backend or None,
     )
     changed = os.path.join(unit_dir, "brief-changed")
     if os.path.isfile(changed):
@@ -243,6 +262,17 @@ def run_unit_loop(
     step_prefix = "S{0}".format(step if step is not None else 0)
 
     os.makedirs(directory, exist_ok=True)
+    takeover_marker = os.path.join(directory, "takeover")
+    closing_marker = os.path.join(directory, "closing")
+    if os.path.isfile(takeover_marker) and os.path.isfile(closing_marker):
+        ok, reason = close_takeover(
+            run, unit, checkout, directory, hooks, settings, tier, limits,
+            step_prefix, "unidade {0}".format(unit),
+        )
+        return LoopResult(ok, reason)
+    if os.path.isfile(takeover_marker):
+        os.remove(takeover_marker)
+
     base_path = os.path.join(directory, "base")
     rounds_path = os.path.join(directory, "rounds")
     if os.path.isfile(base_path):
@@ -404,6 +434,14 @@ def run_unit_loop(
             )
 
         hooks.progress("{0} unidade {1} · ronda {2} · devolvida".format(step_prefix, unit, round_count))
+        current_problems = os.path.join(round_dir, "problems.md")
+        if int(settings.takeover_after) > 0 and reviews >= int(settings.takeover_after):
+            ok, reason = start_takeover(
+                run, unit, directory, checkout, current_problems, reviews,
+                os.path.join(directory, "brief.md"), step_prefix,
+                "unidade {0}".format(unit), hooks,
+            )
+            return LoopResult(ok, reason)
         current_review_files = problem_files(_read(os.path.join(round_dir, "problems.md")))
         if current_review_files and current_review_files == previous_review_files:
             _write(os.path.join(directory, "status"), "escalated\n")
@@ -426,3 +464,86 @@ def run_unit_loop(
         last_review_problems = previous_problems
         previous_handoff = round_handoff
         previous_review_files = current_review_files
+
+
+def _takeover_reason(label, reviews, problems, checkout, brief, run_name):
+    return (
+        "{0}: waiting for the coordinator after {1} reviews; review problems: {2}; checkout: {3}; "
+        "brief: {4}. Apply the problems in the checkout, then run close {5}"
+    ).format(label, reviews, problems, checkout, brief, run_name)
+
+
+def start_takeover(run, label, directory, checkout, problems, reviews, brief,
+                   step_prefix, progress_label, hooks):
+    """Mark a stage for coordinator takeover and return its neutral result."""
+    _write(os.path.join(directory, "status"), "takeover\n")
+    _write(os.path.join(directory, "takeover"), problems + "\n")
+    _write(os.path.join(directory, "takeover-base"), snapshot_tree(checkout) + "\n")
+    reason = _takeover_reason(label, reviews, problems, checkout, brief, run.name)
+    hooks.progress("{0} {1} · takeover".format(step_prefix, progress_label))
+    return False, reason
+
+
+def close_takeover(run, label, checkout, directory, hooks, settings, tier, limits,
+                   step_prefix, progress_label):
+    """Run the shared coordinator close flow and return a neutral (ok, reason)."""
+    closing_marker = os.path.join(directory, "closing")
+    os.remove(closing_marker)
+    close_root = os.path.join(directory, "close")
+    os.makedirs(close_root, exist_ok=True)
+    indices = [int(name) for name in os.listdir(close_root) if name.isdigit() and os.path.isdir(os.path.join(close_root, name))]
+    close_dir = os.path.join(close_root, str(max(indices, default=0) + 1))
+    os.makedirs(close_dir)
+    brief = os.path.join(directory, "brief.md")
+    takeover_problems = _read(os.path.join(directory, "takeover")).strip()
+    make_patch(directory, os.path.join(close_dir, "diff.patch"), checkout)
+    delta_base = os.path.join(close_dir, "delta-base")
+    os.makedirs(delta_base)
+    shutil.copyfile(os.path.join(directory, "takeover-base"), os.path.join(delta_base, "base"))
+    delta_patch = os.path.join(close_dir, "delta.patch")
+    make_patch(delta_base, delta_patch, checkout)
+    if os.path.getsize(delta_patch) == 0:
+        return False, "{0}: nothing changed since the takeover; apply the reviewer's problems, then run close again".format(label)
+
+    commands = hooks.gate_commands(brief)
+    gate_dir = os.path.join(close_dir, "gate")
+    gate_result = run_gate(checkout, limits.gate_timeout, gate_dir, commands)
+    if gate_result["red"]:
+        reason = "{0}: gate failed after the takeover (see {1}); fix the checkout, then run close again".format(label, gate_dir)
+        _write(os.path.join(close_dir, "problems.md"), reason + "\n" + _read(os.path.join(gate_dir, "gate.md")))
+        return False, reason
+
+    reviewed = "no"
+    if settings.takeover_review != "none":
+        verdict, review_reason = run_review_round(
+            run, label, checkout, close_dir, hooks, settings, tier, limits,
+            takeover_problems, os.path.join(gate_dir, "gate.md") if commands else "",
+            "{0} {1} · close {2}".format(step_prefix, progress_label, os.path.basename(close_dir)),
+            last_review_problems=takeover_problems, delta_patch=delta_patch,
+        )
+        if verdict is None:
+            _write(os.path.join(directory, "status"), "takeover\n")
+            return False, review_reason
+        if verdict == "back":
+            return start_takeover(
+                run, label, directory, checkout,
+                os.path.join(close_dir, "problems.md"), 1, brief,
+                step_prefix, progress_label, hooks,
+            )
+        if verdict == "escalate":
+            _write(os.path.join(directory, "status"), "escalated\n")
+            hooks.progress("{0} {1} · escalada".format(step_prefix, progress_label))
+            return False, "{0}: the reviewer escalated (see {1})".format(label, os.path.join(close_dir, "problems.md"))
+        if verdict == "brief":
+            _write(os.path.join(directory, "status"), "escalated\n")
+            hooks.progress("{0} {1} · escalada".format(step_prefix, progress_label))
+            return False, "{0}: the reviewer says the brief is the problem (see {1})".format(label, os.path.join(close_dir, "problems.md"))
+        reviewed = "yes"
+
+    _write(os.path.join(directory, "status"), "passed\n")
+    shutil.copyfile(os.path.join(close_dir, "diff.patch"), os.path.join(directory, "final.patch"))
+    os.remove(os.path.join(directory, "takeover"))
+    _write(os.path.join(directory, "closed-by-coordinator"), "reviewed: {0}\n".format(reviewed))
+    run.note("{0}: closed by the coordinator (reviewed: {1})".format(label, reviewed))
+    hooks.progress("{0} {1} · passou".format(step_prefix, progress_label))
+    return True, ""

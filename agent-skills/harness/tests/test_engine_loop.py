@@ -8,7 +8,7 @@ from unittest.mock import patch
 from harness.engine.run import RunDir, Settings
 from harness.engine.integration import run_integration
 from harness.engine.review import ReviewResult
-from harness.engine.loop import run_unit_loop
+from harness.engine.loop import run_review_round, run_unit_loop
 
 
 class Limits:
@@ -43,6 +43,16 @@ class Hooks:
         if last_review_problems:
             text += "last_review={0}\n".format(last_review_problems)
         return text
+
+    def review_continuation(self, brief, brief_changed, patch, previous_problems, attempt, gate_file,
+                            last_review_problems, delta_patch=None):
+        if delta_patch is None:
+            return None
+        self.review_continuations = getattr(self, "review_continuations", [])
+        self.review_continuations.append(delta_patch)
+        self.continuation_gate_files = getattr(self, "continuation_gate_files", [])
+        self.continuation_gate_files.append(gate_file)
+        return "# Continue review\npatch={0}\ndelta={1}\n".format(patch, delta_patch)
 
     def gate_commands(self, brief):
         if self.commands is not None:
@@ -105,6 +115,7 @@ class UnitLoopTests(unittest.TestCase):
             "FAKE_IMPL": "change",
             "FAKE_GATE_READY_ROUND": "0",
             "HARNESS_SHM_MIN_FREE": "0",
+            "FAKE_ARG_LOG": str(self.root / "codex-args.log"),
         })
         self.path_patch.start()
         self.addCleanup(self.path_patch.stop)
@@ -122,11 +133,13 @@ class UnitLoopTests(unittest.TestCase):
         self.fake = self.bin_dir / "codex"
         self.fake.write_text(
             "#!/usr/bin/env python3\n"
-            "import os, pathlib, re, sys\n"
-            "cwd = pathlib.Path(sys.argv[sys.argv.index('-C') + 1])\n"
+            "import json, os, pathlib, re, sys\n"
+            "cwd = pathlib.Path(sys.argv[sys.argv.index('-C') + 1]) if '-C' in sys.argv else pathlib.Path.cwd()\n"
             "prompt = sys.stdin.read()\n"
             "output = cwd / sys.argv[sys.argv.index('-o') + 1]\n"
-            "if prompt.startswith('# Review'):\n"
+            "if os.environ.get('FAKE_ARG_LOG'): open(os.environ['FAKE_ARG_LOG'], 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+            "print(json.dumps({'type': 'thread.started', 'thread_id': 'fake-thread'}))\n"
+            "if prompt.startswith('# Review') or prompt.startswith('# Continue review'):\n"
             " if (cwd / '.around-implement').exists(): sys.exit(92)\n"
             " verdicts = os.environ.get('FAKE_VERDICTS', os.environ.get('FAKE_VERDICT', 'pass')).split(',')\n"
             " n = int(output.parent.name) - 1\n"
@@ -158,6 +171,22 @@ class UnitLoopTests(unittest.TestCase):
             hooks=self.hooks, settings=self.run.settings, tier="fast",
             limits=limits or Limits(), step=1, base_from=base_from,
         )
+
+    def test_review_round_runs_on_the_reviewers_own_model_and_backend(self):
+        cases = (
+            (Settings("impl-model", "high", "low"), ("impl-model", None)),
+            (Settings("impl-model", "high", "low", "rev-model", "claude"), ("rev-model", "claude")),
+        )
+        for settings, (model, backend) in cases:
+            with self.subTest(model=model):
+                round_dir = self.unit_dir / "rounds" / "1"
+                round_dir.mkdir(parents=True, exist_ok=True)
+                with patch("harness.engine.loop.run_review", return_value=ReviewResult("pass", "")) as review:
+                    run_review_round(self.run, "01-unit", str(self.checkout), str(round_dir), self.hooks, settings,
+                                     "fast", Limits(), "", "", "01-unit")
+                self.assertEqual(review.call_args.args[5], model)
+                self.assertEqual(review.call_args.args[6], "low")
+                self.assertEqual(review.call_args.kwargs["backend"], backend)
 
     def notes(self):
         return [line.split("\t", 1)[1] for line in (self.run.path / "status.log").read_text().splitlines()[1:]]
@@ -434,6 +463,124 @@ class UnitLoopTests(unittest.TestCase):
             "S1 unidade 01-unit · ronda 1 · escalada",
         ])
 
+    def test_takeover_after_two_backs_precedes_repeat_files_and_round_cap(self):
+        self.run.settings = Settings("model", "high", "review", "", "", "2", "reviewer")
+        os.environ["FAKE_VERDICTS"] = "back,back,pass"
+        os.environ["FAKE_PROBLEM_FILES"] = "src/a.py"
+        result = self.run_loop()
+        problems = self.unit_dir / "rounds" / "2" / "problems.md"
+        self.assertFalse(result.ok)
+        self.assertEqual((self.unit_dir / "status").read_text(), "takeover\n")
+        self.assertEqual((self.unit_dir / "takeover").read_text(), str(problems) + "\n")
+        self.assertTrue((self.unit_dir / "takeover-base").is_file())
+        for expected in (str(problems), str(self.checkout), str(self.unit_dir / "brief.md"), "close sample"):
+            self.assertIn(expected, result.reason)
+        self.assertEqual(len(self.hooks.implement_calls), 2)
+
+    def test_takeover_after_one_back(self):
+        self.run.settings = Settings("model", "high", "review", "", "", "1", "reviewer")
+        os.environ["FAKE_VERDICT"] = "back"
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertEqual((self.unit_dir / "status").read_text(), "takeover\n")
+        self.assertEqual(len(self.hooks.implement_calls), 1)
+
+    def test_escalate_does_not_become_takeover(self):
+        self.run.settings = Settings("model", "high", "review", "", "", "2", "reviewer")
+        os.environ["FAKE_VERDICT"] = "escalate"
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertEqual((self.unit_dir / "status").read_text(), "escalated\n")
+        self.assertFalse((self.unit_dir / "takeover").exists())
+
+    def _make_takeover(self, review="reviewer"):
+        self.run.settings = Settings("model", "high", "review", "", "", "1", review)
+        os.environ["FAKE_VERDICT"] = "back"
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        os.environ["FAKE_VERDICT"] = "pass"
+        os.environ.pop("FAKE_VERDICTS", None)
+        self.hooks.progress_lines.clear()
+
+    def test_close_resumes_reviewer_with_delta_and_finishes(self):
+        self._make_takeover()
+        (self.checkout / "tracked.txt").write_text("coordinator fix\n", encoding="utf-8")
+        (self.unit_dir / "closing").touch()
+        result = self.run_loop()
+        close_dir = self.unit_dir / "close" / "1"
+        self.assertTrue(result.ok, result.reason)
+        self.assertEqual((self.unit_dir / "status").read_text(), "passed\n")
+        self.assertEqual((self.unit_dir / "closed-by-coordinator").read_text(), "reviewed: yes\n")
+        self.assertFalse((self.unit_dir / "takeover").exists())
+        self.assertFalse((self.unit_dir / "closing").exists())
+        self.assertIn(" resume --skip-git-repo-check", (self.root / "codex-args.log").read_text())
+        self.assertIn(" fake-thread -", (self.root / "codex-args.log").read_text())
+        self.assertIn("delta.patch", (close_dir / "review-continue.md").read_text())
+        self.assertTrue((close_dir / "delta.patch").is_file())
+
+    def test_close_tells_the_reviewer_about_a_gate_only_when_the_brief_has_one(self):
+        self._make_takeover()
+        (self.checkout / "tracked.txt").write_text("coordinator fix\n", encoding="utf-8")
+        (self.unit_dir / "closing").touch()
+        self.assertTrue(self.run_loop().ok)
+        self.assertEqual(self.hooks.continuation_gate_files, [""])
+
+    def test_close_without_reviewer_finishes_reviewed_no(self):
+        self._make_takeover(review="none")
+        (self.checkout / "tracked.txt").write_text("coordinator fix\n", encoding="utf-8")
+        (self.unit_dir / "closing").touch()
+        args_before = (self.root / "codex-args.log").read_text()
+        result = self.run_loop()
+        self.assertTrue(result.ok, result.reason)
+        self.assertEqual((self.unit_dir / "closed-by-coordinator").read_text(), "reviewed: no\n")
+        self.assertEqual((self.root / "codex-args.log").read_text(), args_before)
+
+    def test_close_without_delta_stays_in_takeover_without_gate(self):
+        self._make_takeover()
+        (self.unit_dir / "closing").touch()
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertIn("nothing changed since the takeover", result.reason)
+        self.assertEqual((self.unit_dir / "status").read_text(), "takeover\n")
+        self.assertTrue((self.unit_dir / "takeover").exists())
+        self.assertFalse((self.unit_dir / "closing").exists())
+        self.assertFalse((self.unit_dir / "close/1/gate").exists())
+
+    def test_close_gate_failure_stays_in_takeover_without_review(self):
+        self._make_takeover()
+        self.hooks.commands = ["false"]
+        (self.checkout / "tracked.txt").write_text("coordinator fix\n", encoding="utf-8")
+        (self.unit_dir / "closing").touch()
+        before_reviews = sum("-s read-only" in line for line in (self.root / "codex-args.log").read_text().splitlines())
+        result = self.run_loop()
+        after_reviews = sum("-s read-only" in line for line in (self.root / "codex-args.log").read_text().splitlines())
+        self.assertFalse(result.ok)
+        self.assertIn("gate failed after the takeover", result.reason)
+        self.assertIn(str(self.unit_dir / "close/1/gate"), result.reason)
+        self.assertEqual((self.unit_dir / "status").read_text(), "takeover\n")
+        self.assertTrue((self.unit_dir / "takeover").exists())
+        self.assertFalse((self.unit_dir / "closing").exists())
+        self.assertEqual(after_reviews, before_reviews)
+
+    def test_close_back_starts_a_new_takeover(self):
+        self._make_takeover()
+        old_base = (self.unit_dir / "takeover-base").read_text()
+        (self.checkout / "tracked.txt").write_text("second coordinator fix\n", encoding="utf-8")
+        (self.unit_dir / "closing").touch()
+        os.environ["FAKE_VERDICT"] = "back"
+        result = self.run_loop()
+        self.assertFalse(result.ok)
+        self.assertEqual((self.unit_dir / "status").read_text(), "takeover\n")
+        self.assertEqual((self.unit_dir / "takeover").read_text(), str(self.unit_dir / "close/1/problems.md") + "\n")
+        self.assertNotEqual((self.unit_dir / "takeover-base").read_text(), old_base)
+
+    def test_plain_resume_of_takeover_removes_marker_and_implements(self):
+        self._make_takeover()
+        result = self.run_loop()
+        self.assertTrue(result.ok, result.reason)
+        self.assertFalse((self.unit_dir / "takeover").exists())
+        self.assertEqual(len(self.hooks.implement_calls), 2)
+
     def test_reviewer_escalate_stops_with_exact_reason(self):
         os.environ["FAKE_VERDICT"] = "escalate"
         result = self.run_loop()
@@ -576,7 +723,7 @@ class IntegrationLoopMemoryTests(unittest.TestCase):
                 )
 
             def gate_commands(inner, brief):
-                return ["./check-round.sh"]
+                return inner.commands if getattr(inner, "commands", None) is not None else ["./check-round.sh"]
 
             def progress(inner, text):
                 inner.progress_lines.append(text)
@@ -599,6 +746,195 @@ class IntegrationLoopMemoryTests(unittest.TestCase):
             ["git", "-C", str(self.repo)] + list(args), check=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         ).stdout.strip()
+
+    def integration(self):
+        return run_integration(
+            self.run, self.repo, 1, ["01-unit"], hooks=self.hooks,
+            settings=self.run.settings, tier="fast", limits=self.limits,
+            goal_path=self.run.path / "00-input" / "goal.md",
+            brief_check=lambda run_path, units: None,
+            brief_differs=lambda run_path, unit: False,
+            gate_differs=lambda run_path, unit: False,
+        )
+
+    def _integration_agent(self, calls):
+        def integrate(run, label, directory, prompt_file, out_prefix, *args, **kwargs):
+            calls.append(prompt_file)
+            (self.repo / "integrated.txt").write_text("integrated {0}\n".format(len(calls)), encoding="utf-8")
+            Path(out_prefix + ".last-message.md").write_text("handoff\n", encoding="utf-8")
+            return type("Step", (), {"ok": True, "reason": ""})()
+        return integrate
+
+    @staticmethod
+    def _reviewer(verdicts, calls):
+        def review(run, label, checkout, round_dir, hooks, settings, tier, limits,
+                   previous, gate_file, progress, last_review_problems=None, delta_patch=None):
+            calls.append((round_dir, delta_patch))
+            verdict = verdicts.pop(0) if verdicts else "pass"
+            Path(round_dir, "problems.md").write_text(
+                "## What I checked\n- combined diff\n\n## Problems\n- Fix `src/integration.py`.\n\nVERDICT: {0}\n".format(verdict),
+                encoding="utf-8",
+            )
+            Path(round_dir, "verdict").write_text(verdict + "\n", encoding="utf-8")
+            return verdict, ""
+        return review
+
+    def test_integration_takeover_after_two_backs_precedes_repeat_files_and_round_cap(self):
+        self.run.settings = Settings("model", "high", "review", "", "", "2", "reviewer")
+        class TwoRounds(self.limits.__class__):
+            max_rounds = 2
+        self.limits = TwoRounds()
+        (self.run.path / "01-unit" / "final.patch").write_text("not a patch\n", encoding="utf-8")
+        integrations, reviews = [], []
+        with patch("harness.engine.integration.run_agent_step", side_effect=self._integration_agent(integrations)), patch(
+            "harness.engine.integration.run_review_round", side_effect=self._reviewer(["back", "back", "pass"], reviews)
+        ):
+            result = self.integration()
+        directory = self.run.path / "S1-integration"
+        problems = directory / "rounds" / "2" / "problems.md"
+        self.assertFalse(result.ok)
+        self.assertEqual((directory / "status").read_text(), "takeover\n")
+        self.assertEqual((directory / "takeover").read_text(), str(problems) + "\n")
+        self.assertTrue((directory / "takeover-base").is_file())
+        for expected in (str(problems), str(self.repo), str(directory / "brief.md"), "close sample"):
+            self.assertIn(expected, result.reason)
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(len(integrations), 2)
+
+    def test_integration_takeover_after_one_back_and_escalate_never_take_over(self):
+        for verdict, expected_status in (("back", "takeover\n"), ("escalate", "escalated\n")):
+            with self.subTest(verdict=verdict):
+                self.run = RunDir.create(
+                    self.root / "runs", "sample-" + verdict, str(self.repo),
+                    Settings("model", "high", "review", "", "", "1", "reviewer"), "none",
+                )
+                units = self.run.path / "00-input" / "units"
+                units.mkdir(parents=True)
+                (self.run.path / "00-input" / "goal.md").write_text("Goal\n", encoding="utf-8")
+                (units / "01-unit.md").write_text("# Unit\n", encoding="utf-8")
+                unit = self.run.path / "01-unit"
+                unit.mkdir()
+                (unit / "brief.md").write_text("# Unit\n", encoding="utf-8")
+                (unit / "final.patch").write_text((self.root / "runs/sample/01-unit/final.patch").read_text())
+                integrations, reviews = [], []
+                with patch("harness.engine.integration.run_agent_step", side_effect=self._integration_agent(integrations)), patch(
+                    "harness.engine.integration.run_review_round", side_effect=self._reviewer([verdict], reviews)
+                ):
+                    result = self.integration()
+                directory = self.run.path / "S1-integration"
+                self.assertFalse(result.ok)
+                self.assertEqual((directory / "status").read_text(), expected_status)
+                self.assertEqual(len(integrations), 0 if verdict == "back" else 1)
+                self.assertEqual((directory / "takeover").exists(), verdict == "back")
+
+    def test_takeover_after_zero_keeps_the_integration_round_cap(self):
+        class OneRound(self.limits.__class__):
+            max_rounds = 1
+        self.limits = OneRound()
+        self.run.settings = Settings("model", "high", "review", "", "", "0", "reviewer")
+        reviews = []
+        with patch("harness.engine.integration.run_review_round", side_effect=self._reviewer(["back"], reviews)):
+            result = self.integration()
+        directory = self.run.path / "S1-integration"
+        self.assertFalse(result.ok)
+        self.assertIn("round cap 1 reached", result.reason)
+        self.assertEqual((directory / "status").read_text(), "escalated\n")
+        self.assertFalse((directory / "takeover").exists())
+
+    def _prepare_manual_integration_takeover(self, review="reviewer"):
+        self.run.settings = Settings("model", "high", "review", "", "", "2", review)
+        directory = self.run.path / "S1-integration"
+        directory.mkdir()
+        from harness.engine.diffbase import snapshot_base, snapshot_tree
+        snapshot_base(directory, self.repo)
+        (directory / "takeover-base").write_text(snapshot_tree(self.repo) + "\n", encoding="utf-8")
+        (directory / "takeover").write_text(str(directory / "rounds/1/problems.md") + "\n", encoding="utf-8")
+        (directory / "status").write_text("takeover\n", encoding="utf-8")
+        (directory / "brief.md").write_text("Integration brief\n", encoding="utf-8")
+        problems = directory / "rounds/1/problems.md"
+        problems.parent.mkdir(parents=True)
+        problems.write_text("review problems\n", encoding="utf-8")
+        (self.repo / "coordinator.txt").write_text("correction for {0}\n".format(self.run.name), encoding="utf-8")
+        (directory / "closing").touch()
+        return directory
+
+    def test_integration_close_resumes_reviewer_with_delta_and_finishes(self):
+        directory = self._prepare_manual_integration_takeover()
+        reviews = []
+        with patch("harness.engine.loop.run_review_round", side_effect=self._reviewer(["pass"], reviews)) as reviewer:
+            result = self.integration()
+        close_dir = directory / "close/1"
+        self.assertTrue(result.ok, result.reason)
+        self.assertEqual((directory / "status").read_text(), "passed\n")
+        self.assertEqual((directory / "closed-by-coordinator").read_text(), "reviewed: yes\n")
+        self.assertFalse((directory / "takeover").exists())
+        self.assertFalse((directory / "closing").exists())
+        reviewer.assert_called_once()
+        self.assertEqual(reviews[0][1], str(close_dir / "delta.patch"))
+        self.assertTrue((close_dir / "delta.patch").is_file())
+
+    def test_integration_close_without_reviewer_finishes_reviewed_no(self):
+        directory = self._prepare_manual_integration_takeover(review="none")
+        with patch("harness.engine.loop.run_review_round") as reviewer:
+            result = self.integration()
+        self.assertTrue(result.ok, result.reason)
+        self.assertEqual((directory / "closed-by-coordinator").read_text(), "reviewed: no\n")
+        reviewer.assert_not_called()
+
+    def test_integration_close_gate_failure_empty_delta_and_back_stay_in_takeover(self):
+        cases = ("gate", "empty", "back")
+        for case in cases:
+            with self.subTest(case=case):
+                run_name = "close-" + case
+                self.run = RunDir.create(
+                    self.root / "runs", run_name, str(self.repo),
+                    Settings("model", "high", "review", "", "", "2", "reviewer"), "none",
+                )
+                units = self.run.path / "00-input/units"
+                units.mkdir(parents=True)
+                (self.run.path / "00-input/goal.md").write_text("Goal\n", encoding="utf-8")
+                (units / "01-unit.md").write_text("# Unit\n", encoding="utf-8")
+                unit = self.run.path / "01-unit"
+                unit.mkdir()
+                (unit / "brief.md").write_text("# Unit\n", encoding="utf-8")
+                (unit / "final.patch").write_text((self.root / "runs/sample/01-unit/final.patch").read_text())
+                directory = self._prepare_manual_integration_takeover()
+                old_base = (directory / "takeover-base").read_text()
+                self.hooks.commands = []
+                if case == "empty":
+                    (self.repo / "coordinator.txt").unlink()
+                    from harness.engine.diffbase import snapshot_tree
+                    (directory / "takeover-base").write_text(snapshot_tree(self.repo) + "\n", encoding="utf-8")
+                elif case == "gate":
+                    self.hooks.commands = ["false"]
+                reviews = []
+                with patch("harness.engine.loop.run_review_round", side_effect=self._reviewer(["back"], reviews)) as reviewer:
+                    result = self.integration()
+                self.assertFalse(result.ok)
+                self.assertEqual((directory / "status").read_text(), "takeover\n")
+                self.assertTrue((directory / "takeover").is_file())
+                if case == "gate":
+                    reviewer.assert_not_called()
+                    self.assertIn("gate failed after the takeover", result.reason)
+                elif case == "empty":
+                    reviewer.assert_not_called()
+                    self.assertIn("nothing changed since the takeover", result.reason)
+                else:
+                    self.assertNotEqual((directory / "takeover-base").read_text(), old_base)
+                    self.assertEqual((directory / "takeover").read_text(), str(directory / "close/1/problems.md") + "\n")
+
+    def test_plain_resume_of_integration_takeover_removes_marker_and_integrates_again(self):
+        directory = self._prepare_manual_integration_takeover()
+        (directory / "closing").unlink()
+        (self.run.path / "01-unit" / "final.patch").write_text("not a patch\n", encoding="utf-8")
+        integrations, reviews = [], []
+        with patch("harness.engine.integration.run_agent_step", side_effect=self._integration_agent(integrations)), patch(
+            "harness.engine.integration.run_review_round", side_effect=self._reviewer(["pass"], reviews)
+        ):
+            result = self.integration()
+        self.assertTrue(result.ok, result.reason)
+        self.assertFalse((directory / "takeover").exists())
+        self.assertEqual(len(integrations), 1)
 
     def test_gate_failure_does_not_forget_integration_review_problems(self):
         review_calls = []

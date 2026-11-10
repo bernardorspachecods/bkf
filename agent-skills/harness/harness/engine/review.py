@@ -27,6 +27,7 @@ def run_review(
     allow_brief=False,
     session=None,
     build_continuation=None,
+    backend=None,
 ):
     """Run up to three reviewer attempts and persist a usable review."""
     round_path = os.fspath(round_dir)
@@ -61,6 +62,7 @@ def run_review(
             "{0}: review exit=<exit> (see {1}/review.stderr.log)".format(
                 label, round_path
             ),
+            **({"backend": backend} if backend else {}),
             **({"session": session, "continuation": continuation_path if continuation else None}
                if session is not None else {}),
         )

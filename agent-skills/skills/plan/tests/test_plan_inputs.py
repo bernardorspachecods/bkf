@@ -222,6 +222,14 @@ gamma
         self.assertIn(str(patch_file), again)
         self.assertIn("VERDICT: pass", again)
         self.assertIn("Fix this.", again)
+        delta = self.write("delta.patch", "coordinator change\n")
+        continued = plan_inputs.review_continuation(
+            brief, False, patch_file, problems, 1, "", problems, delta_patch=delta,
+        )
+        self.assertIn("The coordinator corrected the unit after your last review", continued)
+        self.assertIn(str(delta), continued)
+        self.assertIn(str(patch_file), continued)
+        self.assertIn("Check the listed problems and whether the changes brought new ones", continued)
         self.assertIn("not a usable review", plan_inputs.review_continuation(brief, False, patch_file, "", 2, "", ""))
         self.assertIsNone(plan_inputs.integrate_continuation(brief, "", "", "", "", False))
         self.assertIn("The coordinator says", plan_inputs.integrate_continuation(brief, "", "", "", "go on", True))

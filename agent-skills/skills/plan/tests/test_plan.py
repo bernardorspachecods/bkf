@@ -61,6 +61,27 @@ class PlanWorkflowTests(unittest.TestCase):
         self.assertIn("diff --git a/seed.txt b/seed.txt", (run / "cumulative.patch").read_text())
         self.assertEqual((self.fixture.state / "review-efforts").read_text(), "model_reasoning_effort=high\n")
 
+    def test_coordinator_closes_after_two_review_backs(self):
+        self.fixture.add_brief("unit")
+        plan = self.fixture.write_plan("unit.md")
+        self.fixture.env["FAKE_REVIEW_VERDICTS"] = json.dumps(["back", "back", "pass"])
+        code, out, _ = self.call("start", "coordinator", str(self.fixture.goal), str(plan))
+        run = self.fixture.runs / "coordinator"
+        self.assertEqual(code, 1)
+        self.assertIn("waiting for the coordinator", out)
+        self.assertEqual((run / "01-unit/status").read_text(), "takeover\n")
+        self.assertTrue((run / "01-unit/takeover").is_file())
+        (run / "tree/seed.txt").write_text("coordinator correction\n", encoding="utf-8")
+
+        code, out, err = self.call("close", "coordinator")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("READY:", out)
+        self.assertEqual((run / "01-unit/status").read_text(), "passed\n")
+        self.assertEqual((run / "01-unit/closed-by-coordinator").read_text(), "reviewed: yes\n")
+        self.assertIn(" resume --skip-git-repo-check", (self.fixture.state / "codex-args.log").read_text())
+        self.assertIn("delta.patch", (self.fixture.state / "prompts.log").read_text())
+
     def test_second_unit_patch_is_based_on_first_units_state(self):
         self.fixture.add_brief("first")
         self.fixture.add_brief("second")

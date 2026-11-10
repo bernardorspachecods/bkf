@@ -4,7 +4,11 @@ from datetime import datetime
 from pathlib import Path
 
 
-Settings = namedtuple("Settings", "model effort review_effort")
+Settings = namedtuple(
+    "Settings",
+    "model effort review_effort review_model review_backend takeover_after takeover_review",
+    defaults=("", "", "0", "reviewer"),
+)
 
 
 class RunError(Exception):
@@ -25,15 +29,33 @@ def _write_text(path, text):
 
 
 def _settings_text(settings):
-    return "{0} {1} {2}\n".format(*settings)
+    """The first line keeps the format bash reads; non-default options live on a second line."""
+    text = "{0} {1} {2}\n".format(settings.model, settings.effort, settings.review_effort)
+    fields = []
+    if settings.review_model or settings.review_backend:
+        fields.extend(("review_model={0}".format(settings.review_model),
+                       "review_backend={0}".format(settings.review_backend)))
+    if settings.takeover_after != "0":
+        fields.append("takeover_after={0}".format(settings.takeover_after))
+    if settings.takeover_review != "reviewer":
+        fields.append("takeover_review={0}".format(settings.takeover_review))
+    if fields:
+        text += " ".join(fields) + "\n"
+    return text
 
 
 def _read_settings(path):
     with open(path, "r", encoding="utf-8", newline="") as source:
         line = source.readline().rstrip("\n")
+        reviewer = dict(
+            field.split("=", 1) for field in source.readline().split() if "=" in field
+        )
     fields = line.split(" ", 2)
     fields.extend([""] * (3 - len(fields)))
-    return Settings(*fields[:3])
+    return Settings(
+        *fields[:3], reviewer.get("review_model", ""), reviewer.get("review_backend", ""),
+        reviewer.get("takeover_after", "0"), reviewer.get("takeover_review", "reviewer"),
+    )
 
 
 class RunDir:

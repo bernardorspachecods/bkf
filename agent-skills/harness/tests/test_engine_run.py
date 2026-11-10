@@ -75,6 +75,60 @@ class RunTests(unittest.TestCase):
         self.assertEqual((run.path / "pause").read_text(), "each\n")
         self.assertEqual(RunDir.load(self.root, "sample").settings, settings)
 
+    def test_reviewer_model_and_backend_persist_on_a_second_line_and_old_files_still_load(self):
+        run = RunDir.create(self.root, "sample", "/repo", self.settings, "none")
+        settings = Settings("model", "effort", "", "claude-haiku-5-5", "claude")
+        run.save_settings(settings)
+        self.assertEqual(
+            (run.path / "settings").read_text(),
+            "model effort \nreview_model=claude-haiku-5-5 review_backend=claude\n",
+        )
+        self.assertEqual(RunDir.load(self.root, "sample").settings, settings)
+        (run.path / "settings").write_text("model effort review\n")
+        self.assertEqual(
+            RunDir.load(self.root, "sample").settings,
+            Settings("model", "effort", "review", "", "", "0", "reviewer"),
+        )
+
+    def test_takeover_settings_round_trip_every_combination_and_keep_exact_file_text(self):
+        run = RunDir.create(self.root, "sample", "/repo", self.settings, "none")
+        expected_text = {
+            ("0", "reviewer", False): "model effort review\n",
+            ("0", "reviewer", True): (
+                "model effort review\nreview_model=haiku review_backend=claude\n"
+            ),
+            ("2", "reviewer", False): "model effort review\ntakeover_after=2\n",
+            ("2", "reviewer", True): (
+                "model effort review\nreview_model=haiku review_backend=claude takeover_after=2\n"
+            ),
+            ("0", "none", False): "model effort review\ntakeover_review=none\n",
+            ("0", "none", True): (
+                "model effort review\nreview_model=haiku review_backend=claude takeover_review=none\n"
+            ),
+            ("2", "none", False): (
+                "model effort review\ntakeover_after=2 takeover_review=none\n"
+            ),
+            ("2", "none", True): (
+                "model effort review\nreview_model=haiku review_backend=claude "
+                "takeover_after=2 takeover_review=none\n"
+            ),
+        }
+        for (after, review, has_reviewer), expected in expected_text.items():
+            with self.subTest(after=after, review=review, has_reviewer=has_reviewer):
+                reviewer = ("haiku", "claude") if has_reviewer else ("", "")
+                settings = Settings("model", "effort", "review", *reviewer, after, review)
+                run.save_settings(settings)
+                self.assertEqual((run.path / "settings").read_text(), expected)
+                self.assertEqual(RunDir.load(self.root, "sample").settings, settings)
+
+    def test_old_three_field_settings_file_loads_takeover_defaults(self):
+        run = RunDir.create(self.root, "sample", "/repo", self.settings, "none")
+        (run.path / "settings").write_text("old effort review\n")
+        self.assertEqual(
+            RunDir.load(self.root, "sample").settings,
+            Settings("old", "effort", "review", "", "", "0", "reviewer"),
+        )
+
     def test_note_appends_local_timestamp_and_event(self):
         run = RunDir.create(self.root, "sample", "/repo", self.settings, "none")
         run.note("start run")

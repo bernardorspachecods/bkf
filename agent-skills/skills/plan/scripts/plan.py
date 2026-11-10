@@ -81,9 +81,10 @@ class _UnitHooks(UnitHooks):
             brief, brief_changed, round_number, resumed, previous_problems, earlier_problems, say)
 
     def review_continuation(self, brief, brief_changed, patch, previous_problems, attempt, gate_file,
-                            last_review_problems):
+                            last_review_problems, delta_patch=None):
         return plan_inputs.review_continuation(
-            brief, brief_changed, patch, previous_problems, attempt, gate_file, last_review_problems)
+            brief, brief_changed, patch, previous_problems, attempt, gate_file, last_review_problems,
+            delta_patch)
 
     def integrate_continuation(self, brief, failed, previous_problems, earlier_problems, say, resumed):
         return plan_inputs.integrate_continuation(brief, failed, previous_problems, earlier_problems, say, resumed)
@@ -125,7 +126,7 @@ class _IntegrationHooks(_UnitHooks):
 class PlanWorkflow(Workflow):
     name = "plan"
     command = "plan-run.sh"
-    usage_start = "usage: start [-m model] [-e effort] [-r review-effort] [-p checkpoints] [--from <ref>] <name> [<goal.md> <plan.txt>]"
+    usage_start = "usage: start [-m model] [-e effort] [-r review-effort] [--review-model model] [--review-backend backend] [--takeover-after N] [--takeover-review MODE] [-p checkpoints] [--from <ref>] <name> [<goal.md> <plan.txt>]"
     repo_hint = "run start inside the repository the plan changes"
     start_flags = ("--in-place",)
     start_value_flags = ("--from",)
@@ -375,9 +376,10 @@ class PlanWorkflow(Workflow):
                 output.write(prompt)
             result = run_agent_step(
                 run, "final review", ctx.checkout, str(prompt_path), str(run.path / "report"),
-                ctx.settings.model, _review_effort(ctx.settings), "read-only",
+                ctx.settings.review_model or ctx.settings.model, _review_effort(ctx.settings), "read-only",
                 _plan_tier(),
                 "final review exit=<exit> (see {0}/report.stderr.log)".format(run.path),
+                backend=ctx.settings.review_backend or None,
             )
             if not result.ok:
                 raise Stop(result.reason)
