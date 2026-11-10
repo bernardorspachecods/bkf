@@ -37,7 +37,7 @@ The user chooses; you never recommend a combination or switch it midway. Ask thr
 | Who implements? | The script's agents (`-m`), this conversation, or another agent you delegate to |
 | Who reviews? | A reviewer on its own model and backend (`--review-model`, `--review-backend`, Codex or Claude), or this conversation |
 
-Whatever the answers, these hold: the reviewer is never the one who implemented; a reviewer reads the brief and the diff and nothing else; and a command, not an agent, runs the gate. Read only the guide for the chosen driver; the rest of this guide (units, briefs, roles) is shared. A plan driven from the conversation stays there and writes no run folder.
+Whatever the answers, the reviewer is never the one who implemented (the other rules, a command runs the gate and the reviewer sees only the brief and the diff, are in "How to read this" and section 3). Read only the guide for the chosen driver; the rest of this guide is shared. A plan driven from the conversation stays there and writes no run folder.
 
 ## How to read this
 
@@ -66,7 +66,7 @@ Each unit costs a full review round. Make something a separate unit when it has 
 - **About ten files is the ceiling for work that is not mechanical.** Past it, split.
 - **Split on the seams the agent would otherwise cross:** a unit that reads a different group of modules for each part is several units.
 
-Long rounds carry a larger context, which slows every step. The run records the size of each implementation round; read it after a plan and correct these limits. Measurements so far: [run-reference.md](run-reference.md#running-a-plan).
+Long rounds carry a larger context, which slows every step. The run records the size of each implementation round; read it after a plan and correct these limits. Measurements so far: [unit-size-measurements.md](/records/plans/unit-size-measurements.md).
 
 **When the split depends on something you do not yet know** (how many modules cross a boundary, what a move would break), do not write a unit for it. Run a small plan that only reads and reports, and write the real plan, with every brief, after the user has read the report. Adding units by hand to a run in progress leaves contracts unfixed and can misalign step numbers.
 
@@ -129,7 +129,7 @@ pnpm test:unit
 What the reviewer judges that no command checks.
 ~~~
 
-- **Receives and leaves ready are how units touch.** Write concrete facts ("the table has `name`, `photo`, `bio`"), not "the database is done". You write every brief before the run, so the two sides of each contract are fixed: what one unit leaves ready is exactly what the next receives, and the producing unit's review checks it. A fact about the repository that the brief relies on (a file contains X, a command exists) is proved by a command in a `premise` fence, one per line. The script runs it before the unit's first round, in the checkout as earlier units left it, and stops the unit at once, with no implementer launched, if one fails. A `gate` command runs only after implementation, so it proves nothing about the start. `gates` warns when `Receives` states facts and the brief has no `premise`. Rehearsal runs the lines too, but a unit that depends on an earlier one may fail them before `start`.
+- **Receives and leaves ready are how units touch.** Write concrete facts ("the table has `name`, `photo`, `bio`"), not "the database is done". You write every brief before the run, so the two sides of each contract are fixed: what one unit leaves ready is exactly what the next receives, and the producing unit's review checks it. A fact about the repository that the brief relies on (a file contains X, a command exists) is proved by a command in a `premise` fence, one per line; how it runs and fails: [run-reference.md](run-reference.md#premises). `gates` warns when `Receives` states facts and the brief has no `premise`. Rehearsal runs the lines too, but a unit that depends on an earlier one may fail them before `start`.
 - **The gate is a fenced block tagged `gate`,** one command per line (script behavior: [run-reference.md](run-reference.md#gate)). Following the `core-code-principles` module, write every criterion a command can decide as a gate line: a test, a script, a query, a comparison of behaviour before and after.
 - **When the checking tool does not exist yet,** make building it a unit that comes first; the commands that use it go in a later unit.
 - **Put the proof that a check can fail where the reviewer sees it:** in the diff (a test run against a broken copy) or in the gate (a line that runs the check against a case it must reject). Never in the handoff or a sentence the implementer attests: the reviewer sees only the brief, the diff and the gate result.
@@ -160,7 +160,7 @@ Parallel group:  unit A ─► review ─┐
 ```
 
 - **Brief problems go to the coordinator.** When a unit signals its brief may be wrong, revisit the brief before resuming; signals: [run-reference.md](run-reference.md#brief-problems). Gate and review execution, including the gate-failure cap: [run-reference.md](run-reference.md#gate).
-- **A unit that keeps coming back reaches the coordinator.** After `--takeover-after` reviews (default 2) that send a unit back, the run stops with the unit in `takeover`: you apply what the reviewer listed and run `close`, instead of sending a weaker implementer round after round at the same point. Details, `--takeover-review` and groups: [run-reference.md](run-reference.md#takeover).
+- **A unit that keeps coming back reaches the coordinator** (`--takeover-after`, default 2): the run stops with it in `takeover`, you apply what the reviewer listed and run `close`. See [run-reference.md](run-reference.md#takeover).
 - **The reviewer does not see the implementer's reasoning or handoff.** The brief, the diff and the gate result are all it needs.
 - **The handoff is a log, not evidence.** It helps the implementer resume and helps you read the run. What a unit left ready is attested by its review.
 - **Each agent writes only its own files.** Two agents never touch the same file.
