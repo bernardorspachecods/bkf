@@ -20,16 +20,11 @@ description: Close out git worktrees and branches. `mine` (default) commits this
 
 ## `all`
 
-Delete without asking only branches whose tip is an ancestor of default (`git merge-base --is-ancestor`), using `git branch -d`; delete worktrees only if clean. Report dirty worktrees or branches with commits outside default (another agent's). Never delete these or the current branch/worktree.
+Delete without asking only branches whose tip is an ancestor of default (`git merge-base --is-ancestor`), using `git branch -d`; delete worktrees only if clean. Report dirty worktrees or branches with commits outside default (another agent's). Never delete these or the current branch/worktree. A branch merged by squash or rebase is not an ancestor of default: leave it unless you read [pull-requests.md](pull-requests.md).
 
 ## Pull requests
 
-On request (`git-worktree-cleanup mine pr`); PR replaces local merge; other `mine` steps through check stay unchanged.
-
-- Push with `git push -u origin <branch>` and open with `gh pr create`. Without `gh`, leave the branch and report it.
-- Never force-push, push default or rewrite history. Keep worktree and branch until PR merge; then `all` or `mine` completes cleanup.
-- In `all`, squash/rebase merges count only if `gh pr list --state merged --head <branch> --json headRefOid` returns a PR whose `headRefOid` equals the local tip; then use `git branch -D` and report a squash merge. Without `gh` or a match, leave it.
-- A merged PR leaves `origin/*`. Report candidates for `git push origin --delete <branch>`, running only after confirmation. Warn remote deletion is hard to undo and an agent or preview deployment may use it. Candidate: merged (ancestor of `origin/<default>` or matching merged PR above), not default/`origin/HEAD`, and no same-name local branch.
+Only when the user asks (`mine pr`), to count squash or rebase merges in `all`, or to offer remote branch deletion: read [pull-requests.md](pull-requests.md) first. Otherwise do not open it.
 
 Report merge/delete/PR outcomes (branch/worktree path), leftovers/reasons and remote candidates awaiting confirmation.
 
