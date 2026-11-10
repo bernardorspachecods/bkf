@@ -61,6 +61,11 @@ with log.open("a") as handle:
 if resume_id and resume_id == os.environ.get("FAKE_BAD_SESSION"):
     sys.stderr.write("no such session\n")
     sys.exit(1)
+flaky = pathlib.Path(os.environ["FAKE_LOG"] + ".flaky")
+if resume_id and resume_id == os.environ.get("FAKE_FLAKY_SESSION") and not flaky.exists():
+    flaky.write_text("failed once")
+    sys.stderr.write("transient failure\n")
+    sys.exit(1)
 counter = pathlib.Path(os.environ["FAKE_LOG"] + ".n")
 n = int(counter.read_text()) + 1 if counter.exists() else 1
 counter.write_text(str(n))
@@ -152,9 +157,23 @@ class SessionTests(unittest.TestCase):
         os.environ["FAKE_BAD_SESSION"] = "SESSION-implement-1"
         self.assertTrue(self.loop().ok)
         implements = [c for c in self.calls() if c["role"] == "implement"]
-        self.assertEqual([c["resume"] for c in implements], [None, "SESSION-implement-1", None])
-        self.assertEqual(implements[2]["prompt"], "IMPLEMENT FULL round=1")
-        self.assertTrue(any("could not be resumed" in line for line in (self.run.path / "status.log").read_text().splitlines()))
+        self.assertEqual([c["resume"] for c in implements], [None, "SESSION-implement-1", "SESSION-implement-1", None])
+        self.assertEqual(implements[3]["prompt"], "IMPLEMENT FULL round=1")
+        notes = (self.run.path / "status.log").read_text().splitlines()
+        self.assertTrue(any("attempt 1 of 2); trying again" in line for line in notes))
+        self.assertTrue(any("could not be resumed" in line for line in notes))
+
+    def test_a_resume_that_fails_once_is_tried_again_and_keeps_the_conversation(self):
+        os.environ["FAKE_BLOCKED"] = "1"
+        self.assertFalse(self.loop().ok)
+        os.environ.pop("FAKE_BLOCKED")
+        os.environ["FAKE_FLAKY_SESSION"] = "SESSION-implement-1"
+        self.assertTrue(self.loop().ok)
+        implements = [c for c in self.calls() if c["role"] == "implement"]
+        self.assertEqual([c["resume"] for c in implements], [None, "SESSION-implement-1", "SESSION-implement-1"])
+        self.assertTrue(implements[2]["prompt"].startswith("IMPLEMENT CONTINUE"))
+        notes = (self.run.path / "status.log").read_text().splitlines()
+        self.assertFalse(any("could not be resumed" in line for line in notes))
 
     def test_backend_arguments_resume_and_session_ids(self):
         codex = CodexBackend().arguments("/w", "m", "high", "workspace-write", "fast", "/last.md", resume_id="ID-1")

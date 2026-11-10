@@ -21,6 +21,11 @@ def tier_from_environment(environ=None):
     return environment["HARNESS_CODEX_TIER"] or None
 
 
+# A resume that fails before the agent starts is tried this many times before a new conversation replaces it, so a
+# transient failure does not silently cost the agent its context.
+RESUME_ATTEMPTS = 2
+
+
 def _load_session(path, backend, directory):
     """The saved conversation id, when it is for this backend and folder; None otherwise."""
     try:
@@ -73,12 +78,19 @@ def run_agent_step(
     if session is not None and continuation is not None and backend_class is not None:
         identifier = _load_session(session, backend, directory)
         if identifier:
-            status = agent.run_agent(
-                directory, continuation, out_prefix, model, effort, sandbox, tier, backend, web,
-                resume_id=identifier, track=True,
-            )
-            if status != 0 and status != agent.STALLED_EXIT and not backend_class().started(events_path) \
-                    and backend_class().quota_text(events_path) is None:
+            for attempt in range(1, RESUME_ATTEMPTS + 1):
+                status = agent.run_agent(
+                    directory, continuation, out_prefix, model, effort, sandbox, tier, backend, web,
+                    resume_id=identifier, track=True,
+                )
+                lost = status != 0 and status != agent.STALLED_EXIT and not backend_class().started(events_path) \
+                    and backend_class().quota_text(events_path) is None
+                if not lost:
+                    break
+                if attempt < RESUME_ATTEMPTS:
+                    run.note("{0}: resuming the conversation {1} failed (attempt {2} of {3}); trying again".format(
+                        label, identifier, attempt, RESUME_ATTEMPTS))
+            if lost:
                 run.note("{0}: the conversation {1} could not be resumed; starting a new one".format(label, identifier))
                 status = None
     if status is None:
