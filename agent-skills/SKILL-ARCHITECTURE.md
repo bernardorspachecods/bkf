@@ -17,7 +17,7 @@ It contains only package metadata and supported runtime metadata derived from th
 | [git-status-cleanup](skills/git-status-cleanup/SKILL.md) | Commit the uncommitted changes of the current worktree, either only what this session changed (default) or everything. Do not use to delete merged branches or worktrees (use git-worktree-cleanup). | yes |
 | [git-worktree-cleanup](skills/git-worktree-cleanup/SKILL.md) | Close out git worktrees and branches. `mine` (default) commits this session's worktree, merges it locally into the default branch and removes the worktree and branch. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup). | yes |
 | [handoff](skills/handoff/SKILL.md) | Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task. | yes |
-| [plan](skills/plan/SKILL.md) | Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script runs, or a stopped plan run to resume. A single task is not a plan. |  |
+| [plan](skills/plan/SKILL.md) | Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script or this conversation runs, or a stopped plan run to resume. A single task is not a plan. |  |
 | [prototype](skills/prototype/SKILL.md) | Build throwaway code that answers a design question - does a logic or state model feel right, or what should a page look like - then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship. |  |
 | [repo-library](skills/repo-library/SKILL.md) | Use when adding or reviewing an entry of a repository's repo-library: a procedure or rule set that the repository applies repeatedly. |  |
 | [repo-maintenance](skills/repo-maintenance/SKILL.md) | Use when your change affects a repository's documents, when organizing or restructuring them, or when writing or revising a document that other agents will act on, mostly under BKF. |  |
@@ -134,7 +134,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## plan
 
-- Description: Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script runs, or a stopped plan run to resume. A single task is not a plan.
+- Description: Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script or this conversation runs, or a stopped plan run to resume. A single task is not a plan.
 - Package: [`agent-skills/skills/plan`](skills/plan/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:

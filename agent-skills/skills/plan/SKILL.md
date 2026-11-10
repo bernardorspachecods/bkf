@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script runs, or a stopped plan run to resume. A single task is not a plan.
+description: Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script or this conversation runs, or a stopped plan run to resume. A single task is not a plan.
 ---
 
 # Plan
@@ -18,16 +18,26 @@ The skills of the plan, code review, council and research workflows include this
 - Report an outcome as it is: what passed, what escalated, what was skipped. Do not imply a step was done that was not.
 <!-- BKF:GENERATED-INJECTED-END -->
 > **Before you start**
-> - A seam of up to about 15 files decided by one gate, or 1–3 sequential units repeating one pattern, goes to [`delegate-work`](../delegate-work/SKILL.md).
+> - Ask the user how to run the plan (see "How the plan runs"). They decide; do not choose or switch on your own.
 > - About ten files is the ceiling for a non-mechanical unit; rehearse before `start` (both in section 1).
 
 ## When to use
 
-Use it when the user has an agreed goal that needs several pieces of work done in a coordinated way, such as a feature split into database, UI and UX. A single task is not a plan: brief it and run it. A simple, quick task, or several independent ones that need no review of each unit, goes to [delegate-work](../delegate-work/SKILL.md): you review the result at the end, which is cheap because the work is small. A plan is for units that depend on one another and need a reviewer each, with you only coordinating. To explore options before the goal is agreed, hold a discussion first.
+Use it when the user has an agreed goal that needs several pieces of work done in a coordinated way, such as a feature split into database, UI and UX. A plan is units that depend on one another and each get a review. To explore options before the goal is agreed, hold a discussion first.
 
 **One plan is one goal split into units.** Each unit is small and isolated, so it can be implemented, reviewed and read on its own. The plan is the ordered list of units and what connects them.
 
-**The format is the user's choice.** Ask whether they want a plan kept in the conversation or one that runs on a script with units, and explain the difference neutrally. A plan kept in the conversation stays there; the rest of this guide is for the plan that runs.
+## How the plan runs
+
+The user chooses; you never recommend a combination or switch it midway. Ask three things, and accept a short answer such as "codex implements, you review":
+
+| Question | Options |
+| --- | --- |
+| Who drives? | A script ([plan-run.sh](scripts/plan-run.sh)), or this conversation ([conversation-run.md](conversation-run.md)) |
+| Who implements? | The script's agents (`-m`), this conversation, or another agent you delegate to |
+| Who reviews? | A reviewer on its own model and backend (`--review-model`, `--review-backend`, Codex or Claude), or this conversation |
+
+Whatever the answers, these hold: the reviewer is never the one who implemented; a reviewer reads the brief and the diff and nothing else; and a command, not an agent, runs the gate. Read only the guide for the chosen driver; the rest of this guide (units, briefs, roles) is shared. A plan driven from the conversation stays there and writes no run folder.
 
 ## How to read this
 
@@ -150,6 +160,7 @@ Parallel group:  unit A ─► review ─┐
 ```
 
 - **Brief problems go to the coordinator.** When a unit signals its brief may be wrong, revisit the brief before resuming; signals: [run-reference.md](run-reference.md#brief-problems). Gate and review execution, including the gate-failure cap: [run-reference.md](run-reference.md#gate).
+- **A unit that keeps coming back reaches the coordinator.** After `--takeover-after` reviews (default 2) that send a unit back, the run stops with the unit in `takeover`: you apply what the reviewer listed and run `close`, instead of sending a weaker implementer round after round at the same point. Details, `--takeover-review` and groups: [run-reference.md](run-reference.md#takeover).
 - **The reviewer does not see the implementer's reasoning or handoff.** The brief, the diff and the gate result are all it needs.
 - **The handoff is a log, not evidence.** It helps the implementer resume and helps you read the run. What a unit left ready is attested by its review.
 - **Each agent writes only its own files.** Two agents never touch the same file.

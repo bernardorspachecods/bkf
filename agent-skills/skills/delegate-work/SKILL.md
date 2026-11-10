@@ -7,9 +7,8 @@ description: "Hand one short, objective task to another agent, either a Claude s
 
 ## Decide
 
-- Prefer delegation for simple, quick work; use a plan when dependent units need separate reviewers.
 - Delegate only if input fits a brief and a command checks the result; advice needs only context. Use one agent for cohesive work, several only for independent files and outputs. Never let implementation and review change the same target.
-- If a brief-sized task takes more than a few minutes, tell the user the expected time and ask whether to delegate or do it yourself; brief only if they choose. Agents are weaker: default to the Codex harness (`gpt-6-luna`); use a Claude subagent (`haiku`) only if requested or the harness cannot run the task. Split long work or multi-source research into smaller briefs for weak models.
+- If a brief-sized task takes more than a few minutes, ask whether to delegate or do it yourself, without stating a time estimate; brief only if they choose. Agents are weaker: default to the Codex harness (`gpt-6-luna`); use a Claude subagent (`haiku`) only if requested or the harness cannot run the task. Split long work or multi-source research into smaller briefs for weak models.
 
 ## Brief
 
