@@ -197,7 +197,8 @@ def _pipeline(ctx, workflow):
             return 1
         final_step = workflow.final_step(ctx) if not run.is_done("report") else None
         if final_step is not None:
-            ctx.note("start final review ({0} {1})".format(run.settings.model, run.settings.effort))
+            ctx.note("start final review ({0} {1})".format(
+                run.settings.review_model or run.settings.model, run.settings.review_effort or run.settings.effort))
             ctx.progress("final · revisão")
             try:
                 final_step.run(ctx)

@@ -210,11 +210,17 @@ class PlanWorkflow(Workflow):
         snapshot_base(base, ctx.checkout)
         self._consume_pending(ctx, goal)
         unit_count = sum(len(step) for step in steps)
+        review = _review_effort(ctx.settings)
+        if ctx.settings.review_model:
+            review += " on {0}".format(ctx.settings.review_model)
+            if ctx.settings.review_backend:
+                review += " via {0}".format(ctx.settings.review_backend)
+        takeover = ", takeover after {0}".format(ctx.settings.takeover_after) if int(ctx.settings.takeover_after) else ""
         ctx.note(
-            "start {0} ({1} {2}, review {3}, max {4} rounds, {5} step(s), {6} unit(s), repo {7})".format(
+            "start {0} ({1} {2}, review {3}, max {4} rounds{8}, {5} step(s), {6} unit(s), repo {7})".format(
                 ctx.run.name, ctx.settings.model, ctx.settings.effort,
-                _review_effort(ctx.settings), _limits().max_rounds,
-                len(steps), unit_count, ctx.repo,
+                review, _limits().max_rounds,
+                len(steps), unit_count, ctx.repo, takeover,
             )
         )
         units = [unit for line in (ctx.run.path / "00-input" / "order").read_text(encoding="utf-8").splitlines() for unit in line.split()]

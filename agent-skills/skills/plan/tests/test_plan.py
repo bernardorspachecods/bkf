@@ -45,7 +45,7 @@ class PlanWorkflowTests(unittest.TestCase):
         self.assertTrue((run / ".done-report").is_file())
         status_events = [line.split("\t", 1)[1] for line in (run / "status.log").read_text().splitlines()[1:]]
         self.assertEqual(status_events, [
-            "start sample (gpt-6-luna high, review high, max 3 rounds, 1 step(s), 1 unit(s), repo {0})".format(self.fixture.repo.resolve()),
+            "start sample (gpt-6-luna high, review high, max 3 rounds, takeover after 2, 1 step(s), 1 unit(s), repo {0})".format(self.fixture.repo.resolve()),
             "unit 01-unit has no gate: only a reviewer checks it",
             "no .plan-run.json at HEAD: the bridge will run only gate commands unless an untracked copy is in the checkout; commit it so changes to it are reviewed like code",
             "start step 1: 01-unit (gpt-6-luna high)",
