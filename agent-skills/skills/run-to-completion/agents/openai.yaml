@@ -1,5 +1,5 @@
 interface:
   display_name: "Run to completion"
-  short_description: "Final check with the user, then work alone until the plan is done"
+  short_description: "Last message before leaving, then work alone to the end"
 policy:
   allow_implicit_invocation: false

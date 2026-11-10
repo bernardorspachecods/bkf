@@ -23,7 +23,7 @@ It contains only package metadata and supported runtime metadata derived from th
 | [repo-maintenance](skills/repo-maintenance/SKILL.md) | Use when your change affects a repository's documents, when organizing or restructuring them, or when writing or revising a document that other agents will act on, mostly under BKF. |  |
 | [research](skills/research/SKILL.md) | Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail; or a stopped research run to resume. |  |
 | [retrieval-chat-audit](skills/retrieval-chat-audit/SKILL.md) | Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses. | yes |
-| [run-to-completion](skills/run-to-completion/SKILL.md) | The user's last contact before a long plan or task runs unattended. Checks that the goal, artifacts and limits are aligned, gets one explicit go, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end. | yes |
+| [run-to-completion](skills/run-to-completion/SKILL.md) | The user's last interaction before they leave. Says what is still needed from them, where the work will stop and what will make it stop, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end. | yes |
 | [session-export](skills/session-export/SKILL.md) | Export chosen Claude Code or Codex sessions to readable files with what the chat itself does not show (tokens per turn, models, what woke each turn, messages between sessions), to analyze how skills and instructions behave. Use only when the user asks to export or analyze specific sessions; do not use to summarize a conversation or to export sessions on your own initiative. | yes |
 | [skill-authoring](skills/skill-authoring/SKILL.md) | Create and maintain agent skills. |  |
 | [watch](skills/watch/SKILL.md) | Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or local WhisperX / cloud Whisper fallback), and hands the result to the agent so it can answer questions about what's in the video. With a Gemini API key, Google's agentic video model watches the full video instead. |  |
@@ -189,12 +189,12 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## run-to-completion
 
-- Description: The user's last contact before a long plan or task runs unattended. Checks that the goal, artifacts and limits are aligned, gets one explicit go, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end.
+- Description: The user's last interaction before they leave. Says what is still needed from them, where the work will stop and what will make it stop, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end.
 - Package: [`agent-skills/skills/run-to-completion`](skills/run-to-completion/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Run to completion
-  - `short_description`: Final check with the user, then work alone until the plan is done
+  - `short_description`: Last message before leaving, then work alone to the end
 - Runtime policy: `explicit invocation required`
 
 ## session-export
