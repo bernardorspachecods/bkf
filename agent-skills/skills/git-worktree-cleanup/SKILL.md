@@ -1,9 +1,9 @@
 ---
 name: git-worktree-cleanup
-description: Close out git worktrees and branches. `mine` (default) commits this session's worktree, merges it locally into the default branch and removes the worktree and branch. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup).
+description: Close out git worktrees and branches. `mine` (default) commits this session's changes, merges its branch locally into the default branch and removes the session worktree (if any) and branch. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup).
 ---
 
-`mine` (default): session worktree only; if not linked, report and stop. `all`: delete every local branch merged into default and clean worktrees; no commits, merges or pull requests.
+`mine` (default): this session's work only, in a linked worktree or in the main checkout. `all`: delete every local branch merged into default and clean worktrees; no commits, merges or pull requests.
 
 - Never delete default or use `--force`, `reset`, `clean` or `stash`; on refusal, leave it and report why.
 - If `origin` exists, run `git fetch --prune origin` first.
@@ -15,8 +15,10 @@ description: Close out git worktrees and branches. `mine` (default) commits this
 1. Commit with `git-status-cleanup mine` (`all` if the user says so); no session changes may remain uncommitted.
 2. Run the repo's named check; on failure or if none is named, stop, leave all and explain.
 3. From default checkout, run `git -C <default-checkout> merge` (`--ff-only` when possible). Keep non-overlapping changes there. If refused or conflicted, resolve only when both sides make the right result clear; otherwise abort, leave the branch and ask the user.
-4. Run every command with `git -C <default-checkout>`; remove the worktree (`git worktree remove`) and branch (`git branch -d`).
-5. Tell the user the worktree/session directory is gone.
+4. Run every command with `git -C <default-checkout>`; delete the branch (`git branch -d`). In a linked worktree, remove it first (`git worktree remove`).
+5. Tell the user what is gone: the worktree/session directory, or only the branch.
+
+Main checkout: there is no worktree to remove. If the session branch is not default, the checkout must be clean after step 1; switch it to default (`git switch <default>`), merge, delete the branch, and say the checkout is now on default. If the session is already on default, stop after steps 1-2: there is nothing to merge or delete.
 
 ## `all`
 
