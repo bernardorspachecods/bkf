@@ -25,4 +25,4 @@ Run `check --gate-only`: it runs the gate and writes the diff (`patch:`), with n
 
 ## What the user receives
 
-As in [SKILL.md](SKILL.md) section 4, from verdicts and diffs and not from the implementer's account: which units passed in which round, what each gate and review checked, what stayed unverified.
+As in [SKILL.md](SKILL.md) section 3, from verdicts and diffs and not from the implementer's account: which units passed in which round, what each gate and review checked, what stayed unverified.
