@@ -12,8 +12,7 @@ It contains only package metadata and supported runtime metadata derived from th
 | [code-review](skills/code-review/SKILL.md) | Use when the user asks for a code review of a branch, pull request, revision range or working tree run by separate agents, or a stopped review run to resume. Looking over your own change while you work is part of code-work. |  |
 | [code-work](skills/code-work/SKILL.md) | Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules. |  |
 | [council](skills/council/SKILL.md) | Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume. |  |
-| [crew](skills/crew/SKILL.md) | Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review, delegate-work) or to continue one task in a new chat (handoff). | yes |
-| [delegate-work](skills/delegate-work/SKILL.md) | Hand one short, objective task to another agent, either a Claude subagent or a run of the harness on Codex or Claude, and check what comes back. Use when the user asks to delegate, or chooses delegation when you ask how a self-contained task that would take you more than a few minutes or touch more than a few files should be done. Do not use for work with several stages, a plan or a branch review (use plan, research, council or code-review), or to continue in a new chat (use handoff). |  |
+| [crew](skills/crew/SKILL.md) | Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review) or to continue one task in a new chat (handoff). | yes |
 | [git-merge-queue](skills/git-merge-queue/SKILL.md) | Merge the finished work of several sessions of one repository as a batch. Each session registers its branch in a shared queue, then one integrator merges the batch, tests the result and cleans up the sessions it merged. Use only when the user asks to queue a branch, close the batch or resume an integration; do not use for a single session's merge (use git-worktree-cleanup). | yes |
 | [git-status-cleanup](skills/git-status-cleanup/SKILL.md) | Commit the uncommitted changes of the current worktree, either only what this session changed (default) or everything. Do not use to delete merged branches or worktrees (use git-worktree-cleanup). | yes |
 | [git-worktree-cleanup](skills/git-worktree-cleanup/SKILL.md) | Close out git worktrees and branches. `mine` (default) commits this session's changes, merges its branch locally into the default branch and removes the session worktree (if any) and branch. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup). | yes |
@@ -86,22 +85,13 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## crew
 
-- Description: Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review, delegate-work) or to continue one task in a new chat (handoff).
+- Description: Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review) or to continue one task in a new chat (handoff).
 - Package: [`agent-skills/skills/crew`](skills/crew/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Crew
   - `short_description`: Open coordinator sessions for the sub-plans of a large piece of work
 - Runtime policy: `explicit invocation required`
-
-## delegate-work
-
-- Description: Hand one short, objective task to another agent, either a Claude subagent or a run of the harness on Codex or Claude, and check what comes back. Use when the user asks to delegate, or chooses delegation when you ask how a self-contained task that would take you more than a few minutes or touch more than a few files should be done. Do not use for work with several stages, a plan or a branch review (use plan, research, council or code-review), or to continue in a new chat (use handoff).
-- Package: [`agent-skills/skills/delegate-work`](skills/delegate-work/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Delegate Work
-  - `short_description`: Hand a short, objective task to a Claude subagent or a Codex run
 
 ## git-merge-queue
 

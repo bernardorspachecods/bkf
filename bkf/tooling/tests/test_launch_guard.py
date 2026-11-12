@@ -60,7 +60,7 @@ class LaunchGuardTests(unittest.TestCase):
 
     def test_the_loop_that_hid_three_delegations_is_blocked(self):
         for command in (
-            "S=/s; for n in a b d; do nohup ~/.claude/skills/delegate-work/scripts/delegate-run.sh $n $S/b-$n.md HEAD > $S/r-$n.log 2>&1 & done; sleep 20",
+            "S=/s; for n in a b d; do nohup ~/.claude/skills/plan/scripts/delegate-run.sh $n $S/b-$n.md HEAD > $S/r-$n.log 2>&1 & done; sleep 20",
             "for n in a b; do delegate-run.sh $n b.md; done",
             "while read n; do delegate-run.sh $n b; done < names",
             "( delegate-run.sh a b & )",
@@ -76,7 +76,7 @@ class LaunchGuardTests(unittest.TestCase):
     def test_one_launcher_in_a_compound_or_a_shell_string_is_allowed_in_the_background(self):
         for command in (
             "bash -c 'delegate-run.sh a b'",
-            "cd /repo && DELEGATE_IN_PLACE=1 ~/.claude/skills/delegate-work/scripts/delegate-run.sh n b HEAD gpt-6-luna high",
+            "cd /repo && DELEGATE_IN_PLACE=1 ~/.claude/skills/plan/scripts/delegate-run.sh n b HEAD gpt-6-luna high",
             "{ delegate-run.sh a b; }",
         ):
             with self.subTest(command=command):

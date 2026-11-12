@@ -34,10 +34,10 @@ The user chooses; you never recommend a combination or switch it midway. Ask thr
 | Question | Options |
 | --- | --- |
 | Who drives? | This conversation ([conversation-run.md](conversation-run.md)): units one after another, no run folder. Or a script ([script-run.md](script-run.md)): parallel units, pauses, a run that goes on without you |
-| Who implements? | This conversation, another agent you delegate to ([delegate-work](../delegate-work/SKILL.md)), or the script's agents (`-m`) |
+| Who implements? | This conversation, another agent you launch on Codex ([single-agent.md](single-agent.md)) or a Claude subagent, or the script's agents (`-m`) |
 | Who reviews? | A reviewer on its own model and backend (`--review-model`, `--review-backend`, Codex or Claude), or this conversation |
 
-The reviewer is never the one who implemented, and it sees only the brief, the diff and the gate result, never the implementer's reasoning or handoff. Read only the guide of the chosen driver; this file is what both share. Agents never commit, stage, stash or reset: a base is recorded before each unit and the diff is read from it.
+The reviewer is never the one who implemented, and it sees only the brief, the diff and the gate result, never the implementer's reasoning or handoff. Read only the guide of the chosen driver; this file is what both share. A single self-contained task the user wants on Codex, with no units, is the exception: [single-agent.md](single-agent.md). Agents never commit, stage, stash or reset: a base is recorded before each unit and the diff is read from it.
 
 ## How to read this
 

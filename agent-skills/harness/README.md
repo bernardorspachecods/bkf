@@ -1,6 +1,6 @@
 # Harness files
 
-The standard-library Python engine that the run scripts of the `plan`, `research`, `council` and `code-review` skills call through the `harness` function in [lib.sh](scripts/lib.sh), and that `delegate-work` uses to launch one agent. The engine knows no workflow by name: `run DEFINITION` loads a definition file that a skill owns (`skills/<name>/scripts/<name>.py`) and runs it. Run any command by hand with `PYTHONPATH=<repo>/agent-skills/harness python3 -m harness ...`.
+The standard-library Python engine that the run scripts of the `plan`, `research`, `council` and `code-review` skills call through the `harness` function in [lib.sh](scripts/lib.sh), and that the plan's [single-agent launcher](../skills/plan/single-agent.md) uses to launch one agent. The engine knows no workflow by name: `run DEFINITION` loads a definition file that a skill owns (`skills/<name>/scripts/<name>.py`) and runs it. Run any command by hand with `PYTHONPATH=<repo>/agent-skills/harness python3 -m harness ...`.
 
 ## Commands
 
