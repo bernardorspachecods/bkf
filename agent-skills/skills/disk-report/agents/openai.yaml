@@ -1,0 +1,3 @@
+interface:
+  display_name: "Disk Report"
+  short_description: "Show what fills the disk, with a risk per item, without deleting"
