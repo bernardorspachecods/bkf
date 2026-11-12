@@ -1,0 +1,5 @@
+interface:
+  display_name: "Git Merge Queue"
+  short_description: "Register finished branches and merge them as one tested batch"
+policy:
+  allow_implicit_invocation: false

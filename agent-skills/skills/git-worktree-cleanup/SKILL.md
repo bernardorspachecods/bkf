@@ -13,7 +13,7 @@ description: Close out git worktrees and branches. `mine` (default) commits this
 ## `mine`
 
 1. Commit with `git-status-cleanup mine` (`all` if the user says so); no session changes may remain uncommitted.
-2. Run the repo's named check; on failure or if none is named, stop, leave all and explain.
+2. Run the repo's named check; on failure or if none is named, stop, leave all and explain. Then, if the `git-merge-queue` skill's `scripts/merge_queue.py` exists, run `python3 -I <that script> busy`; if it exits 1, stop, leave all and tell the user to use `git-merge-queue`.
 3. From default checkout, run `git -C <default-checkout> merge` (`--ff-only` when possible). Keep non-overlapping changes there. If refused or conflicted, resolve only when both sides make the right result clear; otherwise abort, leave the branch and ask the user.
 4. Run every command with `git -C <default-checkout>`; delete the branch (`git branch -d`). In a linked worktree, remove it first (`git worktree remove`).
 5. Tell the user what is gone: the worktree/session directory, or only the branch.
