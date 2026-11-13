@@ -1,0 +1,5 @@
+interface:
+  display_name: "Before Compaction"
+  short_description: "Suggest a compaction message and check the documents after"
+policy:
+  allow_implicit_invocation: false

@@ -8,6 +8,7 @@ It contains only package metadata and supported runtime metadata derived from th
 | --- | --- | --- |
 | [align-intent](skills/align-intent/SKILL.md) | Use at the start of any task that is more than a small change: settle with the user what is wanted and why, and when it is done, before working. Do not use inside a plan, a delegated task or a review: the brief already carries the intent. |  |
 | [ambitious](skills/ambitious/SKILL.md) | Push the ambition of a task the user names along three axes (altitude, depth, range) while discussing it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own or for small, well-bounded changes. | yes |
+| [before-compaction](skills/before-compaction/SKILL.md) | Suggest the message for compacting the current chat and make the agent check, after the compaction, that the documents hold everything it needs to continue. Use only when the user is about to compact; do not use to hand work to a new chat (use handoff). | yes |
 | [brainstorm](skills/brainstorm/SKILL.md) | Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions. |  |
 | [code-review](skills/code-review/SKILL.md) | Use when the user asks for a code review of a branch, pull request, revision range or working tree run by separate agents, or a stopped review run to resume. Looking over your own change while you work is part of code-work. |  |
 | [code-work](skills/code-work/SKILL.md) | Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules. |  |
@@ -46,6 +47,16 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Ambitious
   - `short_description`: Raise the ambition of a task before running it
+- Runtime policy: `explicit invocation required`
+
+## before-compaction
+
+- Description: Suggest the message for compacting the current chat and make the agent check, after the compaction, that the documents hold everything it needs to continue. Use only when the user is about to compact; do not use to hand work to a new chat (use handoff).
+- Package: [`agent-skills/skills/before-compaction`](skills/before-compaction/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Before Compaction
+  - `short_description`: Suggest a compaction message and check the documents after
 - Runtime policy: `explicit invocation required`
 
 ## brainstorm
