@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import re
 import sys
 from dataclasses import dataclass
@@ -21,11 +22,14 @@ from bkf_common import (
     MAP_NAME,
     ParsedMarkdown,
     README_NAME,
+    TAG_VOCABULARY_NAME,
     body_size,
+    canonical_tag,
     discover_maps,
     find_bundles,
     in_linked_worktree,
     inventory_entries,
+    load_tag_vocabulary,
     needs_navigation_map,
     nested_bundle_roots,
     parse_markdown,
@@ -78,6 +82,7 @@ class Validator:
         self.markdown_files: list[Path] = []
         self._ext_validator: Draft202012Validator | None = None
         self._ext_schema_reported = False
+        self._tag_vocabulary: dict[str, list[str]] | None = None
 
     def add(self, severity: str, code: str, path: Path, message: str) -> None:
         try:
@@ -103,6 +108,7 @@ class Validator:
         version = self._validate_root_map(root_map)
         self._check_version(version, root_map)
 
+        self._load_tag_vocabulary()
         self._validate_documents()
         for map_path in maps:
             self._validate_map(map_path, root_map)
@@ -118,6 +124,27 @@ class Validator:
             self._validate_links(map_path, body)
 
         self._validate_repo_library_links()
+
+    def _load_tag_vocabulary(self) -> None:
+        try:
+            self._tag_vocabulary = load_tag_vocabulary(self.root)
+        except BKFInputError as exc:
+            self.error("TAG_VOCABULARY_INVALID", self.root / TAG_VOCABULARY_NAME, str(exc))
+
+    def _validate_tag_vocabulary(self, path: Path, tags: list[str]) -> None:
+        vocabulary = self._tag_vocabulary
+        if vocabulary is None:
+            return
+        for tag in tags:
+            if tag in vocabulary:
+                continue
+            canonical = canonical_tag(vocabulary, tag)
+            if canonical is not None:
+                self.error("TAG_UNKNOWN", path, f"tag `{tag}` is a synonym; use `{canonical}`")
+                continue
+            close = difflib.get_close_matches(tag, list(vocabulary), n=3)
+            hint = f"; closest tags: {', '.join(f'`{key}`' for key in close)}" if close else ""
+            self.error("TAG_UNKNOWN", path, f"tag `{tag}` is not in {TAG_VOCABULARY_NAME}{hint}")
 
     def _validate_repo_library_links(self) -> None:
         repo_library = self.root / "repo-library"
@@ -594,6 +621,8 @@ class Validator:
                 isinstance(tag, str) and bool(tag.strip()) for tag in tags
             ):
                 self.error("METADATA_TAGS", path, "`tags` must be a non-empty list of non-empty strings")
+            else:
+                self._validate_tag_vocabulary(path, tags)
             if "ext" in metadata:
                 self._validate_ext(path, metadata["ext"])
 

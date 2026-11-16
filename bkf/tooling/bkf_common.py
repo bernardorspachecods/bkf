@@ -14,6 +14,7 @@ from ruamel.yaml.error import YAMLError
 
 MAP_NAME = "MAP.md"
 README_NAME = "readme.md"
+TAG_VOCABULARY_NAME = "tag-vocabulary.yaml"
 
 
 NAVIGATION_MAP_REVIEW_LINES = 350
@@ -89,6 +90,53 @@ def parse_markdown(path: Path) -> ParsedMarkdown:
         frontmatter=values,
         body="".join(lines[closing + 1 :]),
     )
+
+
+def load_tag_vocabulary(root: Path) -> dict[str, list[str]] | None:
+    """Return the bundle's canonical tags with their synonyms, or None when it has no vocabulary file.
+
+    Raises BKFInputError naming the first problem when the file is unusable.
+    """
+    path = root / TAG_VOCABULARY_NAME
+    if not path.is_file():
+        return None
+    yaml = YAML(typ="safe")
+    yaml.version = (1, 2)
+    yaml.allow_duplicate_keys = False
+    try:
+        data = yaml.load(read_text_preserving_newlines(path))
+    except (YAMLError, BKFInputError) as exc:
+        raise BKFInputError(f"cannot use {TAG_VOCABULARY_NAME}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise BKFInputError(f"{TAG_VOCABULARY_NAME} must be a mapping from each tag to a list of synonyms")
+    keys = {key.casefold() for key in data if isinstance(key, str)}
+    seen: dict[str, str] = {}
+    for key, synonyms in data.items():
+        if not isinstance(key, str) or not key.strip():
+            raise BKFInputError(f"{TAG_VOCABULARY_NAME}: tag {key!r} must be a non-empty string")
+        if not isinstance(synonyms, list):
+            raise BKFInputError(f"{TAG_VOCABULARY_NAME}: synonyms of `{key}` must be a list")
+        for synonym in synonyms:
+            if not isinstance(synonym, str) or not synonym.strip():
+                raise BKFInputError(f"{TAG_VOCABULARY_NAME}: synonyms of `{key}` must be non-empty strings")
+            folded = synonym.casefold()
+            if folded in keys:
+                raise BKFInputError(f"{TAG_VOCABULARY_NAME}: synonym `{synonym}` of `{key}` equals a tag")
+            if folded in seen:
+                raise BKFInputError(
+                    f"{TAG_VOCABULARY_NAME}: synonym `{synonym}` of `{key}` is already a synonym of `{seen[folded]}`"
+                )
+            seen[folded] = key
+    return {key: list(synonyms) for key, synonyms in data.items()}
+
+
+def canonical_tag(vocabulary: dict[str, list[str]], tag: str) -> str | None:
+    """Return the canonical tag that `tag` names as a synonym (case-insensitive), or None."""
+    folded = tag.casefold()
+    for key, synonyms in vocabulary.items():
+        if any(synonym.casefold() == folded for synonym in synonyms):
+            return key
+    return None
 
 
 def tracking_state(frontmatter: dict[str, object], *, path: str) -> bool:

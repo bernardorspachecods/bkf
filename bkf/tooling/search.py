@@ -42,6 +42,8 @@ class Section:
     heading: str
     description: str
     body: str
+    title: str = ""
+    tags: tuple[str, ...] = ()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("query", nargs="+", help="question or topic to search for")
     parser.add_argument("--cwd", type=Path, help="directory in the bundle (defaults to current directory)")
     parser.add_argument("--limit", type=int, default=5, help="maximum number of hits (default: 5)")
+    parser.add_argument("--path", type=Path, help="only documents under this directory, or this file")
+    parser.add_argument("--heading", help="only sections whose own heading equals this text (case-insensitive)")
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        help="only documents carrying this tag; repeat to require several",
+    )
     parser.add_argument("--debug", action="store_true", help="print a traceback when search fails")
     return parser
 
@@ -64,7 +74,7 @@ def _bundle_root(cwd: Path, is_bundle_root_map) -> Path | None:
     return min(candidates, key=lambda directory: len(directory.parts)) if candidates else None
 
 
-def _sections(body: str, path: str, description: str) -> list[Section]:
+def _sections(body: str, path: str, description: str, tags: tuple[str, ...] = ()) -> list[Section]:
     """Split Markdown into heading sections, ignoring headings inside fences."""
     lines = body.splitlines()
     heading_rows: list[tuple[int, int, str]] = []
@@ -92,11 +102,11 @@ def _sections(body: str, path: str, description: str) -> list[Section]:
     if heading_rows and heading_rows[0][0] > 0:
         prefix = "\n".join(lines[: heading_rows[0][0]]).strip()
         if prefix:
-            sections.append(Section(path, first_heading or "(top)", description, prefix))
+            sections.append(Section(path, first_heading or "(top)", description, prefix, first_heading or "(top)", tags))
     elif not heading_rows:
         text = "\n".join(lines).strip()
         if text:
-            sections.append(Section(path, "(top)", description, text))
+            sections.append(Section(path, "(top)", description, text, "(top)", tags))
 
     trail: list[tuple[int, str]] = []
     for offset, (line_index, level, title) in enumerate(heading_rows):
@@ -105,17 +115,40 @@ def _sections(body: str, path: str, description: str) -> list[Section]:
         label = " > ".join(item for _, item in trail)
         next_line = heading_rows[offset + 1][0] if offset + 1 < len(heading_rows) else len(lines)
         text = "\n".join(lines[line_index + 1 : next_line]).strip()
-        sections.append(Section(path, label, description, text))
+        sections.append(Section(path, label, description, text, title, tags))
     return sections
 
 
-def _collect_sections(root: Path, find_bundles, is_bundle_root_map, in_nested_bundle) -> list[Section]:
-    from bkf_common import BKFInputError, parse_markdown, tracking_state
+def _vocabularies(root: Path, find_bundles) -> dict[Path, dict[str, list[str]]]:
+    from bkf_common import load_tag_vocabulary
 
+    result: dict[Path, dict[str, list[str]]] = {}
+    for bundle in find_bundles(root):
+        if any(part.startswith(".") for part in bundle.relative_to(root).parts):
+            continue
+        vocabulary = load_tag_vocabulary(bundle)
+        if vocabulary is not None:
+            result[bundle] = vocabulary
+    return result
+
+
+def _collect_sections(
+    root: Path,
+    find_bundles,
+    is_bundle_root_map,
+    in_nested_bundle,
+    vocabularies: dict[Path, dict[str, list[str]]] | None = None,
+    scope: Path | None = None,
+    required_tags: list[str] | None = None,
+) -> list[Section]:
+    from bkf_common import BKFInputError, canonical_tag, parse_markdown, tracking_state
+
+    vocabularies = vocabularies or {}
     result: list[Section] = []
     for bundle in find_bundles(root):
         if any(part.startswith(".") for part in bundle.relative_to(root).parts):
             continue
+        required = _resolve_required_tags(required_tags or [], vocabularies.get(bundle), canonical_tag)
         for directory, directories, filenames in os.walk(bundle):
             directory_path = Path(directory)
             directories[:] = sorted(
@@ -137,6 +170,8 @@ def _collect_sections(root: Path, find_bundles, is_bundle_root_map, in_nested_bu
                     continue
                 if in_nested_bundle(bundle, path):
                     continue
+                if scope is not None and not (path == scope or path.is_relative_to(scope)):
+                    continue
                 relative = "/" + path.relative_to(root).as_posix()
                 try:
                     parsed = parse_markdown(path)
@@ -150,33 +185,81 @@ def _collect_sections(root: Path, find_bundles, is_bundle_root_map, in_nested_bu
                     description = parsed.frontmatter.get("description", "")
                     if not isinstance(description, str):
                         description = ""
+                    tags = parsed.frontmatter.get("tags")
+                    tags = tuple(tag for tag in tags if isinstance(tag, str)) if isinstance(tags, list) else ()
                 except BKFInputError as exc:
                     raise BKFInputError(f"{relative.lstrip('/')}: {exc}") from exc
-                result.extend(_sections(parsed.body, relative, " ".join(description.split())))
+                if required and not required <= {tag.casefold() for tag in tags}:
+                    continue
+                result.extend(_sections(parsed.body, relative, " ".join(description.split()), tags))
     return result
+
+
+def _resolve_required_tags(tags: list[str], vocabulary: dict[str, list[str]] | None, canonical_tag) -> set[str]:
+    """Fold the requested tags; with a vocabulary, a synonym resolves to its canonical tag."""
+    resolved: set[str] = set()
+    for tag in tags:
+        canonical = canonical_tag(vocabulary, tag) if vocabulary else None
+        resolved.add((canonical or tag).casefold())
+    return resolved
 
 
 def _query_terms(question: str) -> list[str]:
     return [word for word in WORD.findall(question.lower()) if word not in STOPWORDS]
 
 
-def _search(sections: list[Section], terms: list[str], limit: int) -> list[tuple[Section, float]]:
+def _expansions(question: str, vocabularies: dict[Path, dict[str, list[str]]]) -> list[str]:
+    """Return the canonical tags and synonyms to add as phrases when the question names a tag or a synonym."""
+    words = WORD.findall(question.lower())
+    phrases: list[str] = []
+    for vocabulary in vocabularies.values():
+        for key, synonyms in vocabulary.items():
+            names = [key, *synonyms]
+            if not any(_contains_sequence(words, WORD.findall(name.lower())) for name in names):
+                continue
+            for name in names:
+                phrase = " ".join(WORD.findall(name.lower()))
+                if phrase and phrase not in phrases:
+                    phrases.append(phrase)
+    return phrases
+
+
+def _contains_sequence(words: list[str], sequence: list[str]) -> bool:
+    size = len(sequence)
+    return size > 0 and any(words[index : index + size] == sequence for index in range(len(words) - size + 1))
+
+
+def _search(
+    sections: list[Section], terms: list[str], limit: int, phrases: list[str] | None = None
+) -> list[tuple[Section, float]]:
     connection = sqlite3.connect(":memory:")
     try:
         connection.execute(
             "CREATE VIRTUAL TABLE sections USING fts5(path UNINDEXED, heading, description, body, tokenize='porter unicode61')"
         )
+        # Tags sit in their own index: bm25 length normalization counts every column of a row,
+        # so a tags column in `sections` would shift the ranking of queries that match no tag.
+        connection.execute("CREATE VIRTUAL TABLE section_tags USING fts5(tags, tokenize='porter unicode61')")
         connection.executemany(
             "INSERT INTO sections(path, heading, description, body) VALUES (?, ?, ?, ?)",
             ((section.path, section.heading, section.description, section.body) for section in sections),
         )
-        query = " OR ".join(f'"{term}"' for term in terms)
-        rows = connection.execute(
-            "SELECT rowid, bm25(sections, 0, 20, 1, 1) AS rank "
-            "FROM sections WHERE sections MATCH ? ORDER BY rank, path LIMIT ?",
-            (query, limit),
-        ).fetchall()
-        return [(sections[rowid - 1], rank) for rowid, rank in rows]
+        connection.executemany(
+            "INSERT INTO section_tags(tags) VALUES (?)",
+            ((" ".join(section.tags),) for section in sections),
+        )
+        query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases or []])
+        ranks: dict[int, float] = {}
+        for rowid, rank in connection.execute(
+            "SELECT rowid, bm25(sections, 0, 20, 1, 1) FROM sections WHERE sections MATCH ?", (query,)
+        ):
+            ranks[rowid] = rank
+        for rowid, rank in connection.execute(
+            "SELECT rowid, bm25(section_tags) * 20 FROM section_tags WHERE section_tags MATCH ?", (query,)
+        ):
+            ranks[rowid] = ranks.get(rowid, 0.0) + rank
+        ordered = sorted(ranks.items(), key=lambda item: (item[1], sections[item[0] - 1].path))
+        return [(sections[rowid - 1], rank) for rowid, rank in ordered[:limit]]
     finally:
         connection.close()
 
@@ -214,8 +297,20 @@ def main(argv: list[str] | None = None) -> int:
         root = _bundle_root(cwd, is_bundle_root_map)
         if root is None:
             raise ValueError(f"no BKF bundle contains {cwd}")
-        sections = _collect_sections(root, find_bundles, is_bundle_root_map, in_nested_bundle)
-        hits = _search(sections, terms, args.limit)
+        scope = None
+        if args.path is not None:
+            scope = (args.path if args.path.is_absolute() else cwd / args.path).resolve()
+            if not scope.is_relative_to(root):
+                print(f"bkf search: --path is outside the bundle: {args.path}", file=sys.stderr)
+                return 2
+        vocabularies = _vocabularies(root, find_bundles)
+        sections = _collect_sections(
+            root, find_bundles, is_bundle_root_map, in_nested_bundle, vocabularies, scope, args.tag
+        )
+        if args.heading is not None:
+            heading = args.heading.strip().casefold()
+            sections = [section for section in sections if section.title.casefold() == heading]
+        hits = _search(sections, terms, args.limit, _expansions(" ".join(args.query), vocabularies))
         reconfigure = getattr(sys.stdout, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8")

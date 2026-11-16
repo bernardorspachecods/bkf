@@ -84,6 +84,9 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   The `feedback` and `ideas` logs are exempt from the navigation map warnings.
   When any navigation map warning is printed, one paragraph on writing the map
   ends the findings.
+- A bundle with a `tag-vocabulary.yaml` gets `TAG_VOCABULARY_INVALID` for an
+  unusable file and `TAG_UNKNOWN` for each tag that is not a canonical tag
+  ([frontmatter profiles](/format/frontmatter-profiles.md#tag-vocabulary)).
 - `REPO_LIBRARY_ENTRY_UNLINKED` warns when no enclosing-bundle document outside
   `repo-library/` links to a Markdown entry.
 
@@ -371,7 +374,8 @@ one-time review of new hooks, so run `/hooks` in Codex after the first install.
 
 ## bkf search
 
-`bkf search QUERY... [--cwd PATH] [--limit N] [--debug]` searches sections in
+`bkf search QUERY... [--cwd PATH] [--limit N] [--path PATH] [--heading TEXT]
+[--tag TAG]... [--debug]` searches sections in
 the outermost bundle containing the selected directory, including nested
 bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
 The index is rebuilt in memory for each call.
@@ -382,10 +386,31 @@ folders. Membership and document metadata follow the
 [tracking rules](/format/format-specification.md#32-tracking) and
 [frontmatter profiles](/format/frontmatter-profiles.md).
 
+Tags are indexed for every section of a document, so a query word that is a
+tag ranks that document's sections. Queries that match no tag rank as they would
+without tags. When a bundle has a
+[`tag-vocabulary.yaml`](/format/frontmatter-profiles.md#tag-vocabulary) and the
+query contains a canonical tag or any of its synonyms (case-insensitive; a
+multi-word synonym matches a contiguous run of words, stopwords included), the
+canonical tag and all its synonyms are added to the query as phrases. Each bundle
+searched contributes its own vocabulary. A vocabulary that is invalid makes the
+search fail with exit `1`.
+
+Filters narrow the sections searched and combine with AND:
+
+- `--path PATH` keeps documents under that directory, or that file. It is
+  resolved against `--cwd` (or the current directory when `--cwd` is absent). A
+  path outside the bundle exits `2`.
+- `--heading TEXT` keeps sections whose own heading, the last element of the
+  heading trail, equals the text, case-insensitive.
+- `--tag TAG` keeps documents carrying that tag, case-insensitive. A synonym
+  resolves to its canonical tag through the vocabulary of the document's bundle.
+  Repeat the option to require several tags.
+
 Results show the `/`-rooted path, section heading, and a whitespace-collapsed
 preview of up to 200 characters. Output is capped at 4,000 characters.
 
 Agents should search before writing or moving a rule to see where it already
 lives. Exit `0` means results or no matches; `2` means the query has no
-searchable words; `1` reports a search failure. `--debug` adds a traceback to
+searchable words or `--path` is outside the bundle; `1` reports a search failure. `--debug` adds a traceback to
 failures.

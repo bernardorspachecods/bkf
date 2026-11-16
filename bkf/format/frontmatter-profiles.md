@@ -84,6 +84,9 @@ whitespace-only content is empty. Tags are how a document is selected for a
 task, so a document without them cannot be found by tag. A generic document
 MAY also carry the optional [`ext` field](#repo-specific-fields-ext).
 
+Tags are checked against the bundle's [tag vocabulary](#tag-vocabulary) when it
+has one.
+
 The generic filename rule is lowercase kebab-case. It does not apply to any
 file named `AGENTS.md`.
 
@@ -184,3 +187,28 @@ description: Collects ideas from the user and agents for later review as future 
 `description` follows the [description rule](#descriptions). The
 [format specification](/format/format-specification.md#31-map-files-and-inventories)
 defines the allowed fields and other map requirements.
+
+### Tag vocabulary
+
+A bundle that wants one agreed set of tags keeps it in `tag-vocabulary.yaml` at
+the bundle root. A nested bundle uses its own root's file. The file is optional;
+a bundle without it does not check tags.
+
+```yaml
+ai: [artificial intelligence, inteligência artificial]
+thesis: []
+```
+
+The file is a top-level mapping from each canonical tag to a list of synonyms,
+which may be empty. Keys and synonyms are non-empty strings. Synonyms are unique
+across the whole file, compared case-insensitively, and never equal to a key.
+A file that breaks these rules is invalid (`TAG_VOCABULARY_INVALID`, reported on
+the file); while it is invalid, tags are not checked.
+
+- When the file exists, every tag of every tracked document that carries `tags`
+  MUST be a key. Any other tag is invalid (`TAG_UNKNOWN`, reported on the
+  document). When the tag equals a synonym, compared case-insensitively, the
+  message names its canonical tag; otherwise it lists up to three closest keys.
+- The file is not a member: BKF does not list it in the map.
+- [`bkf search`](/tooling/commands.md#bkf-search) uses the vocabulary to widen
+  queries and to resolve `--tag`.
