@@ -408,7 +408,10 @@ Filters narrow the sections searched and combine with AND:
   Repeat the option to require several tags.
 
 Results show the `/`-rooted path, section heading, and a whitespace-collapsed
-preview of up to 200 characters. Output is capped at 4,000 characters.
+preview of up to 200 characters. When the query matches the section body, the
+preview is the matching passage, with `…` where text is cut and no highlight
+markers. When the hit came only from the heading, description or tags, the
+preview is the start of the body. Output is capped at 4,000 characters.
 
 Agents should search before writing or moving a rule to see where it already
 lives. Exit `0` means results or no matches; `2` means the query has no

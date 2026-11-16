@@ -8,7 +8,7 @@ import re
 import sqlite3
 import sys
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
@@ -44,6 +44,7 @@ class Section:
     body: str
     title: str = ""
     tags: tuple[str, ...] = ()
+    preview: str = ""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -259,18 +260,46 @@ def _search(
         ):
             ranks[rowid] = ranks.get(rowid, 0.0) + rank
         ordered = sorted(ranks.items(), key=lambda item: (item[1], sections[item[0] - 1].path))
-        return [(sections[rowid - 1], rank) for rowid, rank in ordered[:limit]]
+        return [
+            (replace(sections[rowid - 1], preview=_preview(connection, rowid, query, sections[rowid - 1].body)), rank)
+            for rowid, rank in ordered[:limit]
+        ]
     finally:
         connection.close()
+
+
+MARK_START = "\x02"
+MARK_END = "\x03"
+SNIPPET_TOKENS = 64
+
+
+def _start_of(body: str) -> str:
+    preview = " ".join(body.split())
+    if len(preview) > PREVIEW_LENGTH:
+        preview = preview[:PREVIEW_LENGTH].rstrip() + "…"
+    return preview
+
+
+def _preview(connection: sqlite3.Connection, rowid: int, query: str, body: str) -> str:
+    """Return the passage of the body that matches the query, or the start of the body without a match."""
+    for tokens in range(SNIPPET_TOKENS, 0, -1):
+        row = connection.execute(
+            "SELECT snippet(sections, 3, ?, ?, '…', ?) FROM sections WHERE sections MATCH ? AND rowid = ?",
+            (MARK_START, MARK_END, tokens, query, rowid),
+        ).fetchone()
+        if row is None or MARK_START not in row[0]:
+            return _start_of(body)
+        text = " ".join(row[0].replace(MARK_START, "").replace(MARK_END, "").split())
+        if len(text) <= PREVIEW_LENGTH:
+            return text
+    return text[: PREVIEW_LENGTH - 1].rstrip() + "…"
 
 
 def _render(hits: list[tuple[Section, float]]) -> str:
     blocks: list[str] = []
     used = 0
     for index, (section, _) in enumerate(hits, 1):
-        preview = " ".join(section.body.split())
-        if len(preview) > PREVIEW_LENGTH:
-            preview = preview[:PREVIEW_LENGTH].rstrip() + "…"
+        preview = section.preview or _start_of(section.body)
         block = f"{index}  {section.path} § {section.heading}\n   {preview}"
         addition = len(block) + (1 if blocks else 0)
         if used + addition + 1 > OUTPUT_LIMIT:

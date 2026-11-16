@@ -42,6 +42,71 @@ def run(root: Path, *arguments: str, cwd: Path = TOOLING) -> subprocess.Complete
     )
 
 
+class PreviewTests(unittest.TestCase):
+    def preview_of(self, result: subprocess.CompletedProcess[str]) -> str:
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.splitlines()[1].strip()
+
+    def test_match_deep_in_long_body_appears_in_preview(self) -> None:
+        claims = "\n".join(f"- Claim {n}: finding number {n} about topic{n}." for n in range(1, 16))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "a.md").write_text(document("Paper", f"## Key claims\n\n{claims}\n"), encoding="utf-8")
+
+            result = run(root, "topic13", "--heading", "Key claims")
+
+        preview = self.preview_of(result)
+        self.assertIn("topic13", preview)
+        self.assertLessEqual(len(preview), search.PREVIEW_LENGTH)
+        self.assertNotIn("\x02", preview)
+        self.assertTrue(preview.startswith("…"))
+
+    def test_heading_description_or_tag_match_gives_start_of_body(self) -> None:
+        body = "Opening words here. " + "filler " * 80
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "a.md").write_text(
+                document("Quokka", body, description="About wombats."), encoding="utf-8"
+            )
+            (root / "b.md").write_text(document("Plain", body, tags="zebra"), encoding="utf-8")
+            for query, name in (("quokka", "/a.md"), ("wombats", "/a.md"), ("zebra", "/b.md")):
+                result = run(root, query)
+                lines = result.stdout.splitlines()
+                self.assertIn(name, lines[0])
+                self.assertTrue(lines[1].strip().startswith("Opening words here. filler"), (query, lines[1]))
+                self.assertEqual(len(lines[1].strip()), search.PREVIEW_LENGTH + 1)
+
+    def test_multi_word_synonym_phrase_match_appears_in_preview(self) -> None:
+        body = "Preamble. " * 60 + "Notes on artificial intelligence in practice. " + "Tail. " * 60
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "tag-vocabulary.yaml").write_text(VOCABULARY, encoding="utf-8")
+            (root / "a.md").write_text(document("Notes", body, tags="ai"), encoding="utf-8")
+
+            result = run(root, "tell me about ai")
+
+        preview = self.preview_of(result)
+        self.assertIn("artificial intelligence", preview)
+        self.assertLessEqual(len(preview), search.PREVIEW_LENGTH)
+
+    def test_preview_never_exceeds_limit_and_order_is_unchanged(self) -> None:
+        sections = [
+            search.Section(f"/{n}.md", f"H{n}", "", ("word " * (n * 30)) + "needle " + "tail " * 100, f"H{n}")
+            for n in range(1, 6)
+        ]
+        hits = search._search(sections, ["needle"], 5)
+        # bm25 ranks shorter bodies first; the fixture's order is fixed by length.
+        self.assertEqual([hit.path for hit, _ in hits], ["/1.md", "/2.md", "/3.md", "/4.md", "/5.md"])
+        for hit, _ in hits:
+            self.assertLessEqual(len(hit.preview), search.PREVIEW_LENGTH)
+            self.assertIn("needle", hit.preview)
+        ranks = [rank for _, rank in hits]
+        self.assertEqual(ranks, sorted(ranks))
+
+
 class SearchTests(unittest.TestCase):
     def test_heading_match_ranks_above_body_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
