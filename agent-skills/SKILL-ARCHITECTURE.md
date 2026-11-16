@@ -8,7 +8,7 @@ It contains only package metadata and supported runtime metadata derived from th
 | --- | --- | --- |
 | [agentic-work](skills/agentic-work/SKILL.md) | Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a gate and a review, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm. |  |
 | [align-intent](skills/align-intent/SKILL.md) | Use at the start of any task that is more than a small change: settle with the user what is wanted and why, and when it is done, before working. Do not use inside a plan, a delegated task or a review: the brief already carries the intent. |  |
-| [ambitious](skills/ambitious/SKILL.md) | Push the ambition of a task the user names along three axes (altitude, depth, range) while discussing it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own or for small, well-bounded changes. | yes |
+| [ambitious](skills/ambitious/SKILL.md) | Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes, or to research a topic (use research). | yes |
 | [before-compaction](skills/before-compaction/SKILL.md) | Before the user compacts the chat, make sure everything the work needs is written in documents and suggest the compaction message. Use only when the user is about to compact; do not use to hand work to a new chat (use handoff). | yes |
 | [brainstorm](skills/brainstorm/SKILL.md) | Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions. |  |
 | [code-work](skills/code-work/SKILL.md) | Use whenever you write or fix code: the principles for building it and verifying it, whoever coordinates the work. |  |
@@ -49,12 +49,12 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## ambitious
 
-- Description: Push the ambition of a task the user names along three axes (altitude, depth, range) while discussing it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own or for small, well-bounded changes.
+- Description: Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes, or to research a topic (use research).
 - Package: [`agent-skills/skills/ambitious`](skills/ambitious/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
   - `display_name`: Ambitious
-  - `short_description`: Raise the ambition of a task before running it
+  - `short_description`: Seek the cause and how the best do it, not the first fix
 - Runtime policy: `explicit invocation required`
 
 ## before-compaction
