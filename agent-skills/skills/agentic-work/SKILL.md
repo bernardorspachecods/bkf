@@ -51,27 +51,27 @@ Write the goal once, as `align-intent` defines the intent, and have the user con
 
 ## 2. The unit brief
 
-The brief is all the implementer and the reviewer share, so it stands alone. The tools read its `gate` and `premise` fences and its Removes and Creates sections.
-
-Result, Out of scope, Gate and Criteria are always there. Receives and Leaves ready exist only between units that depend on each other, Removes and Creates only when the unit deletes or adds files. Leave out a section that has nothing to say.
+The brief is all the implementer and the reviewer share, so it stands alone. The tools read its `gate` and `premise` fences and its Removes and Creates sections. A section marked *only when* is left out otherwise.
 
 ~~~markdown
 ## Result
 What exists when this unit is done, and when to stop.
 
 ## Receives
-Concrete facts this unit can rely on from earlier units.
+*Only when an earlier unit leaves something this one needs.* Concrete facts this unit can rely on from earlier units.
 ```premise
 grep -q "photo" db/schema.sql
 ```
 
 ## Leaves ready
-Concrete facts later units can rely on.
+*Only when a later unit needs something from this one.* Concrete facts later units can rely on.
 
 ## Removes
+*Only when the unit deletes files.*
 `path/to/remove`
 
 ## Creates
+*Only when the unit adds files.*
 `path/to/create`
 
 ## Out of scope
