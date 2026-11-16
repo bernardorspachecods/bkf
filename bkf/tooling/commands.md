@@ -239,7 +239,12 @@ a tool whose folder is missing is skipped.
 
 - **modes** registers `UserPromptSubmit` and `PreToolUse` hooks that run a copy
   of `agent_modes.py` placed at `~/.agent-hooks/mode.py`. A prompt starting with
-  `w:` tells the agent to implement right away. A prompt starting with `t:` puts
+  `w:` tells the agent to implement right away. A prompt starting with `g:`
+  tells the agent to do its work in a separate git worktree before any edit,
+  created with `git worktree add -b` from the local `HEAD` (never from origin,
+  which the `EnterWorktree` tool's `name` option uses by default) and entered
+  with `EnterWorktree` by `path`; it blocks
+  nothing and does not choose between implementing and discussing. A prompt starting with `t:` puts
   the agent in talk mode: it is told to discuss only, and the hook denies
   `Edit`, `Write`, `NotebookEdit`, `apply_patch`, and any `Bash` command it
   cannot show to be read-only. `psql` counts as read-only only when every `-c`

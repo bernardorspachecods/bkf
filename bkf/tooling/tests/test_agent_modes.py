@@ -164,6 +164,17 @@ class PromptModes(unittest.TestCase):
         decision = json.loads(blocked)
         self.assertEqual(decision["hookSpecificOutput"]["permissionDecision"], "deny")
 
+    def test_g_injects_worktree_instruction_and_blocks_nothing(self):
+        output = self.prompt("g: fix the typo")
+        self.assertIn("separate git worktree", output)
+        self.assertIn("'g:'", output)
+        self.assertIn("LOCAL", output)
+        self.assertIn("HEAD", output)
+        self.assertEqual(json.loads(agent_modes.state_file("s").read_text())["mode"], "g")
+        allowed = self.run_hook({"hook_event_name": "PreToolUse", "session_id": "s", "tool_name": "Write"})
+        self.assertEqual(allowed, "")
+        self.assertIn("separate git worktree", self.prompt("G: again"))
+
     def test_uppercase_prefixes_work(self):
         self.assertIn("MODE: IMPLEMENT", self.prompt("W: implement"))
         self.assertEqual(json.loads(agent_modes.state_file("s").read_text())["mode"], "w")

@@ -3,6 +3,7 @@
 
   w: <prompt>  implement right away
   t: <prompt>  talk / brainstorm only (mutating tools are blocked)
+  g: <prompt>  do the work in a separate git worktree (nothing is blocked)
   (no prefix)  free
 
 Same script handles UserPromptSubmit (detect prefix, inject instruction, save
@@ -15,13 +16,23 @@ import sys
 from pathlib import Path
 
 STATE_DIR = Path.home() / ".agent-hooks" / "state"
-PREFIX = re.compile(r"^\s*([wt])\s*:", re.IGNORECASE)
+PREFIX = re.compile(r"^\s*([wtg])\s*:", re.IGNORECASE)
 
 INSTRUCTIONS = {
     "w": (
         "MODE: IMPLEMENT (the user prefixed the prompt with 'w:', ignore the prefix itself). "
         "Implement right away. Do not ask for confirmation or present options first; "
         "pick sensible defaults, state them briefly, and do the work."
+    ),
+    "g": (
+        "WORKTREE (the user prefixed the prompt with 'g:', ignore the prefix itself). "
+        "Do the work of this prompt in a separate git worktree, not in the current checkout. "
+        "Before any edit, create the worktree from the LOCAL repository, never from origin: "
+        "run `git worktree add -b <new-branch> .claude/worktrees/<name> HEAD` (local HEAD, no fetch or pull first), "
+        "then switch into it with the EnterWorktree tool using `path` (not `name`, which branches from origin by default). "
+        "Without that tool, work in the new directory. "
+        "Do not change files in the original checkout. The prompt is otherwise free: "
+        "this prefix does not say to implement or to only discuss."
     ),
     "t": (
         "MODE: TALK / BRAINSTORM (the user prefixed the prompt with 't:', ignore the prefix itself). "
