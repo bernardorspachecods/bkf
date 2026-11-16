@@ -6,20 +6,19 @@ It contains only package metadata and supported runtime metadata derived from th
 
 | Skill | When to use it | Explicit only |
 | --- | --- | --- |
+| [agentic-work](skills/agentic-work/SKILL.md) | Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a gate and a review, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm. |  |
 | [align-intent](skills/align-intent/SKILL.md) | Use at the start of any task that is more than a small change: settle with the user what is wanted and why, and when it is done, before working. Do not use inside a plan, a delegated task or a review: the brief already carries the intent. |  |
 | [ambitious](skills/ambitious/SKILL.md) | Push the ambition of a task the user names along three axes (altitude, depth, range) while discussing it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own or for small, well-bounded changes. | yes |
 | [before-compaction](skills/before-compaction/SKILL.md) | Before the user compacts the chat, make sure everything the work needs is written in documents and suggest the compaction message. Use only when the user is about to compact; do not use to hand work to a new chat (use handoff). | yes |
 | [brainstorm](skills/brainstorm/SKILL.md) | Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions. |  |
-| [code-review](skills/code-review/SKILL.md) | Use when the user asks for a code review of a branch, pull request, revision range or working tree run by separate agents, or a stopped review run to resume. Looking over your own change while you work is part of code-work. |  |
-| [code-work](skills/code-work/SKILL.md) | Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules. |  |
+| [code-work](skills/code-work/SKILL.md) | Use whenever you write or fix code: the principles for building it and verifying it, whoever coordinates the work. |  |
 | [council](skills/council/SKILL.md) | Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume. |  |
-| [crew](skills/crew/SKILL.md) | Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review) or to continue one task in a new chat (handoff). | yes |
+| [crew](skills/crew/SKILL.md) | Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (agentic-work, research, council) or to continue one task in a new chat (handoff). | yes |
 | [disk-report](skills/disk-report/SKILL.md) | Measure what takes disk space on the user's Mac and present it as a table with a risk per item (Claude and Codex sessions, caches, Xcode, VMs, app data). Use when the user wants to free disk space or asks what is filling the disk. It is read-only and never deletes anything; do not use to clean up git branches or worktrees (use git-worktree-cleanup). |  |
 | [git-merge-queue](skills/git-merge-queue/SKILL.md) | Merge the finished work of several sessions of one repository as a batch. Each session registers its branch in a shared queue, then one integrator merges the batch, tests the result and cleans up the sessions it merged. Use only when the user asks to queue a branch, close the batch or resume an integration; do not use for a single session's merge (use git-worktree-cleanup). | yes |
 | [git-status-cleanup](skills/git-status-cleanup/SKILL.md) | Commit the uncommitted changes of the current worktree, either only what this session changed (default) or everything. Do not use to delete merged branches or worktrees (use git-worktree-cleanup). | yes |
 | [git-worktree-cleanup](skills/git-worktree-cleanup/SKILL.md) | Close out git worktrees and branches. `mine` (default) commits this session's changes, merges its branch locally into the default branch and removes the session worktree (if any) and branch. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup). | yes |
 | [handoff](skills/handoff/SKILL.md) | Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task. | yes |
-| [plan](skills/plan/SKILL.md) | Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script or this conversation runs, or a stopped plan run to resume. A single task is not a plan. |  |
 | [prototype](skills/prototype/SKILL.md) | Build throwaway code that answers a design question - does a logic or state model feel right, or what should a page look like - then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship. |  |
 | [repo-library](skills/repo-library/SKILL.md) | Use when adding or reviewing an entry of a repository's repo-library: a procedure or rule set that the repository applies repeatedly. |  |
 | [repo-maintenance](skills/repo-maintenance/SKILL.md) | Use when your change affects a repository's documents, when organizing or restructuring them, or when writing or revising a document that other agents will act on, mostly under BKF. |  |
@@ -29,6 +28,15 @@ It contains only package metadata and supported runtime metadata derived from th
 | [session-export](skills/session-export/SKILL.md) | Export chosen Claude Code or Codex sessions to readable files with what the chat itself does not show (tokens per turn, models, what woke each turn, messages between sessions), to analyze how skills and instructions behave. Use only when the user asks to export or analyze specific sessions; do not use to summarize a conversation or to export sessions on your own initiative. | yes |
 | [skill-authoring](skills/skill-authoring/SKILL.md) | Create and maintain agent skills. |  |
 | [watch](skills/watch/SKILL.md) | Watch a video (URL or local path). Downloads with yt-dlp, extracts auto-scaled frames with ffmpeg, pulls the transcript from captions (or local WhisperX / cloud Whisper fallback), and hands the result to the agent so it can answer questions about what's in the video. With a Gemini API key, Google's agentic video model watches the full video instead. |  |
+
+## agentic-work
+
+- Description: Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a gate and a review, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm.
+- Package: [`agent-skills/skills/agentic-work`](skills/agentic-work/SKILL.md)
+- Runtime metadata: `present`
+- Supported UI metadata:
+  - `display_name`: Agentic work
+  - `short_description`: Govern work done by agents: reviewed units, one or many
 
 ## align-intent
 
@@ -68,18 +76,9 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Brainstorm
   - `short_description`: Think through ideas and decisions together
 
-## code-review
-
-- Description: Use when the user asks for a code review of a branch, pull request, revision range or working tree run by separate agents, or a stopped review run to resume. Looking over your own change while you work is part of code-work.
-- Package: [`agent-skills/skills/code-review`](skills/code-review/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Code review
-  - `short_description`: Review a diff on two axes with agents that check each other
-
 ## code-work
 
-- Description: Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules.
+- Description: Use whenever you write or fix code: the principles for building it and verifying it, whoever coordinates the work.
 - Package: [`agent-skills/skills/code-work`](skills/code-work/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
@@ -97,7 +96,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## crew
 
-- Description: Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (plan, research, council, code-review) or to continue one task in a new chat (handoff).
+- Description: Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (agentic-work, research, council) or to continue one task in a new chat (handoff).
 - Package: [`agent-skills/skills/crew`](skills/crew/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
@@ -153,15 +152,6 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Handoff
   - `short_description`: Continue the current task in a fresh Claude session
 - Runtime policy: `explicit invocation required`
-
-## plan
-
-- Description: Use when the user has an agreed goal that needs several coordinated pieces of work, a plan split into small reviewed units that a script or this conversation runs, or a stopped plan run to resume. A single task is not a plan.
-- Package: [`agent-skills/skills/plan`](skills/plan/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Plan
-  - `short_description`: Plan a goal as reviewed units run by agents
 
 ## prototype
 

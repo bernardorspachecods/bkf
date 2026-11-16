@@ -1,0 +1,3 @@
+interface:
+  display_name: "Agentic work"
+  short_description: "Govern work done by agents: reviewed units, one or many"

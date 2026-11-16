@@ -1,11 +1,9 @@
 ---
 name: code-work
-description: "Use when you write or fix code yourself, in conversation. Do not use inside a plan, a delegated task or a review: their briefs already carry these rules."
+description: "Use whenever you write or fix code: the principles for building it and verifying it, whoever coordinates the work."
 ---
 
 # Code work
-
-Inside a plan, a delegated task or a review, stop reading: the brief you were given already carries these rules.
 
 <!-- inject: ../../modules/core-code-principles.md -->
 <!-- BKF:GENERATED-INJECTED -->
@@ -13,23 +11,21 @@ Inside a plan, a delegated task or a review, stop reading: the brief you were gi
 
 ### Building
 
-- Work test first, in small slices, when the behavior is clear enough to specify (a feature or a bug fix). Write one focused test for one behavior and confirm it fails for the expected reason; make the smallest change that passes; refactor while green; then take the next behavior. For a bug, start with a regression test that reproduces it, and if it does not fail as expected, investigate before changing production code.
-- Grow in layers and decide for the long term. Start from the smallest version that works end to end and extend it one verified step at a time; the scope of a step is small, but not the quality of its decisions. Do not accept a stopgap that only works for now and is meant to be replaced later.
-- Reuse before building. Prefer an established pattern, a well-maintained library or an existing dependency to a new abstraction or a reimplementation. Check the repository and its dependencies before assuming a capability is missing; if a new shape is necessary, keep it local and explain why.
-- Avoid these smells, with their fixes. A documented repository standard overrides them.
-  - Duplicated logic in the change: extract it into one function.
-  - Speculative generality, meaning abstraction, parameters or hooks nobody asked for: delete them and add them back when a real need shows.
-  - Middle man, a function or class that only passes the call on: call the real target.
-  - Shotgun surgery, one change forcing scattered edits: gather what changes together into one module.
+- Test first when the behavior is clear: one failing test for one behavior (for a bug, one that reproduces it), the smallest change that passes, refactor while green.
+- Small steps, long-term decisions: the smallest version that works end to end, then extend it. No stopgap meant to be replaced later.
+- Reuse before building: an existing pattern, dependency or library before a new abstraction.
+- Avoid these smells (a documented repository standard overrides them):
+  - Duplicated logic: extract it into one function.
+  - Speculative generality, abstraction or parameters nobody asked for: delete it until a real need shows.
+  - Middle man, a function that only passes the call on: call the real target.
+  - Shotgun surgery, one change forcing scattered edits: gather what changes together.
 
 ### Verifying
 
-- Let code decide what code can decide. Cover every required behavior with a test, type check or script whose result decides. A reading of the code is not evidence of what a run can show: an LLM reading LLM-written code is a probabilistic system checking another.
-- A check must be able to fail. Show it failing once, against a wrong input or a throwaway copy of the code with the defect put back, before you rely on it.
-- Never weaken an existing test or check to make work pass.
-- What code cannot decide (visual quality, opinion, whether the spec is right) stays with a person and is reported as unverified, not as passed. No check for a changed behavior is a gap, not a pass.
-- Report what ran and what came out, failures included. Work is done when the requested behavior is covered and the relevant tests and the nearest affected gate pass; work that is not verified is not done.
-- The person or the approved plan decides what the tests specify. Prototypes, exploration, documentation, visual experiments and trivial configuration are exempt.
+- Code decides what code can decide: every required behavior has a test, type check or script. Reading code is not evidence.
+- A check must be able to fail: show it failing once before relying on it. Never weaken an existing one.
+- What code cannot decide is reported as unverified, not passed. Report what ran and what came out, failures included.
+- Exempt: prototypes, exploration, documentation, visual experiments, trivial config.
 <!-- BKF:GENERATED-INJECTED-END -->
 
 This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

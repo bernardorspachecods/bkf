@@ -92,13 +92,4 @@ while IFS= read -r g; do
 done < <(find "$here/../../skills" \( -path '*/roles/*.md' -o -name SKILL.md \))
 check "real guides: every directive resolves${bad:+ (broken:$bad)}" '[ -z "$bad" ]'
 
-# The guides that apply core-code-principles still ask for it, so a brief for each of these roles carries the rules.
-lib=$(cd "$here/../../skills" && pwd)
-for g in plan/roles/plan-implementation.md plan/roles/plan-review.md code-review/roles/code-review-axis.md; do
-  printf '# Brief\n\n## Role\nOpen and follow the role guide: %s/%s (read-only).\n' "$lib" "$g" >"$work/p.md"
-  inject_rules "$work/p.md"
-  check "real guides: $g brings core-code-principles into the brief" 'grep -q "^## Rules from core-code-principles$" "$work/p.md"'
-  check "real guides: $g brings the gate into the brief" 'grep -q "^## Rules from gate$" "$work/p.md"'
-done
-
 exit "$fail"

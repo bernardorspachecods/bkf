@@ -1,1 +1,0 @@
-- standards/: the documented standards

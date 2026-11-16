@@ -1,3 +1,0 @@
-interface:
-  display_name: "Code review"
-  short_description: "Review a diff on two axes with agents that check each other"

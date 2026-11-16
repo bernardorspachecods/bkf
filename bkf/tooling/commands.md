@@ -322,7 +322,7 @@ a tool whose folder is missing is skipped.
   commands are allowed. Refusals are stored per session in
   `~/.agent-hooks/state/` and pruned after 14 days.
   The same hook also denies a `Bash` call that starts a long-run launcher in the
-  foreground: `plan-run.sh`, `review-run.sh`, `council-run.sh` or `research-run.sh` with
+  foreground: `plan-run.sh`, `council-run.sh` or `research-run.sh` with
   `start` or `resume`, `delegate-run.sh`, or `codex exec`, whether
   called by path, behind `cd`, an environment assignment, `bash`, `env` or `nohup`. It is
   allowed only when the tool input has `run_in_background: true`; a launcher backgrounded by

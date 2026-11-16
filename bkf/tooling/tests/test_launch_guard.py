@@ -29,14 +29,14 @@ class LaunchGuardTests(unittest.TestCase):
         for command in (
             "plan-run.sh start r goal.md plan.txt",
             "plan-run.sh resume r",
-            "review-run.sh start r main...x",
+            "research-run.sh start r q.md",
             "council-run.sh start r brief.md",
             "research-run.sh resume r",
             "delegate-run.sh name brief.md",
             "codex exec -m m -",
-            "~/.claude/skills/plan/scripts/plan-run.sh start r g p",
+            "~/.claude/skills/agentic-work/scripts/plan-run.sh start r g p",
             "cd /repo && /abs/plan-run.sh resume -p none r",
-            "FOO=1 bash scripts/review-run.sh start a b",
+            "FOO=1 bash scripts/research-run.sh start a b",
             "DELEGATE_IN_PLACE=1 delegate-run.sh n b",
         ):
             with self.subTest(command=command):
@@ -45,7 +45,7 @@ class LaunchGuardTests(unittest.TestCase):
     def test_a_background_call_is_allowed(self):
         for command in (
             "plan-run.sh start r g p",
-            "cd /repo && ~/.claude/skills/plan/scripts/plan-run.sh resume -p none r",
+            "cd /repo && ~/.claude/skills/agentic-work/scripts/plan-run.sh resume -p none r",
             "delegate-run.sh n b integration gpt-6-luna high",
             "codex exec -m m -",
         ):
@@ -60,7 +60,7 @@ class LaunchGuardTests(unittest.TestCase):
 
     def test_the_loop_that_hid_three_delegations_is_blocked(self):
         for command in (
-            "S=/s; for n in a b d; do nohup ~/.claude/skills/plan/scripts/delegate-run.sh $n $S/b-$n.md HEAD > $S/r-$n.log 2>&1 & done; sleep 20",
+            "S=/s; for n in a b d; do nohup ~/.claude/skills/agentic-work/scripts/delegate-run.sh $n $S/b-$n.md HEAD > $S/r-$n.log 2>&1 & done; sleep 20",
             "for n in a b; do delegate-run.sh $n b.md; done",
             "while read n; do delegate-run.sh $n b; done < names",
             "( delegate-run.sh a b & )",
@@ -76,7 +76,7 @@ class LaunchGuardTests(unittest.TestCase):
     def test_one_launcher_in_a_compound_or_a_shell_string_is_allowed_in_the_background(self):
         for command in (
             "bash -c 'delegate-run.sh a b'",
-            "cd /repo && DELEGATE_IN_PLACE=1 ~/.claude/skills/plan/scripts/delegate-run.sh n b HEAD gpt-6-luna high",
+            "cd /repo && DELEGATE_IN_PLACE=1 ~/.claude/skills/agentic-work/scripts/delegate-run.sh n b HEAD gpt-6-luna high",
             "{ delegate-run.sh a b; }",
         ):
             with self.subTest(command=command):
@@ -90,7 +90,7 @@ class LaunchGuardTests(unittest.TestCase):
             "plan-run.sh finish r",
             "grep -rn plan-run.sh .",
             "cat scripts/delegate-run.sh",
-            "ls -la | grep review-run.sh",
+            "ls -la | grep research-run.sh",
             "tail -f /tmp/x.log",
             "echo 'plan-run.sh start r'",
             "codex --help",

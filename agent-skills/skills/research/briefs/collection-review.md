@@ -8,4 +8,4 @@ These are the niches the collector was told to search. "(agent)" marks niches a 
 
 {{niches}}
 ## Role
-Open and follow the role guide: {{guides}}/research-review-collection.md (read-only). You are not the author of the collected file. Do not reopen the sources to check whether findings are true; check the four questions against the objective.
+Open and follow the role guide: {{guides}}/research-review-collection.md (read-only). You are not the author of the collected file.

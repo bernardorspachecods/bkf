@@ -11,3 +11,5 @@ description: Before the user compacts the chat, make sure everything the work ne
    states the task in progress, the next step, and the paths of the documents
    that carry the rest (plan, specs, notes, changed files). It points to them
    instead of copying them.
+
+This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

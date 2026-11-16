@@ -8,4 +8,4 @@
 - delivery.md: the delivery to review
 
 ## Role
-Open and follow the role guide: {{guides}}/research-review-delivery.md (read-only). You are not the author of either file. Do not reopen the sources.
+Open and follow the role guide: {{guides}}/research-review-delivery.md (read-only). You are not the author of either file.

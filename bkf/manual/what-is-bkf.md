@@ -31,7 +31,7 @@ BKF answers this with a few ideas applied consistently, not with a fixed set of 
 | Modules | `agent-skills/modules/` | Rule modules for daily use, each written once | Skills repeated the same guidance; a module is written once and its text injected into the skills that share it |
 | Skills | `agent-skills/skills/` | One per situation: orders for the agent, with the text a module shares injected into the body at build time | The harness always loads a triggered skill's body, but a pointer to a file can be skipped, so the shared text sits in the skill |
 | Repo library | `repo-library/` in each repo | A repo's own procedures and modules, added to the modules and never restating them | A repo has local rules the shared modules cannot know; the more specific rule wins |
-| Workflows | The skills `plan`, `code-review`, `council` and `research`, each with the script that runs it (`scripts/`) | A coordinator guide (the `SKILL.md`) and role guides (`roles/`): agents do the middle of a task, each reviewed by another, and the user steers at the start and judges at the end | Work that spans agents needs roles that do not review their own output; small tasks stay plain skills |
+| Workflows | The skills `agentic-work`, `council` and `research`, each with the script that runs it (`scripts/`) | A coordinator guide (the `SKILL.md`) and role guides (`roles/`): agents do the middle of a task, each reviewed by another, and the user steers at the start and judges at the end | Work that spans agents needs roles that do not review their own output; small tasks stay plain skills |
 
 The format defines what a valid bundle is, and its tooling makes the structure checkable. The optional stop hook runs checks on changed bundles because relying on an agent to remember them leaves gaps. The other layers guide judgment; review and the feedback file help correct the rules when something goes wrong.
 
@@ -43,7 +43,7 @@ Hooks handle behavior that must run in every session, which a skill cannot guara
 
 A skill matches the request and carries its orders, including the text of the modules it shares. The agent finds the documents it needs through the maps. If the repo has a `repo-library/`, the documents of a task link to the entries that apply to it, and the repo's rules add to the shared modules'. If the task is complex, a workflow gives it roles, handoffs, and review. When it changes something, it updates the owner document in the same change.
 
-For a complex task the coordinator picks a workflow skill and agrees the objective with the user. A script then runs the agents in their roles, each reviewed by another, and stops when a review escalates. The run lives outside the repository until the user chooses to keep it. The steps for the coordinator are in the workflow's skill and the module `coordinate-a-run`. Small skills such as `repo-maintenance` run anywhere in this flow.
+For a complex task the coordinator picks a workflow skill and agrees the objective with the user. A script then runs the agents in their roles, each reviewed by another, and stops when a review escalates. The run lives outside the repository until the user chooses to keep it. The steps for the coordinator are in the workflow's skill, and the roles every run shares in the module `agentic-roles`. Small skills such as `repo-maintenance` run anywhere in this flow.
 
 ## Keeping a BKF repo healthy
 
