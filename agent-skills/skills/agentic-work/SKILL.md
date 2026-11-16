@@ -53,6 +53,8 @@ Write the goal once, as `align-intent` defines the intent, and have the user con
 
 The brief is all the implementer and the reviewer share, so it stands alone. The tools read its `gate` and `premise` fences and its Removes and Creates sections.
 
+Result, Out of scope, Gate and Criteria are always there. Receives and Leaves ready exist only between units that depend on each other, Removes and Creates only when the unit deletes or adds files. Leave out a section that has nothing to say.
+
 ~~~markdown
 ## Result
 What exists when this unit is done, and when to stop.
