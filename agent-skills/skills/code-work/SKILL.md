@@ -12,6 +12,7 @@ description: "Use whenever you write or fix code: the principles for building it
 ### Building
 
 - Test first when the behavior is clear: one failing test for one behavior (for a bug, one that reproduces it), the smallest change that passes, refactor while green.
+- For a bug, ask what let it happen and whether it is one of a class. Fix the class when it repeats; otherwise fix the case and name the class in the report.
 - Small steps, long-term decisions: the smallest version that works end to end, then extend it. No stopgap meant to be replaced later.
 - Reuse before building: an existing pattern, dependency or library before a new abstraction.
 - Avoid these smells (a documented repository standard overrides them):

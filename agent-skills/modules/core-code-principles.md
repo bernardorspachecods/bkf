@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Sets the principles for work with code: test first, small steps with long-term decisions, reuse and code smells; and how it is verified: code decides what code can decide, every check can fail, what code cannot decide is reported as unverified. Covers any work with code, whoever does it."
+description: "Sets the principles for work with code: test first, bugs fixed at their class when it repeats, small steps with long-term decisions, reuse and code smells; and how it is verified: code decides what code can decide, every check can fail, what code cannot decide is reported as unverified. Covers any work with code, whoever does it."
 tags: [injected]
 ---
 
@@ -9,6 +9,7 @@ tags: [injected]
 ## Building
 
 - Test first when the behavior is clear: one failing test for one behavior (for a bug, one that reproduces it), the smallest change that passes, refactor while green.
+- For a bug, ask what let it happen and whether it is one of a class. Fix the class when it repeats; otherwise fix the case and name the class in the report.
 - Small steps, long-term decisions: the smallest version that works end to end, then extend it. No stopgap meant to be replaced later.
 - Reuse before building: an existing pattern, dependency or library before a new abstraction.
 - Avoid these smells (a documented repository standard overrides them):
