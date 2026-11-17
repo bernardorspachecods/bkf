@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 from harness import agent
+from harness.receipt import receipt_path
 
 HARNESS_DIR = pathlib.Path(__file__).resolve().parents[1]
 
@@ -41,6 +42,11 @@ class AgentCliTests(unittest.TestCase):
             "    time.sleep(0.1)\n"
             "    if os.environ.get('FAKE_TICK'):\n"
             "        sys.stdout.write('{\\\"type\\\":\\\"tick\\\"}\\n'); sys.stdout.flush()\n"
+            "if os.environ.get('PONTE_GATE_OUT'):\n"
+            "    import subprocess\n"
+            "    done = subprocess.run([os.path.join(os.environ['WORKDIR'], '.plan-porteiro', 'ponte'), 'gate'], capture_output=True)\n"
+            "    with open(os.environ['PONTE_GATE_OUT'], 'wb') as output:\n"
+            "        output.write(done.stdout + b'exit=' + str(done.returncode).encode())\n"
             "with open(arguments[arguments.index('-o') + 1], 'w') as output:\n"
             "    output.write('last message')\n"
             "sys.stdout.write('{\\\"type\\\":\\\"event\\\"}\\n')\n"
@@ -212,12 +218,67 @@ class AgentCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(visible.read_text(), "False")
 
+    def test_agent_ponte_gate_runs_the_brief_gate_and_writes_the_receipt(self):
+        subprocess.run(["git", "-C", str(self.root), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True)
+        (self.root / ".plan-run.json").write_text(json.dumps({"bridge": {"pnpmScripts": []}}), encoding="utf-8")
+        (self.root / "package.json").write_text(json.dumps({"scripts": {}}), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "-A"], check=True)
+        tree = subprocess.run(
+            ["git", "-C", str(self.root), "write-tree"], check=True,
+            stdout=subprocess.PIPE, text=True,
+        ).stdout.strip()
+        base_file = self.root / "base"
+        base_file.write_text(tree + "\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "commit", "-q", "-m", "unit base"], check=True)
+        # The brief, the receipt and the gate output sit outside the checkout, so the tree the receipt names is stable.
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        brief = pathlib.Path(outside.name) / "brief.md"
+        brief.write_text("# Unit\n\n```gate\nprintf gate-ok\n```\n", encoding="utf-8")
+        unit = pathlib.Path(outside.name) / "unit"
+        gate_output = pathlib.Path(outside.name) / "ponte-gate.out"
+        self.env["PONTE_GATE_OUT"] = str(gate_output)
+        result = self.run_agent(
+            "--bridge-base-file", str(base_file), "--bridge-log", str(self.root / "porteiro.log"),
+            "--bridge-unit", "test-unit", "--bridge-receipt-dir", str(unit), "--bridge-gate-brief", str(brief),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = gate_output.read_bytes()
+        self.assertTrue(output.endswith(b"exit=0"), output)
+        self.assertIn(b"Result: all green (1 commands).", output)
+        receipt = json.loads(receipt_path(unit).read_text(encoding="utf-8"))
+        self.assertEqual(receipt["red"], 0)
+        self.assertEqual(receipt["commands"], ["printf gate-ok"])
+        line = (self.root / "porteiro.log").read_text(encoding="utf-8").splitlines()[0]
+        self.assertRegex(line, r"\ttest-unit\tALLOWED exit=0 \d+s\tgate$")
+
+    def test_bridge_receipt_and_gate_brief_require_the_base_file(self):
+        result = self.run_agent("--bridge-receipt-dir", str(self.root / "unit"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b"--bridge-receipt-dir and --bridge-gate-brief require --bridge-base-file", result.stderr)
+
+    def test_unreadable_bridge_gate_brief_exits_two_without_starting_the_agent(self):
+        base_file = self.root / "base"
+        base_file.write_text("unused\n", encoding="utf-8")
+        visible = self.root / "bridge-visible"
+        self.env["BRIDGE_VISIBLE"] = str(visible)
+        result = self.run_agent(
+            "--bridge-base-file", str(base_file), "--bridge-log", str(self.root / "porteiro.log"),
+            "--bridge-unit", "test-unit", "--bridge-gate-brief", str(self.root / "missing-brief.md"),
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b"missing-brief.md", result.stderr)
+        self.assertFalse(visible.exists())
+
     def run_in_process(self, **environment):
         patched = dict(self.env)
         patched.update(environment)
         with mock.patch.dict(os.environ, patched, clear=True):
+            # Pinned: HARNESS_BACKEND in the caller's environment must not pick the real claude CLI for the fake codex.
             return agent.run_agent(
-                str(self.root), str(self.prompt), str(self.prefix), "gpt-test", "high"
+                str(self.root), str(self.prompt), str(self.prefix), "gpt-test", "high", backend="codex"
             )
 
     def spawn_kwargs(self, in_thread):

@@ -47,7 +47,7 @@ Write the goal once, as `align-intent` defines the intent, and have the user con
 
 **When the split depends on something you do not know yet,** run a unit that only reads and reports first.
 
-**Gates.** Every unit has a gate, or a reason in its brief why no command can decide it. Run each gate line once before the first unit, and include the repository's quick check in every gate, if it has one.
+**Gates.** Every unit has a gate, or a reason in its brief why no command can decide it. Run each gate line once before the first unit, and include the repository's quick check in every gate, if it has one. **The gate runs once.** The implementer runs it last, through a tool that leaves a receipt (a record of the commands, their results and the tree they ran on); the check and the reviewer use the receipt and never repeat the gate. A receipt is accepted only while the tree and the gate commands are the same, so an edit after it, yours too, brings the gate back. The coordinator never runs a unit's gate commands by hand outside the check.
 
 ## 2. The unit brief
 

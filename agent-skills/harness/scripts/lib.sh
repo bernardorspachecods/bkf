@@ -16,6 +16,8 @@ agent_run() { # <dir> <prompt-file> <out-prefix> [sandbox]
   [ -z "${PLAN_CODEX_TIER:-}" ] || args+=(--tier "$PLAN_CODEX_TIER")
   if [ -n "${HARNESS_BRIDGE_BASE_FILE:-}" ]; then
     args+=(--bridge-base-file "$HARNESS_BRIDGE_BASE_FILE" --bridge-log "$HARNESS_BRIDGE_LOG" --bridge-unit "$HARNESS_BRIDGE_UNIT")
+    [ -z "${HARNESS_BRIDGE_RECEIPT_DIR:-}" ] || args+=(--bridge-receipt-dir "$HARNESS_BRIDGE_RECEIPT_DIR")
+    [ -z "${HARNESS_BRIDGE_GATE_BRIEF:-}" ] || args+=(--bridge-gate-brief "$HARNESS_BRIDGE_GATE_BRIEF")
   fi
   harness "${args[@]}"
 }

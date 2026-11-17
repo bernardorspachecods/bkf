@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import tempfile
@@ -5,10 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from harness.engine.diffbase import snapshot_tree
 from harness.engine.run import RunDir, Settings
 from harness.engine.integration import run_integration
 from harness.engine.review import ReviewResult
 from harness.engine.loop import run_review_round, run_unit_loop
+from harness.receipt import receipt_gate_file, receipt_path
+from hermetic import pin_backend
 
 
 class Limits:
@@ -25,6 +29,7 @@ class Hooks:
         self.implement_calls = []
         self.review_calls = []
         self.commands = None
+        self.after_implement = None
 
     def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff,
                          last_review_problems=None):
@@ -82,6 +87,8 @@ class Hooks:
         def __exit__(self, *args):
             self.hooks.entered.append(("exit", self.unit))
             (Path(self.checkout) / ".around-implement").unlink()
+            if self.hooks.after_implement is not None:
+                self.hooks.after_implement()
 
     def around_implement(self, checkout, unit, base, brief):
         return self.Around(self, checkout, unit, base, brief)
@@ -89,6 +96,7 @@ class Hooks:
 
 class UnitLoopTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.checkout = self.root / "checkout"
@@ -306,6 +314,68 @@ class UnitLoopTests(unittest.TestCase):
             "S1 unidade 01-unit · ronda 2 · revisão",
             "S1 unidade 01-unit · ronda 2 · passou",
         ])
+
+    def write_receipt_after_implement(self, commands, then=None):
+        """Once the implementer is done, record a green receipt for the tree, then run `then` (if given)."""
+        def write():
+            receipt_path(self.unit_dir).parent.mkdir(parents=True, exist_ok=True)
+            receipt_path(self.unit_dir).write_text(json.dumps({
+                "tree": snapshot_tree(str(self.checkout)), "commands": commands, "red": 0,
+            }), encoding="utf-8")
+            receipt_gate_file(self.unit_dir).parent.mkdir(parents=True, exist_ok=True)
+            receipt_gate_file(self.unit_dir).write_text("receipt gate\n", encoding="utf-8")
+            if then is not None:
+                then()
+
+        self.hooks.after_implement = write
+
+    def test_a_receipt_on_this_tree_passes_the_gate_without_running_it(self):
+        self.hooks.commands = ["touch gate-ran"]
+        self.write_receipt_after_implement(["touch gate-ran"])
+        result = self.run_loop()
+
+        self.assertTrue(result.ok)
+        self.assertFalse((self.checkout / "gate-ran").exists())
+        self.assertFalse((self.unit_dir / "rounds" / "1" / "gate.md").exists())
+        self.assertIn("gate={0}\n".format(receipt_gate_file(self.unit_dir)),
+                      (self.unit_dir / "rounds" / "1" / "review-prompt.md").read_text())
+        self.assertEqual(self.notes(), [
+            "01-unit round 1: implement", "01-unit round 1: gate passed by receipt", "01-unit round 1: review",
+            "01-unit: round 1: verdict pass",
+        ])
+        self.assertEqual(self.hooks.progress_lines, [
+            "S1 unidade 01-unit · ronda 1 · implementação",
+            "S1 unidade 01-unit · ronda 1 · gate PASS (receipt)",
+            "S1 unidade 01-unit · ronda 1 · revisão",
+            "S1 unidade 01-unit · ronda 1 · passou",
+        ])
+
+    def test_a_receipt_from_an_earlier_tree_does_not_pass_the_gate(self):
+        self.hooks.commands = ["touch gate-ran"]
+        self.write_receipt_after_implement(
+            ["touch gate-ran"], then=lambda: (self.checkout / "tracked.txt").write_text("after the receipt\n"))
+        result = self.run_loop()
+
+        self.assertTrue(result.ok)
+        self.assertTrue((self.checkout / "gate-ran").exists())
+        self.assertEqual(self.notes(), [
+            "01-unit round 1: implement", "01-unit round 1: gate", "01-unit round 1: gate passed",
+            "01-unit round 1: review", "01-unit: round 1: verdict pass",
+        ])
+        self.assertNotIn("S1 unidade 01-unit · ronda 1 · gate PASS (receipt)", self.hooks.progress_lines)
+
+    def test_a_failed_gate_round_forgets_the_receipt(self):
+        class OneGateRound(Limits):
+            max_gate_rounds = 1
+
+        self.hooks.commands = ["false"]
+        self.write_receipt_after_implement(
+            ["false"], then=lambda: (self.checkout / "tracked.txt").write_text("after the receipt\n"))
+        result = self.run_loop(OneGateRound())
+
+        self.assertFalse(result.ok)
+        self.assertFalse(receipt_path(self.unit_dir).exists())
+        self.assertFalse((self.unit_dir / "rounds" / "1" / "review-prompt.md").exists())
 
     def test_round_caps_are_independent_for_gate_failures_and_review_backs(self):
         class TwoCaps(Limits):
@@ -665,6 +735,7 @@ class UnitLoopTests(unittest.TestCase):
 
 class IntegrationLoopMemoryTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"

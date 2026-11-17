@@ -27,6 +27,14 @@ if [ -n "${FAKE_PREPARED:-}" ]; then
 fi
 if [ -n "${FAKE_BASE_VISIBLE:-}" ] && [ -s "$FAKE_BASE_VISIBLE" ]; then echo yes >"$FAKE_BASE_SEEN"; fi
 echo "made by the agent" >"$dir/made.txt"
+# With FAKE_PONTE_GATE, the agent asks the bridge for the gate as its last step, or records that no bridge is there.
+if [ -n "${FAKE_PONTE_GATE:-}" ]; then
+  if [ -x "$dir/.plan-porteiro/ponte" ]; then
+    "$dir/.plan-porteiro/ponte" gate >"$FAKE_PONTE_GATE" 2>&1; echo "exit=$?" >>"$FAKE_PONTE_GATE"
+  else
+    echo "no bridge" >"$FAKE_PONTE_GATE"
+  fi
+fi
 echo done >"$out"
 F
 chmod +x "$work/bin/codex"
@@ -52,16 +60,18 @@ git -C "$work/repo" add file.txt
 git -C "$work/repo" commit -qm base
 printf '# Brief\n\nMake made.txt.\n' >"$work/brief.md"
 
-run() { # <name> [env assignments...]; runs the script inside the repo
+run() { # <name> [env assignments...]; runs the script inside the repo, with the brief in $BRIEF_FILE (default $work/brief.md)
   local name=$1; shift
+  local brief=${BRIEF_FILE:-$work/brief.md}
   rm -f "$work/$name.agent-ran" "$work/$name.prompt" "$work/$name.prepared" "$work/$name.base.seen"
   (cd "$work/repo" && env -u DELEGATE_IN_PLACE -u DELEGATE_RERUN -u HARNESS_BRIDGE_BASE_FILE \
-    -u HARNESS_BRIDGE_LOG -u HARNESS_BRIDGE_UNIT PATH="$work/bin:$PATH" DELEGATE_RUNS_DIR="$work/runs" FAKE_MODEL="$work/model.txt" \
+    -u HARNESS_BRIDGE_LOG -u HARNESS_BRIDGE_UNIT -u DELEGATE_UNIT_DIR -u HARNESS_BRIDGE_RECEIPT_DIR \
+    -u HARNESS_BRIDGE_GATE_BRIEF PATH="$work/bin:$PATH" DELEGATE_RUNS_DIR="$work/runs" FAKE_MODEL="$work/model.txt" \
     FAKE_RUN_MARKER="$work/$name.agent-ran" FAKE_PROMPT="$work/$name.prompt" \
     FAKE_PREPARED="$work/$name.prepared" FAKE_BASE_VISIBLE="$work/runs/repo/$name/base" \
     FAKE_BASE_SEEN="$work/$name.base.seen" \
     "$@" \
-    bash "$script" "$name" "$work/brief.md") >"$work/out.txt" 2>"$work/err.txt"
+    bash "$script" "$name" "$brief") >"$work/out.txt" 2>"$work/err.txt"
 }
 
 # In place: the agent works in the checkout; the run folder holds the status, the base and the diff base to read.
@@ -141,6 +151,22 @@ git -C "$work/repo" add .plan-run.json
 git -C "$work/repo" commit -qm 'declare in-place setup'
 run inplace-prepare DELEGATE_IN_PLACE=1; code=$?
 check "in place: does not run worktree prepare" '[ $code -eq 0 ] && [ ! -e "$work/repo/in-place-prepared.txt" ] && [ ! -e "$work/runs/repo/inplace-prepare/prepare.log" ]'
+
+# A gate in the brief and a unit folder: the agent's `ponte gate` writes the receipt there, though .plan-run.json has no bridge.
+printf '# Brief\n\nMake made.txt.\n\n```gate\ntest -f made.txt\n```\n' >"$work/gate-brief.md"
+rm -rf "$work/unit"; mkdir -p "$work/unit"
+BRIEF_FILE="$work/gate-brief.md" run gated DELEGATE_UNIT_DIR="$work/unit" FAKE_PONTE_GATE="$work/gated.ponte"; code=$?
+check "receipt: exits 0" '[ $code -eq 0 ]'
+check "receipt: the brief names the gate receipt section" 'grep -q "^## Gate receipt" "$work/runs/repo/gated/brief.md"'
+check "receipt: the bridge is on without a bridge in .plan-run.json" '! grep -q "Command bridge" "$work/runs/repo/gated/brief.md" && [ "$(tail -1 "$work/gated.ponte")" = exit=0 ]'
+check "receipt: ponte gate wrote the receipt in the unit folder" '[ -f "$work/unit/receipt/receipt.json" ] && grep -q "\"red\": 0" "$work/unit/receipt/receipt.json"'
+check "receipt: ponte gate printed the gate report to the agent" 'grep -q "test -f made.txt" "$work/gated.ponte"'
+
+# Without DELEGATE_UNIT_DIR the brief has no receipt section, no bridge runs and nothing is written.
+BRIEF_FILE="$work/gate-brief.md" run gatedoff FAKE_PONTE_GATE="$work/gatedoff.ponte"; code=$?
+check "no unit folder: exits 0" '[ $code -eq 0 ]'
+check "no unit folder: the brief has no gate receipt section" '! grep -q "Gate receipt" "$work/runs/repo/gatedoff/brief.md"'
+check "no unit folder: no bridge is started" 'grep -qx "no bridge" "$work/gatedoff.ponte"'
 
 # Claude backend: the default model is Claude's and the same file appears.
 run viaclaude DELEGATE_IN_PLACE=1 HARNESS_BACKEND=claude; code=$?

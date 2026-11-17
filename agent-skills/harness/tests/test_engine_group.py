@@ -10,10 +10,12 @@ from harness.engine.diffbase import snapshot_commit
 from harness.engine import group
 from harness.engine.group import prepare_worktrees, remove_worktrees, run_group
 from harness.engine.run import RunDir, RunError, Settings
+from hermetic import pin_backend
 
 
 class GroupTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"

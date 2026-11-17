@@ -3,6 +3,7 @@
 # Usage: [DELEGATE_IN_PLACE=1] delegate-run.sh <name> <brief-file> [base-ref] [model] [effort]
 # DELEGATE_IN_PLACE=1 runs in the main checkout instead of a new worktree.
 # DELEGATE_RERUN=1 allows reusing a run folder that already has a status file.
+# DELEGATE_UNIT_DIR=<unit folder> lets the agent's `ponte gate` write the gate receipt there (see harness.receipt).
 # New worktrees run the repository's committed .plan-run.json setup; its bridge can run allowed pnpm scripts.
 # Without a model and effort: gpt-6-luna and high on Codex, sonnet and high on Claude.
 set -euo pipefail
@@ -67,12 +68,35 @@ else
   echo "$base" >"$runs/base"
 fi
 
-unset HARNESS_BRIDGE_BASE_FILE HARNESS_BRIDGE_LOG HARNESS_BRIDGE_UNIT
+unset HARNESS_BRIDGE_BASE_FILE HARNESS_BRIDGE_LOG HARNESS_BRIDGE_UNIT HARNESS_BRIDGE_RECEIPT_DIR HARNESS_BRIDGE_GATE_BRIEF
+pnpm_bridge=
 if git -C "$repo" cat-file -e "$base:.plan-run.json" 2>/dev/null && \
   git -C "$repo" show "$base:.plan-run.json" 2>/dev/null | python3 -c 'import json,sys; value=json.load(sys.stdin); sys.exit(0 if isinstance(value,dict) and isinstance(value.get("bridge"),dict) else 1)' 2>/dev/null; then
+  pnpm_bridge=1
+fi
+# With a unit folder, the agent's `ponte gate` writes the gate receipt there, so the loop can skip a gate that already passed.
+gate_receipt=
+if [ -n "${DELEGATE_UNIT_DIR:-}" ] && PYTHONPATH="$here/../../../harness" python3 -c 'import sys; from harness.gate import gate_commands; sys.exit(0 if gate_commands([sys.argv[1]]) else 1)' "$runs/brief.md"; then
+  gate_receipt=1
+fi
+if [ -n "$pnpm_bridge" ] || [ -n "$gate_receipt" ]; then
   export HARNESS_BRIDGE_BASE_FILE="$runs/base"
   export HARNESS_BRIDGE_LOG="$runs/porteiro.log"
   export HARNESS_BRIDGE_UNIT="$name"
+fi
+if [ -n "$gate_receipt" ]; then
+  export HARNESS_BRIDGE_RECEIPT_DIR="$DELEGATE_UNIT_DIR"
+  export HARNESS_BRIDGE_GATE_BRIEF="$runs/brief.md"
+  cat >>"$runs/brief.md" <<'GATE'
+
+## Gate receipt
+
+Run the unit's whole gate with `.plan-porteiro/ponte gate` as your last step, after your final edit.
+It runs outside your sandbox and writes the proof the reviewer uses instead of running the gate again.
+Any edit after it makes that proof stale, so run it again then.
+GATE
+fi
+if [ -n "$pnpm_bridge" ]; then
   cat >>"$runs/brief.md" <<'BRIDGE'
 
 ## Command bridge

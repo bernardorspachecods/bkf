@@ -48,6 +48,8 @@ def _parser():
     agent_run_parser.add_argument("--bridge-base-file")
     agent_run_parser.add_argument("--bridge-log")
     agent_run_parser.add_argument("--bridge-unit")
+    agent_run_parser.add_argument("--bridge-receipt-dir")
+    agent_run_parser.add_argument("--bridge-gate-brief")
     prepare_parser = subparsers.add_parser("prepare")
     prepare_parser.add_argument("--run", required=True)
     prepare_parser.add_argument("--repo", required=True)
@@ -86,9 +88,11 @@ def main(argv=None):
     if args.area == "agent":
         bridge_options = (args.bridge_log, args.bridge_unit)
         if args.bridge_base_file and any(value is None for value in bridge_options):
-            agent_run_parser.error("--bridge-log and --bridge-unit are required with --bridge-base-file")
+            parser.error("--bridge-log and --bridge-unit are required with --bridge-base-file")
         if not args.bridge_base_file and any(value is not None for value in bridge_options):
-            agent_run_parser.error("--bridge-log and --bridge-unit require --bridge-base-file")
+            parser.error("--bridge-log and --bridge-unit require --bridge-base-file")
+        if not args.bridge_base_file and (args.bridge_receipt_dir is not None or args.bridge_gate_brief is not None):
+            parser.error("--bridge-receipt-dir and --bridge-gate-brief require --bridge-base-file")
         return run_agent(
             args.dir,
             args.prompt,
@@ -102,6 +106,8 @@ def main(argv=None):
             bridge_base_file=args.bridge_base_file,
             bridge_log=args.bridge_log,
             bridge_unit=args.bridge_unit,
+            bridge_receipt_dir=args.bridge_receipt_dir,
+            bridge_gate_brief=args.bridge_gate_brief,
         )
     if args.area == "inject":
         try:

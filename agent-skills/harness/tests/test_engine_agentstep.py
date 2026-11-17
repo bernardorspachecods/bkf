@@ -5,10 +5,12 @@ import unittest
 from unittest import mock
 
 from harness.engine import agentstep
+from hermetic import pin_backend
 
 
 class AgentStepTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)
 

@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 
+from harness.gate import gate_commands
+
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -264,6 +266,37 @@ def _process_group_exists(process_group):
     except OSError:
         return False
     return True
+
+
+class GateCommandsTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def brief(self, name, text):
+        path = self.root / name
+        path.write_text(text, encoding="utf-8", newline="")
+        return str(path)
+
+    def test_reads_gate_fences_in_order_skipping_comments_untagged_and_duplicates(self):
+        first = self.brief(
+            "first.md",
+            "```text\nignored\n```\n```gate\n  alpha  \n\n# skip\nbeta\n```\n```gate\nalpha\ngamma\n```\n",
+        )
+        second = self.brief("second.md", "```gate\ndelta\n```\n")
+        self.assertEqual(gate_commands([first, second]), ["alpha", "beta", "gamma", "delta"])
+
+    def test_tag_selects_another_fence_and_only_exact_tag_lines_open_one(self):
+        brief = self.brief(
+            "tags.md",
+            "```premise\nfact\n```\n```gate\ncheck\n```\n```gated\nnot a gate\n```\n",
+        )
+        self.assertEqual(gate_commands([brief], "premise"), ["fact"])
+        self.assertEqual(gate_commands([brief]), ["check"])
+
+    def test_brief_without_fences_gives_an_empty_list(self):
+        self.assertEqual(gate_commands([self.brief("none.md", "no fences here\n")]), [])
 
 
 if __name__ == "__main__":

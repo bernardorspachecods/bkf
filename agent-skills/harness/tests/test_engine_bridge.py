@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from harness.engine import bridge
+from harness.receipt import receipt_path, receipt_passes
 
 
 class BridgeTests(unittest.TestCase):
@@ -229,6 +230,106 @@ class BridgeTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(len(result.stdout), 200000)
+
+    def ponte(self, *argv):
+        return subprocess.run(
+            [str(self.checkout / ".plan-porteiro" / "ponte")] + list(argv), capture_output=True
+        )
+
+    def commit_base(self):
+        # A receipt names the checkout's tree, which needs a commit to read HEAD from; a real checkout always has one.
+        self.git("commit", "-q", "-m", "unit base")
+
+    def test_gate_request_runs_the_gate_and_writes_a_green_receipt(self):
+        # The unit folder sits outside the checkout, so writing the receipt does not change the tree.
+        unit = self.root / "unit"
+        self.commit_base()
+        commands = ["printf gate-ok", "bash -c 'exit 0'"]
+        with bridge.porteiro(
+            self.checkout, "01-unit", self.base_file, commands, self.log, receipt_dir=unit
+        ):
+            result = self.ponte("gate")
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn(b"# Gate", result.stdout)
+            self.assertIn(b"Result: all green (2 commands).", result.stdout)
+            receipt = json.loads(receipt_path(unit).read_text(encoding="utf-8"))
+            self.assertEqual(receipt["red"], 0)
+            self.assertEqual(receipt["commands"], commands)
+            self.assertTrue(receipt_passes(unit, self.checkout, commands))
+            self.assertFalse(receipt_passes(unit, self.checkout, commands[:1]))
+        line = self.log.read_text(encoding="utf-8").splitlines()[0]
+        self.assertRegex(line, r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\t01-unit\tALLOWED exit=0 \d+s\tgate$")
+
+    def test_failing_gate_request_exits_one_and_leaves_a_red_receipt(self):
+        unit = self.root / "unit"
+        self.commit_base()
+        commands = ["printf gate-ok", "bash -c 'exit 7'"]
+        with bridge.porteiro(
+            self.checkout, "01-unit", self.base_file, commands, self.log, receipt_dir=unit
+        ):
+            result = self.ponte("gate")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(b"Result: RED, 1 of 2 commands failed.", result.stdout)
+            receipt = json.loads(receipt_path(unit).read_text(encoding="utf-8"))
+            self.assertEqual(receipt["red"], 1)
+            self.assertFalse(receipt_passes(unit, self.checkout, commands))
+        line = self.log.read_text(encoding="utf-8").splitlines()[0]
+        self.assertRegex(line, r"\t01-unit\tALLOWED exit=1 \d+s\tgate$")
+
+    def test_gate_request_is_refused_without_a_receipt_folder(self):
+        unit = self.root / "unit"
+        self.commit_base()
+        with bridge.porteiro(
+            self.checkout, "01-unit", self.base_file, ["printf gate-ok"], self.log
+        ):
+            result = self.ponte("gate")
+            self.assertEqual(result.returncode, 126)
+            self.assertIn(b"gate is not available: this bridge has no receipt folder", result.stdout)
+        self.assertFalse(unit.exists())
+        line = self.log.read_text(encoding="utf-8").splitlines()[0]
+        self.assertIn("REFUSED (gate is not available: this bridge has no receipt folder)", line)
+
+    def test_gate_request_is_refused_with_an_empty_command_list(self):
+        unit = self.root / "unit"
+        self.commit_base()
+        with bridge.porteiro(
+            self.checkout, "01-unit", self.base_file, [], self.log, receipt_dir=unit
+        ):
+            result = self.ponte("gate")
+            self.assertEqual(result.returncode, 126)
+            self.assertIn(b"gate is not available: the brief has no gate commands", result.stdout)
+        self.assertFalse(unit.exists())
+
+    def test_gate_is_only_the_exact_argv_and_other_requests_are_unchanged(self):
+        unit = self.root / "unit"
+        self.assertEqual(
+            bridge.porteiro_allowed(self.checkout, self.base_file, ["printf gate-ok"], ["gate"], unit),
+            ("gate", ""),
+        )
+        self.assertEqual(
+            bridge.porteiro_allowed(self.checkout, self.base_file, ["printf gate-ok"], ["gate", "x"], unit)[0],
+            None,
+        )
+        self.assertEqual(
+            bridge.porteiro_allowed(self.checkout, self.base_file, ["printf gate-ok"], ["gate"])[0],
+            None,
+        )
+
+    def test_gate_timeout_is_read_from_plan_gate_timeout(self):
+        unit = self.root / "unit"
+        self.commit_base()
+        with mock.patch.dict(os.environ, {"PLAN_GATE_TIMEOUT": "0.2"}):
+            self.assertEqual(bridge._gate_timeout_value(), 0.2)
+        with mock.patch.dict(os.environ, {"PLAN_GATE_TIMEOUT": "soon"}):
+            self.assertEqual(bridge._gate_timeout_value(), 900.0)
+        with mock.patch.dict(os.environ, {"PLAN_GATE_TIMEOUT": "0.2"}), bridge.porteiro(
+            self.checkout, "01-unit", self.base_file, ["sleep 5"], self.log, receipt_dir=unit
+        ):
+            result = self.ponte("gate")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(b"exit code: 124 (timed out after 0.2 seconds)", result.stdout)
+            receipt = json.loads(receipt_path(unit).read_text(encoding="utf-8"))
+            self.assertEqual(receipt["red"], 1)
 
 
 if __name__ == "__main__":

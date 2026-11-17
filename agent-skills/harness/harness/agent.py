@@ -11,6 +11,7 @@ from contextlib import nullcontext
 from typing import Optional
 
 from .engine.bridge import porteiro
+from .gate import gate_commands
 from .inject import InjectionError, inject_rules
 
 
@@ -392,6 +393,8 @@ def run_agent(
     bridge_base_file=None,
     bridge_log=None,
     bridge_unit=None,
+    bridge_receipt_dir=None,
+    bridge_gate_brief=None,
     resume_id=None,
     track=False,
 ):
@@ -399,6 +402,9 @@ def run_agent(
 
     ``resume_id`` continues that conversation with the prompt as its next message; ``track`` keeps the conversation
     on disk so a later run can resume it (Codex always does, Claude only when asked).
+
+    With ``bridge_base_file``, ``bridge_receipt_dir`` lets the agent's ``ponte gate`` write the gate receipt there,
+    and ``bridge_gate_brief`` names the brief whose gate fences are the commands that gate runs.
     """
     backend_class = get_backend(backend)
     if backend_class is None:
@@ -420,11 +426,17 @@ def run_agent(
     command = [backend_class.executable] + backend_class().arguments(
         directory, model, effort, sandbox, tier, last_message_path, web, resume_id, track
     )
-    bridge_context = (
-        porteiro(directory, bridge_unit, bridge_base_file, [], bridge_log)
-        if bridge_base_file is not None
-        else nullcontext()
-    )
+    if bridge_base_file is not None:
+        try:
+            commands = gate_commands([bridge_gate_brief]) if bridge_gate_brief is not None else []
+        except OSError as error:
+            print("harness: {0}".format(error), file=sys.stderr)
+            return 2
+        bridge_context = porteiro(
+            directory, bridge_unit, bridge_base_file, commands, bridge_log, receipt_dir=bridge_receipt_dir
+        )
+    else:
+        bridge_context = nullcontext()
     try:
         with bridge_context:
             with open(prompt_file, "rb") as prompt, open(events_path, "wb") as events, open(

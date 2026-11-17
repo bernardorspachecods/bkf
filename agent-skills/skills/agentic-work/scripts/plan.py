@@ -100,6 +100,7 @@ class _UnitHooks(UnitHooks):
         with porteiro(
             checkout, unit, base, self.gate_commands(brief),
             self.ctx.run.path / "porteiro.log",
+            receipt_dir=os.path.dirname(brief),
         ):
             yield
 

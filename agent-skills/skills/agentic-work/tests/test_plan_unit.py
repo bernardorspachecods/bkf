@@ -54,7 +54,7 @@ class PlanUnitTests(unittest.TestCase):
         self.env = os.environ.copy()
         self.env.update({
             "PATH": str(bin_dir) + os.pathsep + self.env["PATH"], "FAKE_STATE": str(self.state),
-            "PLAN_GUIDES": str(guides), "FAKE_VERDICTS": json.dumps(["pass"]),
+            "PLAN_GUIDES": str(guides), "FAKE_VERDICTS": json.dumps(["pass"]), "HARNESS_BACKEND": "codex",
         })
         self.brief = root / "unit.md"
 
@@ -82,8 +82,25 @@ class PlanUnitTests(unittest.TestCase):
     def implement(self, text="changed\n"):
         (self.repo / "seed.txt").write_text(text, encoding="utf-8")
 
+    def gate(self, *extra, unit=None):
+        args = ["gate", str(self.brief), "--dir", str(self.out)]
+        if unit:
+            args.extend(["--unit", unit])
+        return self.plan_unit(*(args + list(extra)))
+
     def reviews(self):
         return sorted(self.state.glob("prompt-*.md"))
+
+    def counted_gate(self, check="grep -q changed seed.txt", log="gate-runs.log"):
+        """A gate command that appends a line to a log outside the checkout each time it really runs."""
+        return 'echo run >> "{0}"; {1}'.format(self.state / log, check)
+
+    def runs(self, log="gate-runs.log"):
+        path = self.state / log
+        return len(path.read_text(encoding="utf-8").splitlines()) if path.is_file() else 0
+
+    def receipt(self):
+        return self.out / "unit" / "receipt" / "receipt.json"
 
     def test_passing_gate_then_a_separate_reviewer_on_its_own_model_gives_pass(self):
         self.write_brief(gate="grep -q changed seed.txt")
@@ -196,6 +213,103 @@ class PlanUnitTests(unittest.TestCase):
         no_model = self.check()
         self.assertEqual(no_model.returncode, 3)
         self.assertIn("--review-model is required", no_model.stderr)
+
+    def test_green_receipt_makes_check_skip_the_gate(self):
+        self.write_brief(gate=self.counted_gate())
+        self.begin()
+        self.implement()
+        receipt = self.gate()
+        self.assertEqual((receipt.returncode, receipt.stdout.strip()), (0, "receipt: pass (1 command(s))"), receipt.stderr)
+        self.assertEqual(self.runs(), 1)
+        data = json.loads(self.receipt().read_text(encoding="utf-8"))
+        self.assertEqual((data["commands"], data["red"]), ([self.counted_gate()], 0))
+        self.assertRegex(data["tree"], r"^[0-9a-f]+$")
+        result = self.check("--review-model", "m")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("gate: pass (receipt, 1 command(s))", result.stdout)
+        self.assertEqual(self.runs(), 1)
+        self.assertIn(str(self.out / "unit" / "receipt" / "gate" / "gate.md"), self.reviews()[0].read_text())
+
+    def test_edit_after_gate_makes_check_run_the_gate_again(self):
+        self.write_brief(gate=self.counted_gate())
+        self.begin()
+        self.implement()
+        self.assertEqual(self.gate().returncode, 0)
+        self.implement("changed again\n")
+        result = self.check("--review-model", "m")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("gate: pass (1 command(s))", result.stdout)
+        self.assertEqual(self.runs(), 2)
+
+    def test_changed_gate_command_in_the_brief_makes_check_run_the_gate_again(self):
+        self.write_brief(gate=self.counted_gate())
+        self.begin()
+        self.implement()
+        self.assertEqual(self.gate().returncode, 0)
+        self.write_brief(gate=self.counted_gate(log="other.log"))
+        result = self.check("--review-model", "m")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("gate: pass (1 command(s))", result.stdout)
+        self.assertEqual((self.runs(), self.runs("other.log")), (1, 1))
+
+    def test_red_receipt_never_makes_check_skip_the_gate(self):
+        self.write_brief(gate=self.counted_gate(check="grep -q never-there seed.txt"))
+        self.begin()
+        self.implement()
+        receipt = self.gate()
+        self.assertEqual((receipt.returncode, receipt.stdout.strip()), (1, "receipt: FAIL (1 of 1)"), receipt.stderr)
+        self.assertEqual(json.loads(self.receipt().read_text(encoding="utf-8"))["red"], 1)
+        result = self.check("--review-model", "m")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("VERDICT: back", result.stdout)
+        self.assertEqual(self.runs(), 2)
+        self.assertEqual(self.reviews(), [])
+
+    def test_failing_gate_in_check_deletes_an_old_receipt(self):
+        self.write_brief(gate=self.counted_gate())
+        self.begin()
+        self.implement()
+        self.assertEqual(self.gate().returncode, 0)
+        self.implement("other\n")
+        result = self.check("--review-model", "m")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertFalse(self.receipt().exists())
+
+    def test_gate_needs_begin_first(self):
+        self.write_brief(gate="true")
+        result = self.gate()
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("run begin first", result.stderr)
+
+    def test_green_receipt_also_skips_the_gate_with_gate_only(self):
+        self.write_brief(gate=self.counted_gate())
+        self.begin()
+        self.implement()
+        self.assertEqual(self.gate().returncode, 0)
+        result = self.check("--gate-only")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("gate: pass (receipt, 1 command(s))", result.stdout)
+        self.assertNotIn("VERDICT", result.stdout)
+        self.assertEqual((self.runs(), self.reviews()), (1, []))
+
+    def test_unreadable_receipt_is_ignored_and_the_gate_runs(self):
+        self.write_brief(gate=self.counted_gate())
+        self.begin()
+        self.implement()
+        self.assertEqual(self.gate().returncode, 0)
+        self.receipt().write_text("{not json", encoding="utf-8")
+        result = self.check("--review-model", "m")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("gate: pass (1 command(s))", result.stdout)
+        self.assertEqual(self.runs(), 2)
+
+    def test_gate_without_gate_commands_writes_no_receipt(self):
+        self.write_brief()
+        self.begin()
+        self.implement()
+        result = self.gate()
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, "receipt: none (no gate commands)"), result.stderr)
+        self.assertFalse(self.receipt().exists())
 
 
 if __name__ == "__main__":

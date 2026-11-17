@@ -5,6 +5,9 @@
 the brief and the diff. The reviewer is never the implementer and never shared between units. The result is one verdict
 and an exit code: 0 pass, 1 back (fix and run `check` again), 2 escalate or brief (stop and ask), 3 the check itself
 failed.
+
+`gate` runs the gate alone and leaves a receipt: the checkout's tree, the gate commands and how many of them failed.
+`check` skips the gate when the receipt is green and still matches the checkout and the brief's gate commands.
 """
 import argparse
 import os
@@ -24,6 +27,7 @@ from harness.engine.pipeline import _check_reviewer  # noqa: E402
 from harness.engine.review import run_review  # noqa: E402
 from harness.engine.run import RunError  # noqa: E402
 from harness.gate import run_gate  # noqa: E402
+from harness.receipt import forget_receipt, receipt_gate_file, receipt_passes, write_receipt  # noqa: E402
 
 PASS, BACK, ESCALATE, ERROR = 0, 1, 2, 3
 _EXIT = {"pass": PASS, "back": BACK, "escalate": ESCALATE, "brief": ESCALATE}
@@ -51,6 +55,17 @@ def _checkout():
 
 def _unit_dir(args):
     return Path(args.dir) / (args.unit or Path(args.brief).stem)
+
+
+def _require_begun(unit_dir):
+    if not (unit_dir / "base").is_file() or not (unit_dir / "brief.md").is_file():
+        raise RunError("run begin first: no base saved for unit {0}".format(unit_dir.name))
+
+
+def _brief_commands(brief):
+    if not Path(brief).is_file():
+        raise RunError("missing brief: {0}".format(brief))
+    return plan_inputs.gate_commands([str(brief)])
 
 
 def begin(args):
@@ -94,12 +109,28 @@ def _finish(unit_name, number, patch, gate_text, verdict, problems):
     return _EXIT.get(verdict, PASS)
 
 
+def gate(args):
+    checkout = _checkout()
+    unit_dir = _unit_dir(args)
+    _require_begun(unit_dir)
+    commands = _brief_commands(args.brief)
+    if not commands:
+        forget_receipt(unit_dir)
+        print("receipt: none (no gate commands)")
+        return PASS
+    data = write_receipt(unit_dir, checkout, commands, plan._limits().gate_timeout)
+    if data["red"]:
+        print("receipt: FAIL ({0} of {1})".format(data["red"], len(commands)))
+        return BACK
+    print("receipt: pass ({0} command(s))".format(len(commands)))
+    return PASS
+
+
 def check(args):
     checkout = _checkout()
     unit_dir = _unit_dir(args)
     brief = unit_dir / "brief.md"
-    if not (unit_dir / "base").is_file() or not brief.is_file():
-        raise RunError("run begin first: no base saved for unit {0}".format(unit_dir.name))
+    _require_begun(unit_dir)
     if not args.gate_only:
         if not args.review_model:
             raise RunError("--review-model is required (or --gate-only when you review the diff yourself)")
@@ -111,13 +142,17 @@ def check(args):
     patch = round_dir / "diff.patch"
     make_patch(unit_dir, patch, checkout)
 
-    commands = plan_inputs.gate_commands([str(brief)])
+    commands = _brief_commands(args.brief)
     gate_file = ""
     gate_text = "none (only the reviewer checks this unit)"
-    if commands:
+    if commands and receipt_passes(unit_dir, checkout, commands):
+        gate_file = receipt_gate_file(unit_dir)
+        gate_text = "pass (receipt, {0} command(s))".format(len(commands))
+    elif commands:
         data = run_gate(checkout, plan._limits().gate_timeout, str(round_dir / "gate"), commands)
         gate_file = round_dir / "gate" / "gate.md"
         if data["red"]:
+            forget_receipt(unit_dir)
             problems = round_dir / "problems.md"
             problems.write_text(_gate_problems(gate_file, data["red"], len(commands)), encoding="utf-8")
             (round_dir / "verdict").write_text("back\n", encoding="utf-8")
@@ -158,14 +193,14 @@ def check(args):
 def _parser():
     parser = argparse.ArgumentParser(prog="plan-unit.sh", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("begin", "check"):
+    for name in ("begin", "check", "gate"):
         sub = commands.add_parser(name)
         sub.add_argument("brief")
         sub.add_argument("--dir", required=True, help="folder that holds the unit's files (diffs, gate logs, reviews)")
         sub.add_argument("--unit", help="unit name (default: the brief's file name without extension)")
         if name == "begin":
             sub.add_argument("--restart", action="store_true", help="start an already begun unit over")
-        else:
+        elif name == "check":
             sub.add_argument("--review-model", help="the reviewer's model")
             sub.add_argument("--review-backend", choices=("codex", "claude"),
                              help="the reviewer's backend (default: HARNESS_BACKEND, else codex)")
@@ -177,8 +212,9 @@ def _parser():
 
 def main(argv=None):
     args = _parser().parse_args(argv)
+    handlers = {"begin": begin, "gate": gate, "check": check}
     try:
-        return begin(args) if args.command == "begin" else check(args)
+        return handlers[args.command](args)
     except RunError as error:
         print("plan-unit: {0}".format(error), file=sys.stderr)
         return ERROR

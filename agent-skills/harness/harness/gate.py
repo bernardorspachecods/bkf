@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 import signal
 import subprocess
 import time
@@ -8,6 +9,29 @@ import time
 
 _TERM_GRACE_SECONDS = 2.0
 _POLL_SECONDS = 0.05
+
+
+def gate_commands(brief_paths, tag="gate"):
+    """Return unique commands from all fences tagged ``tag`` (``gate`` by default), in encounter order."""
+    commands = []
+    seen = set()
+    for brief_path in brief_paths:
+        active = False
+        with open(brief_path, "r", encoding="utf-8", newline="") as source:
+            for line in source:
+                line = line.rstrip("\r\n")
+                if re.fullmatch(r"```" + re.escape(tag) + r"[ \t]*", line):
+                    active = True
+                    continue
+                if active and re.fullmatch(r"```[ \t]*", line):
+                    active = False
+                    continue
+                if active:
+                    command = line.strip()
+                    if command and not command.startswith("#") and command not in seen:
+                        seen.add(command)
+                        commands.append(command)
+    return commands
 
 
 def _group_exists(process_group):

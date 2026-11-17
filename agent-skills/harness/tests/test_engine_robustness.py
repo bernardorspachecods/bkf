@@ -7,10 +7,12 @@ import unittest
 from pathlib import Path
 
 import test_engine_pipeline
+from hermetic import pin_backend
 
 
 class EngineRobustnessTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.fixture = test_engine_pipeline.PipelineTests()
         self.fixture.setUp()
         self.root = self.fixture.root

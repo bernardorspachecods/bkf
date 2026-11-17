@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from typing import NamedTuple
 
 from ..gate import run_gate
+from ..receipt import forget_receipt, receipt_gate_file, receipt_passes
 from ..verdict import read_blocked
 from .converge import gate_signature, problem_files
 from .agentstep import run_agent_step
@@ -391,19 +392,27 @@ def run_unit_loop(
 
         gate_file = ""
         if commands:
-            gate_file = os.path.join(round_dir, "gate.md")
-            passed, gate_fails, reason = run_gate_round(
-                run, unit, checkout, round_dir, commands, hooks, limits,
-                gate_fails, "{0} unidade {1} · ronda {2}".format(step_prefix, unit, round_count),
-                previous_gate_signature,
-            )
-            previous_gate_signature = gate_signature(_read(gate_file)) if not passed else None
-            if not passed:
-                if reason:
-                    return LoopResult(False, reason)
-                previous_problems = os.path.join(round_dir, "problems.md")
-                previous_handoff = round_handoff
-                continue
+            stage = "{0} unidade {1} · ronda {2}".format(step_prefix, unit, round_count)
+            if receipt_passes(directory, checkout, commands):
+                # The implementer's own `ponte gate` ran these commands on this exact tree and they passed.
+                gate_file = os.fspath(receipt_gate_file(directory))
+                hooks.progress("{0} · gate PASS (receipt)".format(stage))
+                run.note("{0} round {1}: gate passed by receipt".format(unit, round_count))
+                previous_gate_signature = None
+            else:
+                gate_file = os.path.join(round_dir, "gate.md")
+                passed, gate_fails, reason = run_gate_round(
+                    run, unit, checkout, round_dir, commands, hooks, limits,
+                    gate_fails, stage, previous_gate_signature,
+                )
+                previous_gate_signature = gate_signature(_read(gate_file)) if not passed else None
+                if not passed:
+                    forget_receipt(directory)
+                    if reason:
+                        return LoopResult(False, reason)
+                    previous_problems = os.path.join(round_dir, "problems.md")
+                    previous_handoff = round_handoff
+                    continue
 
         reviews += 1
         verdict, review_reason = run_review_round(

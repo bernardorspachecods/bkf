@@ -10,6 +10,7 @@ from unittest.mock import patch
 from harness.agent import ClaudeBackend, CodexBackend
 from harness.engine.loop import UnitHooks, run_unit_loop
 from harness.engine.run import RunDir, Settings
+from hermetic import pin_backend
 
 
 class Limits:
@@ -87,6 +88,7 @@ else:
 
 class SessionTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

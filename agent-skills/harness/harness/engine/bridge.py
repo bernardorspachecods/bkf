@@ -2,6 +2,7 @@
 import contextlib
 import errno
 import json
+import math
 import os
 import pathlib
 import re
@@ -10,6 +11,9 @@ import signal
 import subprocess
 import threading
 import time
+
+from harness.engine.run import RunError
+from harness.receipt import receipt_gate_file, write_receipt
 
 
 _POLL_SECONDS = 0.3
@@ -137,11 +141,17 @@ def _gate_hint(gate_commands, argv):
     return "; gate commands run only exactly as written in the brief, and this unit's are: " + " | ".join(near)
 
 
-def porteiro_allowed(checkout, base_file, gate_commands, argv):
+def porteiro_allowed(checkout, base_file, gate_commands, argv, receipt_dir=None):
     """Return (mode, reason) using the plan runner's allow rules."""
     argv = list(argv)
     if not argv:
         return None, "empty request"
+    if argv == ["gate"]:
+        if receipt_dir is None:
+            return None, "gate is not available: this bridge has no receipt folder"
+        if not gate_commands:
+            return None, "gate is not available: the brief has no gate commands"
+        return "gate", ""
     line = " ".join(argv)
     if line in gate_commands:
         return "shell", ""
@@ -215,14 +225,34 @@ def _request_argv(path):
     return [item.decode("utf-8", errors="surrogateescape") for item in data]
 
 
-def porteiro_handle(checkout, unit, base_file, gate_commands, request_file, log_path):
+def _gate_timeout_value():
+    """The per-command gate timeout, read as plan.py reads PLAN_GATE_TIMEOUT (default 900 seconds)."""
+    try:
+        timeout = float(os.environ.get("PLAN_GATE_TIMEOUT", "900"))
+    except ValueError:
+        timeout = 900.0
+    return timeout if math.isfinite(timeout) and timeout > 0 else 900.0
+
+
+def _run_gate_request(checkout, receipt_dir, gate_commands, response_path):
+    """Run the gate for the agent, write its receipt, publish gate.md and return the exit code (1 when red)."""
+    try:
+        data = write_receipt(receipt_dir, checkout, gate_commands, _gate_timeout_value())
+    except (OSError, RunError, ValueError) as error:
+        response_path.write_text("ponte: the gate could not run: {0}\n".format(error), encoding="utf-8")
+        return 1
+    response_path.write_bytes(_tail(receipt_gate_file(receipt_dir)))
+    return 1 if data["red"] else 0
+
+
+def porteiro_handle(checkout, unit, base_file, gate_commands, request_file, log_path, receipt_dir=None):
     """Handle a NUL-delimited request and publish its output and exit code."""
     checkout = pathlib.Path(checkout)
     request_file = pathlib.Path(request_file)
     response_dir = checkout / ".plan-porteiro" / "res"
     identifier = request_file.name
     argv = _request_argv(request_file)
-    mode, reason = porteiro_allowed(checkout, base_file, gate_commands, argv)
+    mode, reason = porteiro_allowed(checkout, base_file, gate_commands, argv, receipt_dir)
     output_path = response_dir / (identifier + ".run")
     response_path = response_dir / (identifier + ".out")
     done_path = response_dir / (identifier + ".done")
@@ -234,6 +264,11 @@ def porteiro_handle(checkout, unit, base_file, gate_commands, request_file, log_
         ).format(reason)
         response_path.write_text(refusal, encoding="utf-8")
         _log(log_path, unit, "REFUSED ({0})".format(reason), argv)
+    elif mode == "gate":
+        started = time.time()
+        exit_code = _run_gate_request(checkout, receipt_dir, gate_commands, response_path)
+        elapsed = int(time.time() - started)
+        _log(log_path, unit, "ALLOWED exit={0} {1}s".format(exit_code, elapsed), argv)
     else:
         timeout, timeout_text = _timeout_value()
         started = time.time()
@@ -289,9 +324,15 @@ def _add_exclude(checkout):
 
 
 @contextlib.contextmanager
-def porteiro(checkout, unit, base_file, gate_commands, log_path):
-    """Create and serve the plan runner bridge for one implementation round."""
+def porteiro(checkout, unit, base_file, gate_commands, log_path, receipt_dir=None):
+    """Create and serve the plan runner bridge for one implementation round.
+
+    With ``receipt_dir``, the agent's ``ponte gate`` request runs the brief's gate commands and writes the receipt
+    there (see ``harness.receipt``).
+    """
     checkout = pathlib.Path(checkout).resolve()
+    if receipt_dir is not None:
+        receipt_dir = pathlib.Path(receipt_dir).resolve()
     bridge_dir = checkout / ".plan-porteiro"
     shutil.rmtree(str(bridge_dir), ignore_errors=True)
     (bridge_dir / "req").mkdir(parents=True)
@@ -312,7 +353,7 @@ def porteiro(checkout, unit, base_file, gate_commands, log_path):
                 if request_file.name.startswith(".") or not request_file.is_file():
                     continue
                 porteiro_handle(
-                    checkout, unit, base_file, gate_commands, request_file, log_path
+                    checkout, unit, base_file, gate_commands, request_file, log_path, receipt_dir
                 )
                 try:
                     request_file.unlink()

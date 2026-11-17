@@ -1,12 +1,17 @@
 """Throwaway repository and fake Codex helpers for plan workflow tests."""
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "harness" / "tests"))
+from hermetic import pin_backend  # noqa: E402
 
 
 class PlanRunFixture:
     def __init__(self, test_case):
+        pin_backend(test_case)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"

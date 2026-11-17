@@ -12,10 +12,12 @@ from pathlib import Path
 from harness.cli import main as cli_main
 from harness.engine.run import RunDir, RunError
 from harness.engine.pipeline import _check_reviewer, _check_takeover, _options, main
+from hermetic import pin_backend
 
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"

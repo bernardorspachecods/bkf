@@ -30,6 +30,7 @@ A check too slow for every gate (the full database suite) goes in `regression.ga
 
 ## While units run
 
+- **Do not set up a Monitor or poll to wait.** The script stops when a unit finishes, pauses or needs you, and a run started with `run_in_background: true` notifies you when it exits. A Monitor on a gate or a unit adds nothing and expires unseen.
 - `PLAN_GATE_TIMEOUT` (default 900 s per command), `PLAN_MAX_GATE_ROUNDS` (default 5).
 - A false premise stops the unit before its first round: correct the brief or the checkout and `resume`.
 - **Brief problems come to you.** An implementer's `BLOCKED: ...` or a reviewer's `VERDICT: brief` stops the unit: the brief may be wrong. Correct briefs in `00-input/units/` before `resume`; units not yet started, integrations and the final review read the current briefs.
@@ -42,7 +43,7 @@ Run in series when unsure or when the group is two small units; parallel pays on
 
 ## The bridge
 
-While an implementer works, `.plan-porteiro/ponte <command...>` runs outside its sandbox the unit's gate commands and the `pnpm` scripts allowed by `bridge.pnpmScripts` in `.plan-run.json`. It reads that file from the unit's base, so change the list with the run stopped, and say in the final review that it grew. A measurement longer than about 30 minutes goes in the gate, not through the bridge.
+While an implementer works, `.plan-porteiro/ponte gate` runs the unit's whole gate outside its sandbox and writes the gate receipt in the unit's folder; the loop accepts a green receipt for the same tree and gate commands and goes straight to the review, so the gate runs once. `.plan-porteiro/ponte <command...>` runs outside its sandbox the unit's gate commands and the `pnpm` scripts allowed by `bridge.pnpmScripts` in `.plan-run.json`. It reads that file from the unit's base, so change the list with the run stopped, and say in the final review that it grew. A measurement longer than about 30 minutes goes in the gate, not through the bridge.
 
 ## Takeover
 

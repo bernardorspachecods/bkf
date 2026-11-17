@@ -6,10 +6,12 @@ from unittest import mock
 
 from harness.engine.review import run_review
 from harness.engine.run import RunDir, Settings
+from hermetic import pin_backend
 
 
 class ReviewTests(unittest.TestCase):
     def setUp(self):
+        pin_backend(self)
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)
         self.run = RunDir.create(
