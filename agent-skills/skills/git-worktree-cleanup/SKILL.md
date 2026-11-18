@@ -13,12 +13,13 @@ description: Close out git worktrees and branches. `mine` (default) commits this
 ## `mine`
 
 1. Commit with `git-status-cleanup mine` (`all` if the user says so); no session changes may remain uncommitted.
-2. Run the repo's named check; on failure or if none is named, stop, leave all and explain. Then, if the `git-merge-queue` skill's `scripts/merge_queue.py` exists, run `python3 -I <that script> busy`; if it exits 1, stop, leave all and tell the user to use `git-merge-queue`.
-3. From default checkout, run `git -C <default-checkout> merge` (`--ff-only` when possible). Keep non-overlapping changes there. If refused or conflicted, resolve only when both sides make the right result clear; otherwise abort, leave the branch and ask the user.
-4. Run every command with `git -C <default-checkout>`; delete the branch (`git branch -d`). In a linked worktree, remove it first (`git worktree remove`).
-5. Tell the user what is gone: the worktree/session directory, or only the branch.
+2. In a linked worktree, bring default into the session branch first, from inside the worktree: `git merge <default>` (local, no `-C`). Resolve conflicts only when both sides make the right result clear; otherwise abort, leave the branch and ask the user. Then the final merge is always a fast-forward and the check below runs on exactly what will land.
+3. Run the repo's named check on that result; on failure or if none is named, stop, leave all and explain. Then, if the `git-merge-queue` skill's `scripts/merge_queue.py` exists, run `python3 -I <that script> busy; echo "exit=$?"`; read the exit code: if 1, stop, leave all and tell the user to use `git-merge-queue`.
+4. Land it with one command: `git -C <default-checkout> merge --ff-only <branch>`. If default moved since step 2, repeat steps 2-3 once. If the environment denies the command on the default checkout (worktree isolation), do not give the user a menu and do not work around the denial: say it in one line and give the exact commands (this merge, then `git branch -d`, then `git worktree remove`) for the user to run with `!`; leave branch and worktree.
+5. After the merge, in a linked worktree remove it first (`git worktree remove`), then delete the branch (`git -C <default-checkout> branch -d`).
+6. Tell the user what is gone: the worktree/session directory, or only the branch.
 
-Main checkout: there is no worktree to remove. If the session branch is not default, the checkout must be clean after step 1; switch it to default (`git switch <default>`), merge, delete the branch, and say the checkout is now on default. If the session is already on default, stop after steps 1-2: there is nothing to merge or delete.
+Main checkout: there is no worktree to remove. If the session branch is not default, the checkout must be clean after step 1; switch it to default (`git switch <default>`), merge, delete the branch, and say the checkout is now on default. If the session is already on default, stop after step 1: there is nothing to merge or delete.
 
 ## `all`
 
