@@ -1,11 +1,11 @@
 ---
 name: agentic-work
-description: "Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a gate and a review, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm."
+description: "Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a review and, where the repository has checks, a gate, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm."
 ---
 
 # Agentic work
 
-A run is a plan: one goal split into units, each implemented, gated and reviewed on its own (pass, back or escalate).
+A run is a plan: one goal split into units, each implemented, reviewed (and gated where the repository has checks) on its own (pass, back or escalate).
 
 <!-- inject: ../../modules/agentic-roles.md -->
 <!-- BKF:GENERATED-INJECTED -->
@@ -47,7 +47,7 @@ Write the goal once, as `align-intent` defines the intent, and have the user con
 
 **When the split depends on something you do not know yet,** run a unit that only reads and reports first.
 
-**Gates.** Every unit has a gate, or a reason in its brief why no command can decide it. Run each gate line once before the first unit, and include the repository's quick check in every gate, if it has one. **The gate runs once.** The implementer runs it last, through a tool that leaves a receipt (a record of the commands, their results and the tree they ran on); the check and the reviewer use the receipt and never repeat the gate. A receipt is accepted only while the tree and the gate commands are the same, so an edit after it, yours too, brings the gate back. The coordinator never runs a unit's gate commands by hand outside the check.
+**Gates are optional.** Use one only where the repository clearly already has tests or checks that can decide the unit, commands you have seen (a documented script, a test suite, CI). Never invent a gate: no new harness, no ad-hoc `grep` or script, no command guessed from the stack. With nothing that applies, the unit has no `gate` fence, one line in its brief says so, and the reviewer alone judges it (so does a unit that creates the tests). Otherwise run each gate line once before the first unit and include the repository's quick check, if it has one. **The gate runs once.** The implementer runs it last, through a tool that leaves a receipt (the commands, their results and the tree they ran on); the check and the reviewer use the receipt and never repeat the gate. A receipt holds only while the tree and the gate commands are the same, so any later edit, yours too, brings the gate back. The coordinator never runs a unit's gate commands by hand outside the check.
 
 ## 2. The unit brief
 
@@ -78,6 +78,7 @@ grep -q "photo" db/schema.sql
 What this unit must not touch, written by exclusion, never as the list of files that may change. Tests and documents made wrong by the change belong to this unit and are adapted without weakening assertions.
 
 ## Gate
+*Only when the repository already has a check that applies; otherwise omit the fence and say so in one line.*
 ```gate
 pnpm check:quick
 pnpm test:unit

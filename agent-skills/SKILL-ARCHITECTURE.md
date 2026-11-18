@@ -6,7 +6,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 | Skill | When to use it | Explicit only |
 | --- | --- | --- |
-| [agentic-work](skills/agentic-work/SKILL.md) | Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a gate and a review, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm. |  |
+| [agentic-work](skills/agentic-work/SKILL.md) | Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a review and, where the repository has checks, a gate, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm. |  |
 | [align-intent](skills/align-intent/SKILL.md) | Use at the start of any task that is more than a small change: settle with the user what is wanted and why, and when it is done, before working. Do not use inside a plan, a delegated task or a review: the brief already carries the intent. |  |
 | [ambitious](skills/ambitious/SKILL.md) | Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes, or to research a topic (use research). | yes |
 | [before-compaction](skills/before-compaction/SKILL.md) | Before the user compacts the chat, make sure everything the work needs is written in documents and suggest the compaction message. Use only when the user is about to compact; do not use to hand work to a new chat (use handoff). | yes |
@@ -31,7 +31,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## agentic-work
 
-- Description: Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a gate and a review, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm.
+- Description: Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a review and, where the repository has checks, a gate, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm.
 - Package: [`agent-skills/skills/agentic-work`](skills/agentic-work/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
