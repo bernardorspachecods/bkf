@@ -1,6 +1,6 @@
 ---
 name: agentic-work
-description: "Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a review and, where the repository has checks, a gate, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm."
+description: "Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a review and, where the repository has checks, a gate, driven from this conversation; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm."
 ---
 
 # Agentic work
@@ -29,15 +29,13 @@ You are the coordinator; a unit's author is its implementer. When you implement,
 
 ## How the run is set
 
-The user decides three things before the first unit, and you never choose or switch them:
+The run is driven from this conversation ([conversation-run.md](conversation-run.md)): units one after another, and the way to hand a single task to an agent.
 
-| Question | Options |
-| --- | --- |
-| Who drives? | This conversation ([conversation-run.md](conversation-run.md)): units one after another, and the way to hand a single task to an agent. Or a script ([script-run.md](script-run.md)): parallel units, pauses, a run that goes on without you |
-| Who implements? | You, an agent you launch on Codex or Claude, or the script's agents |
-| Who reviews? | A reviewer on its own model and backend, you, or the user |
+**Ask one question, and no other about the way:** implement with a Haiku subagent, or with a Codex agent you launch? Both run in this conversation. Offer only those two; the user names anything else (you, another model, another reviewer) if they want it. You never choose or switch it yourself.
 
-Read only the guide of the chosen driver.
+**The reviewer is not asked:** assume you review, unless the user names another reviewer. Run `check --gate-only` and judge the diff against the brief yourself.
+
+A script driver exists ([script-run.md](script-run.md)); never offer it or read it unless the user asks for a script run.
 
 ## 1. The goal and the units
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Run one agent task (Codex, or Claude with HARNESS_BACKEND=claude) in a prepared git worktree and record the results.
+# Run one Codex agent task in a prepared git worktree and record the results.
 # Usage: [DELEGATE_IN_PLACE=1] delegate-run.sh <name> <brief-file> [base-ref] [model] [effort]
 # DELEGATE_IN_PLACE=1 runs in the main checkout instead of a new worktree.
 # DELEGATE_RERUN=1 allows reusing a run folder that already has a status file.
 # DELEGATE_UNIT_DIR=<unit folder> lets the agent's `ponte gate` write the gate receipt there (see harness.receipt).
 # New worktrees run the repository's committed .plan-run.json setup; its bridge can run allowed pnpm scripts.
-# Without a model and effort: gpt-6-luna and high on Codex, sonnet and high on Claude.
+# Codex only: a Claude implementer is a subagent (git tag agentic-work-claude-launcher has the launcher with a Claude backend).
+# Without a model and effort: gpt-6-luna and high.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -15,13 +16,9 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 name=${1:?task name}
 brief=${2:?brief file}
 base=${3:-HEAD}
-if [ "${HARNESS_BACKEND:-codex}" = claude ]; then
-  model=${4:-sonnet}
-  effort=${5:-high}
-else
-  model=${4:-gpt-6-luna}
-  effort=${5:-high}
-fi
+model=${4:-gpt-6-luna}
+effort=${5:-high}
+export HARNESS_BACKEND=codex
 
 repo=$(git rev-parse --show-toplevel)
 base=$(git -C "$repo" rev-parse "$base")

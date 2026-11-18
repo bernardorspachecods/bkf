@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests delegate-run.sh with a fake `codex` and a fake `claude`, in a throwaway repository: no model is called.
+# Tests delegate-run.sh with a fake `codex`, in a throwaway repository: no model is called.
 # Usage: test-delegate-run.sh        (exit 0 when every case passes)
 set -uo pipefail
 
@@ -38,19 +38,6 @@ fi
 echo done >"$out"
 F
 chmod +x "$work/bin/codex"
-# The fake Claude reads the prompt, writes the same file in its working directory and prints a result event.
-cat >"$work/bin/claude" <<'F'
-#!/usr/bin/env bash
-model=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in --model) model=$2; shift 2 ;; *) shift ;; esac
-done
-cat >/dev/null
-echo "$model" >"$FAKE_MODEL"
-echo "made by the agent" >made.txt
-echo '{"type":"result","subtype":"success","result":"done"}'
-F
-chmod +x "$work/bin/claude"
 
 git -C "$work/repo" init -q
 git -C "$work/repo" config user.email t@example.com
@@ -167,12 +154,6 @@ BRIEF_FILE="$work/gate-brief.md" run gatedoff FAKE_PONTE_GATE="$work/gatedoff.po
 check "no unit folder: exits 0" '[ $code -eq 0 ]'
 check "no unit folder: the brief has no gate receipt section" '! grep -q "Gate receipt" "$work/runs/repo/gatedoff/brief.md"'
 check "no unit folder: no bridge is started" 'grep -qx "no bridge" "$work/gatedoff.ponte"'
-
-# Claude backend: the default model is Claude's and the same file appears.
-run viaclaude DELEGATE_IN_PLACE=1 HARNESS_BACKEND=claude; code=$?
-check "claude: exits 0" '[ $code -eq 0 ]'
-check "claude: the default model is sonnet" '[ "$(cat "$work/model.txt")" = "sonnet" ]'
-check "claude: the agent's file is in the checkout" '[ -f "$work/repo/made.txt" ]'
 
 git -C "$work/repo" worktree remove --force "$wt" >/dev/null 2>&1
 exit "$fail"
