@@ -29,6 +29,7 @@ from bkf_common import (
     find_bundles,
     in_linked_worktree,
     inventory_entries,
+    is_bundle_root_map,
     load_tag_vocabulary,
     needs_navigation_map,
     nested_bundle_roots,
@@ -63,6 +64,7 @@ OPTIONAL_FIELDS = {
 }
 DESCRIPTION_REVIEW_RE = re.compile(r"\b(?:open\s+when|use\s+when)\b", re.IGNORECASE)
 LOG_PROFILES = frozenset({"feedback", "ideas"})
+MAP_SIZE_LIMIT = 4
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,7 @@ class Validator:
         self._validate_documents()
         for map_path in maps:
             self._validate_map(map_path, root_map)
+            self._validate_map_size(map_path, root_map)
 
         for path, parsed in list(self.member_documents.items()):
             self._validate_links(path, parsed.body)
@@ -396,6 +399,38 @@ class Validator:
                 self._validate_task_routes(path, lines[section_end : self._next_heading_start(headings, section_start, len(lines))])
             elif title == "Artifact references":
                 self._validate_artifact_references(path, body, section_start, self._next_heading_start(headings, section_start, len(lines)))
+
+    def _validate_map_size(self, path: Path, root_map: Path) -> None:
+        """Warn when a non-root map covers too few items to earn its own navigation purpose."""
+        if path == root_map or is_bundle_root_map(path):
+            return
+        try:
+            entries = inventory_entries(self.root, path)
+            body = self._map_body(path, root_map)
+        except (BKFInputError, OSError, UnicodeError):
+            return  # the map's own errors already explain this
+        size = len(entries)  # tracked documents and child maps in scope
+
+        lines = body.splitlines()
+        headings = self._section_headings(body)
+        for title, start, end in headings:
+            section_end = self._next_heading_start(headings, start, len(lines))
+            if title == "Artifact references":
+                tokens = MARKDOWN.parse("\n".join(lines[start:section_end]))
+                size += sum(1 for token in tokens if token.type == "list_item_open")
+            elif title == "Task routes":
+                rows = [line for line in lines[end:section_end] if line.strip().startswith("|")]
+                size += max(len(rows) - 2, 0)  # the header and separator rows are not routes
+
+        if size <= MAP_SIZE_LIMIT:
+            self.warning(
+                "MAP_TOO_SMALL",
+                path,
+                f"map covers {size} items (limit {MAP_SIZE_LIMIT}). Folders without a distinct navigation "
+                "purpose use their nearest ancestor map. If that is obvious here, delete this MAP.md and let "
+                "the parent map list its contents; if it is not obvious, ask the user before deleting or "
+                "keeping it.",
+            )
 
     @staticmethod
     def _next_heading_start(

@@ -170,8 +170,8 @@ local rules and documents that are not easy to infer from the nearest
 ancestor map. Keep the map hierarchy shallow: folders without a distinct
 navigation purpose use their nearest ancestor map. A parent map may link
 directly to an important child folder, file, or tool; that link alone does
-not require a child map. These are recommendations for organizing a bundle,
-not conformance requirements.
+not require a child map. The validator warns on maps covering 4 or fewer items.
+These are recommendations for organizing a bundle, not conformance requirements.
 
 #### Sections and ownership
 

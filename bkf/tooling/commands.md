@@ -84,6 +84,12 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   The `feedback` and `ideas` logs are exempt from the navigation map warnings.
   When any navigation map warning is printed, one paragraph on writing the map
   ends the findings.
+- A `MAP.md` that is neither the bundle root nor a nested bundle root gets
+  `MAP_TOO_SMALL` when it covers 4 or fewer items: its tracked documents and
+  child maps in scope, plus its artifact references and `## Task routes` rows.
+  The finding asks the agent to delete the map when its parent can list the
+  contents, or to ask the user when that is not obvious. It is a warning, and
+  the stop hook gives it to the agent for changed `MAP.md` files.
 - A bundle with a `tag-vocabulary.yaml` gets `TAG_VOCABULARY_INVALID` for an
   unusable file and `TAG_UNKNOWN` for each tag that is not a canonical tag
   ([frontmatter profiles](/format/frontmatter-profiles.md#tag-vocabulary)).
