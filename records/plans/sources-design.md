@@ -6,7 +6,7 @@ Design in progress, settled with Bernardo one decision at a time. When it is bui
 
 Agents research the web (docs, posts, talks, packages, repos) for software work across many repositories. Sources end up scattered across conversations, the same ones are reopened, and metadata (author, publication and consultation dates) is lost. The registry makes every source researched once: an agent checks it before searching and records what it reads mechanically, so metadata cannot be forgotten.
 
-First consumer and test case: `~/software-factory/fontes.md` (F01–F14), organized by the session that organizes that library.
+First consumer: `~/software-factory`, migrated whole (see below).
 
 ## Decisions taken
 
@@ -71,17 +71,21 @@ First consumer and test case: `~/software-factory/fontes.md` (F01–F14), organi
 
 Built in units by Codex `gpt-6.2-sol`, reviewed by the coordinating session; `~/sources/` created and F01–F14 migrated by a Sonnet agent (hand-off: `records/plans/sources-migration-map.md`). Two reviews by Codex `gpt-6.2-astra` found blockers (no public-network boundary in the fetcher, unbounded responses, redirect destinations merged into other sources, refresh able to erase evidence, one malformed record disabling capture, page text read as a section heading); all were fixed, and a third review by Opus 5.5 found the result ready to install, after which its remaining should-fix findings were fixed too. The `sources` hooks are installed (2026-11-19) and were seen working live: a registered URL denied in a session and in a subagent, a new URL captured as `pending` with its id. F01–F14 are migrated (map: `records/plans/sources-migration-map.md`; `~/sources/` holds 15 records, all `ok`).
 
-## Migration of the whole software-factory library (next)
+## Migration of the whole software-factory library (done 2026-11-19)
 
-`~/software-factory/fontes.md` grew to about 97 sources (F01–F97, more as research continues), cited about 100 times in `ferramentas.md`, `missoes.md`, `novidades.md`, `praticas/*.md` and `inbox/*.md`. `~/software-factory` is **not a git repository**: nothing can be rolled back without a copy. Agents: **Haiku** subagents (Bernardo's choice), reviewed by the coordinating session. Steps:
+All of `~/software-factory` now cites global ids: `fontes.md` is the library's citations table (`Fonte | O que suporta aqui | Usada em`, a local discards table, Lacunas, Por pesquisar), no `Fnn` or `Dnn` key is left in the bundle, its `AGENTS.md` tells feeders and the organizer to work through `~/sources`, and `bkf validate ~/software-factory` is conformant. `~/sources` holds 125 records: 123 used, 1 discarded (`shopify-polaris-references`, dead), 1 pending (`openai-harness-engineering`, HTTP 403, primary text never read). The bundle before the migration is at `~/software-factory.bak-2026-11-19-pre-sources` (it is not a git repository). Work done by Haiku agents, reviewed by the coordinating session.
 
-0. Copy `~/software-factory` whole to a backup before any edit.
-1. `bkf sources add <url> --via migration:software-factory` for every `Fnn` with a URL not already in `~/sources` (F01–F14 are; `bkf sources add` returns the id with exit 3 for a known URL). Records start `pending`. Sources without a URL: search for it; `--manual` only when none exists.
-2. Haiku agents in parallel, about 20 sources each: Key claims from each snapshot that support what `fontes.md` says the source supports (section-local anchors, `bkf sources check` clean), `finish --status used`, or `discarded` with a reason when the page is dead or a copy; `finish --id` to fix a poor id before closing; `bkf sources snapshot` when `add` got no text.
-3. One Haiku agent: rewrite `fontes.md` as the citations table and replace every `Fnn` citation in the bundle (links `/fontes.md#...` included) by the global id; `bkf validate ~/software-factory` clean.
-4. Review by the coordinating session; then message the sessions `desmor-hub1` and `crew-bd-isolada` that the migration is done and how to cite and look up sources from now on.
+Settled during the run:
 
-Open with Bernardo, to ask before step 3: whether to ask `desmor-hub1` at the **start** to freeze `fontes.md` (other sessions add sources to it all day; edits during step 3 would be lost). Then, separately: the hooks run in every session on the machine; Bernardo thinks `sources` may serve only the software factory, not yet decided, so whether to restrict the hooks to some repositories is open.
+- **Discarded sources (`Dnn`)**: only the ones with a URL entered `~/sources` (D14, D32, D33; D29 was already registered through F83). The rest name domains or categories, not pages, and stay in `fontes.md` as a local discards table.
+- **Key claims say what the page says**, not what the consumer wanted: a page that does not support the consumer's claim is still closed `used`, and the consumer's table says the claim is not supported.
+
+Open:
+
+- **Partly supported claims** (35 citations, listed in the Lacunas of `fontes.md`): mostly arXiv abstract pages whose numbers are in the full text at another URL, and npm READMEs without the version. A `web` snapshot cannot be replaced by hand, so how a paper's full text is captured is undecided.
+- `checks 9` and `ferramentas.md` still cite `shopify-polaris-references`, a dead page: the library's organizer decides whether the practice keeps a source.
+- Whether to restrict the hooks to some repositories: they run in every session on the machine, and Bernardo thinks `sources` may serve only the software factory.
+- Domain-level verdicts (SEO farms, mirrors) do not fit a per-URL registry; not built.
 
 Known gaps, deferred on purpose:
 
