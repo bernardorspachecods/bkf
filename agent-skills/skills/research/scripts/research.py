@@ -162,7 +162,7 @@ class ResearchWorkflow(Workflow):
             raise Stop("sourcemap.md has no numbered niche lines")
         directory = run / "01-map"
         directory.mkdir(parents=True, exist_ok=True)
-        prompt = _brief("map.md", objective=_objective_body(run / "00-input" / "objective.md"),
+        prompt = _brief("source-map.md", objective=_objective_body(run / "00-input" / "objective.md"),
                         source_map=source_map, next_number=max(numbers) + 1)
         _write(directory / "prompt.md", prompt)
         (directory / "work").mkdir(parents=True, exist_ok=True)
