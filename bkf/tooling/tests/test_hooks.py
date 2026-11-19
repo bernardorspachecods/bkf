@@ -122,7 +122,10 @@ class HooksTest(unittest.TestCase):
         )
         for directory, name in ((".claude", "settings.json"), (".codex", "hooks.json")):
             hooks = self.config(directory, name)["hooks"]
-            self.assertEqual(set(hooks), {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"})
+            expected_events = {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"}
+            if directory == ".claude":
+                expected_events.update({"PostToolUseFailure", "SubagentStop"})
+            self.assertEqual(set(hooks), expected_events)
             self.assertEqual(len(hooks["UserPromptSubmit"]), 5)
             self.assertEqual(hooks["UserPromptSubmit"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], "python3 " + str((self.home / ".agent-hooks" / "mode.py").resolve()))
@@ -144,6 +147,29 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(hooks["Stop"][0]["hooks"][0]["timeout"], 60)
             self.assertEqual(hooks["Stop"][1]["hooks"][0]["command"], f"{self.command} hooks run last")
         self.assertEqual(run("status", "--home", self.home)[0], 0)
+
+    def test_sources_preview_and_status_are_claude_only(self) -> None:
+        code, preview = run("install", "--only", "sources", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("preview only", preview)
+        self.assertEqual(preview.count(f"{self.command} hooks run sources"), 5)
+        self.assertFalse((self.home / ".claude" / "settings.json").exists())
+        _, pending, _ = bkf_hooks.report(self.home, "sources")
+        self.assertEqual([target.name for target, _, _ in pending], ["claude"])
+        _, path, config = pending[0]
+        hooks = config["hooks"]
+        self.assertEqual(set(hooks), {"PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SubagentStop"})
+        for event in ("PreToolUse", "PostToolUse"):
+            self.assertEqual(hooks[event][0]["matcher"], "WebFetch|WebSearch")
+        self.assertEqual(hooks["PostToolUseFailure"][0]["matcher"], "WebFetch")
+        for event in ("Stop", "SubagentStop"):
+            self.assertNotIn("matcher", hooks[event][0])
+        path.write_text(json.dumps(config))
+        code, status = run("status", "--only", "sources", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertEqual(status.count(f"{self.command} hooks run sources"), 5)
+        self.assertNotIn("broken", status)
+        self.assertFalse((self.home / ".codex" / "hooks.json").exists())
 
     def test_install_rules_registers_only_for_both_tools(self) -> None:
         code, _ = run("install", "--write", "--only", "rules", "--home", self.home)

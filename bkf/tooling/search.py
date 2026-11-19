@@ -8,6 +8,7 @@ import re
 import sqlite3
 import sys
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -141,6 +142,7 @@ def _collect_sections(
     vocabularies: dict[Path, dict[str, list[str]]] | None = None,
     scope: Path | None = None,
     required_tags: list[str] | None = None,
+    on_document_error: Callable[[str], None] | None = None,
 ) -> list[Section]:
     from bkf_common import BKFInputError, canonical_tag, parse_markdown, tracking_state
 
@@ -189,7 +191,10 @@ def _collect_sections(
                     tags = parsed.frontmatter.get("tags")
                     tags = tuple(tag for tag in tags if isinstance(tag, str)) if isinstance(tags, list) else ()
                 except BKFInputError as exc:
-                    raise BKFInputError(f"{relative.lstrip('/')}: {exc}") from exc
+                    if on_document_error is None:
+                        raise BKFInputError(f"{relative.lstrip('/')}: {exc}") from exc
+                    on_document_error(f"{path}: {exc}")
+                    continue
                 if required and not required <= {tag.casefold() for tag in tags}:
                     continue
                 result.extend(_sections(parsed.body, relative, " ".join(description.split()), tags))
@@ -231,7 +236,8 @@ def _contains_sequence(words: list[str], sequence: list[str]) -> bool:
 
 
 def _search(
-    sections: list[Section], terms: list[str], limit: int, phrases: list[str] | None = None
+    sections: list[Section], terms: list[str], limit: int, phrases: list[str] | None = None,
+    *, unique_paths: bool = False,
 ) -> list[tuple[Section, float]]:
     connection = sqlite3.connect(":memory:")
     try:
@@ -260,6 +266,11 @@ def _search(
         ):
             ranks[rowid] = ranks.get(rowid, 0.0) + rank
         ordered = sorted(ranks.items(), key=lambda item: (item[1], sections[item[0] - 1].path))
+        if unique_paths:
+            best_by_path = {}
+            for rowid, rank in ordered:
+                best_by_path.setdefault(sections[rowid - 1].path, (rowid, rank))
+            ordered = list(best_by_path.values())
         return [
             (replace(sections[rowid - 1], preview=_preview(connection, rowid, query, sections[rowid - 1].body)), rank)
             for rowid, rank in ordered[:limit]
@@ -309,18 +320,38 @@ def _render(hits: list[tuple[Section, float]]) -> str:
     return "\n".join(blocks) + ("\n" if blocks else "")
 
 
+def search_bundle(
+    root: Path, question: str, *, limit: int, scope: Path | None = None, heading: str | None = None,
+    tags: list[str] | None = None, unique_paths: bool = False,
+    on_document_error: Callable[[str], None] | None = None,
+) -> list[tuple[Section, float]]:
+    from bkf_common import find_bundles, in_nested_bundle, is_bundle_root_map
+
+    terms = _query_terms(question)
+    if not terms:
+        return []
+    vocabularies = _vocabularies(root, find_bundles)
+    sections = _collect_sections(
+        root, find_bundles, is_bundle_root_map, in_nested_bundle, vocabularies, scope, tags, on_document_error,
+    )
+    if heading is not None:
+        heading = heading.strip().casefold()
+        sections = [section for section in sections if section.title.casefold() == heading]
+    return _search(sections, terms, limit, _expansions(question, vocabularies), unique_paths=unique_paths)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.limit < 1:
         print("bkf search: --limit must be at least 1", file=sys.stderr)
         return 1
-    terms = _query_terms(" ".join(args.query))
-    if not terms:
+    question = " ".join(args.query)
+    if not _query_terms(question):
         print("query has no searchable words", file=sys.stdout)
         return 2
 
     try:
-        from bkf_common import find_bundles, in_nested_bundle, is_bundle_root_map
+        from bkf_common import is_bundle_root_map
 
         cwd = (args.cwd or Path.cwd()).resolve()
         root = _bundle_root(cwd, is_bundle_root_map)
@@ -332,14 +363,9 @@ def main(argv: list[str] | None = None) -> int:
             if not scope.is_relative_to(root):
                 print(f"bkf search: --path is outside the bundle: {args.path}", file=sys.stderr)
                 return 2
-        vocabularies = _vocabularies(root, find_bundles)
-        sections = _collect_sections(
-            root, find_bundles, is_bundle_root_map, in_nested_bundle, vocabularies, scope, args.tag
+        hits = search_bundle(
+            root, question, limit=args.limit, scope=scope, heading=args.heading, tags=args.tag,
         )
-        if args.heading is not None:
-            heading = args.heading.strip().casefold()
-            sections = [section for section in sections if section.title.casefold() == heading]
-        hits = _search(sections, terms, args.limit, _expansions(" ".join(args.query), vocabularies))
         reconfigure = getattr(sys.stdout, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8")

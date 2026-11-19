@@ -17,7 +17,7 @@ import agent_modes
 
 
 SCRIPT_NAME = "mode.py"
-HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "guard", "audit", "tabname")
+HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "guard", "audit", "tabname", "sources")
 EDIT_TOOLS = "Edit|Write|NotebookEdit|MultiEdit|apply_patch"
 TIMEOUT = 10
 RULES_LIMIT = 4000
@@ -49,6 +49,7 @@ class Registration:
     command: str
     owns: re.Pattern[str]
     timeout: int = TIMEOUT
+    claude_only: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -94,6 +95,14 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
     tabname = f"{bkf_command(home)} hooks run tabname"
     tabname_owner = re.compile(r"(^|/)bkf hooks run tabname$")
     wanted += [Registration("tabname", event, None, tabname, tabname_owner) for event in ("SessionStart", "UserPromptSubmit", "Stop")]
+    sources = f"{bkf_command(home)} hooks run sources"
+    sources_owner = re.compile(r"(^|/)bkf hooks run sources$")
+    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SubagentStop"):
+        matcher = "WebFetch|WebSearch" if event in ("PreToolUse", "PostToolUse") else None
+        if event == "PostToolUseFailure":
+            matcher = "WebFetch"
+        timeout = 60 if event == "PostToolUse" else TIMEOUT
+        wanted.append(Registration("sources", event, matcher, sources, sources_owner, timeout, claude_only=True))
     return [item for item in wanted if only in (None, item.hook)]
 
 
@@ -240,7 +249,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
             message = None
         return str(message or "systemMessage")
 
-    if registration.hook in {"check", "log", "guard", "audit", "tabname"}:
+    if registration.hook in {"check", "log", "guard", "audit", "tabname", "sources"}:
         if result.stdout.strip() != '{"probe":"ok"}':
             return "no probe answer (stale install?)" if not result.stdout.strip() else "unexpected probe answer"
         if result.stderr:
@@ -261,14 +270,18 @@ def report(home: Path, only: str | None, *, probe: bool = False) -> tuple[list[s
         current &= state == "ok"
         lines.append(f"{state:<8} script  {installed_script(home)}")
 
+    wanted = registrations(home, only)
     for target in TARGETS:
+        registrations_for_target = [item for item in wanted if not item.claude_only or target.name == "claude"]
+        if not registrations_for_target:
+            continue
         path = target.config_path(home)
         if not (home / target.directory).is_dir():
             lines.append(f"skipped  {target.name}  {home / target.directory} not found")
             continue
         config = load_config(path)
         changed = False
-        for registration in registrations(home, only):
+        for registration in registrations_for_target:
             state = state_of(config, registration)
             entry = find_hook(config, registration)
             reason = _probe_command(entry["command"], registration, home) if probe and entry is not None else None
@@ -305,7 +318,8 @@ def main(argv: list[str] | None = None) -> int:
                 text = f"bkf hook {args.event or 'unknown'} failed: {type(exc).__name__}: {message}"
                 if len(text) > 300:
                     text = text[:299] + "…"
-                print(json.dumps({"systemMessage": text}, ensure_ascii=False))
+                if args.event != "sources":
+                    print(json.dumps({"systemMessage": text}, ensure_ascii=False))
                 print(text, file=sys.stderr)
             return 0
     home = (args.home or Path.home()).expanduser().resolve()

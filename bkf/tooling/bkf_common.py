@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -81,7 +82,8 @@ def parse_markdown(path: Path) -> ParsedMarkdown:
     frontmatter_text = "".join(lines[1:closing])
     try:
         values = yaml.load(frontmatter_text)
-    except YAMLError as exc:
+    except Exception as exc:
+        # YAML value constructors can raise ordinary Python exceptions.
         raise BKFInputError(f"invalid YAML frontmatter: {exc}") from exc
     if not isinstance(values, dict):
         raise BKFInputError("frontmatter must be a YAML mapping")
@@ -252,7 +254,9 @@ def _child_map_description(root: Path, map_path: Path) -> str:
     return " ".join(description.split())
 
 
-def inventory_entries(root: Path, map_path: Path) -> list[InventoryEntry]:
+def inventory_entries(
+    root: Path, map_path: Path, *, on_parse_error: Callable[[str], None] | None = None,
+) -> list[InventoryEntry]:
     scope = map_path.parent
     entries: list[InventoryEntry] = []
 
@@ -279,15 +283,17 @@ def inventory_entries(root: Path, map_path: Path) -> list[InventoryEntry]:
             if directory_path == root and filename == README_NAME:
                 continue
             document = directory_path / filename
+            relative = document.relative_to(root).as_posix()
+            if not document.resolve().is_relative_to(root):
+                raise BKFInputError(f"{relative}: Markdown file resolves outside the bundle root")
             try:
-                if not document.resolve().is_relative_to(root):
-                    raise BKFInputError("Markdown file resolves outside the bundle root")
                 parsed = parse_markdown(document)
             except BKFInputError as exc:
-                relative = document.relative_to(root).as_posix()
-                raise BKFInputError(f"{relative}: {exc}") from exc
+                if on_parse_error is None:
+                    raise BKFInputError(f"{relative}: {exc}") from exc
+                on_parse_error(f"{document}: {exc}")
+                continue
 
-            relative = document.relative_to(root).as_posix()
             if not tracking_state(parsed.frontmatter, path=relative):
                 continue
 

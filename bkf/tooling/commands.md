@@ -19,6 +19,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Orient an agent at session start | [bkf orient](#bkf-orient) |
 | Install, check, or understand the hooks | [bkf hooks](#bkf-hooks) |
 | Search the documents | [bkf search](#bkf-search) |
+| Register, reopen, close, or check researched sources | [bkf sources](#bkf-sources) |
 
 ## Install
 
@@ -240,11 +241,11 @@ the [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks).
 
 ## bkf hooks
 
-`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard|audit|tabname] [--home PATH]` and
-`bkf hooks status [--only modes|orient|check|log|rules|guard|audit|tabname] [--home PATH]` manage eight hook groups that
-must run every time, which a skill cannot guarantee. They are registered for
-both Claude Code (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`);
-a tool whose folder is missing is skipped.
+`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard|audit|tabname|sources] [--home PATH]` and
+`bkf hooks status [--only modes|orient|check|log|rules|guard|audit|tabname|sources] [--home PATH]`
+manage nine hook groups. Registration targets Claude Code
+(`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`). The `sources`
+group targets Claude Code only. A tool whose folder is missing is skipped.
 
 - **modes** registers `UserPromptSubmit` and `PreToolUse` hooks that run a copy
   of `agent_modes.py` placed at `~/.agent-hooks/mode.py`. A prompt starting with
@@ -369,6 +370,61 @@ a tool whose folder is missing is skipped.
   renames the tmux window at once. A name chosen with `/rename` or `--name`, or
   already of that form, is kept; a number is free again when its session ends.
   [session_number.py](/tooling/session_number.py) owns the choice.
+- **sources** looks up and captures web research in the initialized
+  [sources store](#bkf-sources).
+  - Before `WebFetch`, an unregistered URL passes silently. A registered
+    URL or alias with a missing or blank snapshot can be fetched outside a
+    completion window. During a window the hook uses the one-call grant
+    described in [Complete](#bkf-sources). A denial gives the id and absolute
+    paths to the snapshot and record. It gives the command to reopen the
+    source, except while another call holds the grant: then it states that the
+    grant is reserved until `HH:MM` (local time) by a call that has not
+    reported back, and the command comes back with the normal denial once
+    the window expires. After a used grant it says the grant was already used
+    and when it would have expired. The hook strips the URL and
+    percent-encodes `|`, `{`, `}`, `^`, backtick, space, `<`, `>`, and `"`
+    after the host before it compares or stores it, so a URL a browser would
+    fetch is captured once.
+  - After a successful `WebFetch`, the hook fetches the raw page for the
+    snapshot and metadata. A new record starts pending and carries its creating
+    `session_id` and, for a subagent, `agent_id`. Its `via` comes from the latest
+    search by that session and agent, or `direct fetch`. The context gives the
+    `finish` commands with optional `--id NEW`, the warning when a URL
+    redirects to another page, and snapshot instructions when there is no
+    text. Raw capture and refresh use the same [fetch rules](#bkf-sources).
+    A refresh keeps the record's identity and records today's consultation
+    once. For the same page, it fills recoverable `unknown` metadata. For an
+    unrelated destination under the same URL comparison as `add`, it records
+    `ext.redirected_to`, keeps the cited page's metadata, and reports the
+    redirect in the hook context and on stderr. A refresh that lands on the
+    same page clears `ext.redirected_to` and any alias that held that
+    destination, unless the fetch failed. A refresh that ends at another page
+    never replaces a snapshot that has text, with or without Key claims; it
+    saves the destination's text only when the record had none. Otherwise a
+    readable candidate replaces the snapshot only if every existing claim
+    matches in its section. A replacement marks the snapshot as `web` and clears its manual
+    note. If the candidate fails the claim checks, the hook keeps the saved
+    text and provenance and lists the failed claims in its context and on
+    stderr. A fetch without readable text also preserves the saved text.
+  - Before `WebSearch`, BKF search suggests up to five distinct registered
+    sources with their id, status, description, and absolute record path.
+    The hook also shows the latest identical query's time, session, URL
+    count, and first ten result URLs. Query matching folds case and
+    whitespace. A matching record without `ext.id` or `ext.status` is skipped
+    with a warning naming its path; the others are still suggested. A search with neither match passes silently. After the
+    search, the hook appends its time, session, agent when present, query,
+    and URLs from the tool response's result entries to
+    `searches/YYYY-MM-DD.jsonl` and commits it with the same Git lock retries
+    as `add`.
+  - At `Stop` the hook asks the session to close any pending records it
+    created. At `SubagentStop` it asks only for records owned by that subagent.
+    The reason gives the `finish` syntax with optional `--id NEW` for each id
+    and snapshot instructions for records without text.
+    A stop retry with `stop_hook_active` passes.
+  - The group does nothing without an initialized store. Internal errors go
+    to stderr and allow the tool call or stop to proceed. Codex has no
+    `WebFetch` or `WebSearch` hook points. In Codex, use `bkf search` and
+    `bkf sources` directly.
 
 `install` previews by default and prints one line per script and registration
 as `ok`, `missing`, or `differs`; `--write` applies it. Other settings and
@@ -382,8 +438,8 @@ reason. `--only` limits the registrations that are installed or probed. The
 script is copied rather than linked so the hooks survive a moved checkout;
 `status` reports `differs` when the installed copy or a command no longer
 matches this checkout, and returns 1 unless everything is `ok`. Hook failures
-print a JSON `systemMessage` for the user and exit 0 so they never block the
-session. There is no uninstall: remove the entries by hand. Codex asks for a
+exit 0. Groups other than `sources` also print a JSON `systemMessage` for
+the user. There is no uninstall: remove the entries by hand. Codex asks for a
 one-time review of new hooks, so run `/hooks` in Codex after the first install.
 
 ## bkf search
@@ -431,3 +487,215 @@ Agents should search before writing or moving a rule to see where it already
 lives. Exit `0` means results or no matches; `2` means the query has no
 searchable words or `--path` is outside the bundle; `1` reports a search failure. `--debug` adds a traceback to
 failures.
+
+## bkf sources
+
+The sources store is a machine-wide BKF bundle with its own Git repository.
+It holds metadata, claim anchors, and local snapshots. A consuming bundle
+keeps its citations and the reasons a source matters there. Every
+subcommand accepts `--dir PATH`, which overrides `BKF_SOURCES_DIR` and the
+default `~/sources`.
+
+```sh
+bkf sources init [--dir PATH]
+bkf sources add URL [--via TEXT] [--kind KIND] [--dir PATH]
+bkf sources add --manual --title T [--author A] [--published YYYY-MM-DD] [--url URL|unknown] [--kind KIND] [--via TEXT] [--dir PATH]
+bkf sources snapshot ID --from FILE --note TEXT [--dir PATH]
+bkf sources complete ID --why TEXT [--dir PATH]
+bkf sources finish ID --status used|discarded --description TEXT [--reason REASON] [--kind KIND] [--id NEW] [--dir PATH]
+bkf sources check [ID...] [--dir PATH]
+```
+
+**Init.** Create the bundle, schema, source catalog, and first Git commit.
+On an existing store, `init` compares each built-in field definition with
+the current schema, updates missing or changed definitions, and commits
+`ext-schema.yaml`. Store-defined fields are preserved. A non-empty directory
+without a sources store is refused.
+
+**Add.** Prints the id on stdout. Exit `3` means the same canonical URL or
+alias is already registered. It prints the existing id and leaves the record
+as it was. URL comparison folds scheme and host case, treats HTTP and HTTPS
+as equivalent, drops `www.` and trailing slashes outside the root, and sorts
+the query after removing `utm_*`, `fbclid`, `gclid`, and `mc_*`. It keeps
+`ref` because it can select a version. It keeps client-side route fragments
+starting with `#/` or `#!/` and drops other fragments. `add`, URL lookup, and
+the hooks first strip the URL and percent-encode `|`, `{`, `}`, `^`, backtick,
+space, `<`, `>`, and `"` after the host, as a browser does, so
+`https://fonts.example.org/css?family=Roboto|Open+Sans` is stored as
+`...Roboto%7COpen+Sans` and has the same identity typed either way. `check` and
+the schema stay strict: a stored URL must already be encoded.
+
+Web registration and hook refresh connect directly to public HTTP(S)
+addresses. The fetcher resolves each destination, refuses hosts with any
+non-public address, and connects to a checked IP address. It excludes private,
+loopback, link-local, multicast, reserved, and unspecified addresses in IPv4
+and IPv6, including IPv4-mapped addresses. The fetch has one 20-second
+deadline across DNS, connections, and redirects, and streams at most 5 MB
+per HTML response. An address refusal or exceeded limit gives a fetch
+failure with the reason on stderr.
+
+The fetcher follows up to five HTTP redirects in total and at most one
+client-side redirect. It recognizes `<meta http-equiv="refresh" content="N; url=...">`
+and standalone inline scripts of the form `location.replace('...')`,
+`location.href = '...'`, or `window.location = '...'`, with either quote style.
+It resolves the target against the page URL without executing JavaScript.
+
+If the requested URL matches the final URL or its same-site canonical link
+after normalization, `add` stores the same-site canonical URL when available
+and otherwise stores the final URL. A canonical URL or alias must preserve
+the requested `ref` and client-side route. Site detection uses common domain suffixes
+and hosting domains. If neither matches, `add` stores the requested URL in
+`ext.url` and the final URL in `ext.redirected_to`. It warns on stderr to
+check whether the cited page is gone and close a pending record as `discarded`
+with reason `dead` if it is. Only equivalent URL variants are aliases and
+deduplication keys. Two cited pages that redirect to the same destination
+stay separate, and the destination can be registered independently.
+
+Metadata and snapshot text come from the fetched page. The fetcher decodes
+HTML using the byte-order mark, HTTP charset, or HTML charset declaration in
+that order, with UTF-8 as a fallback. Charset labels such as `iso-8859-1`,
+`latin1`, and `ascii` select Windows-1252. Lossy decoding is reported on
+stderr. See the [WHATWG Encoding Standard](https://encoding.spec.whatwg.org/#names-and-labels)
+for the label mapping.
+
+Metadata extraction tries JSON-LD, then meta tags.
+Title falls back to the HTML title. The record keeps all names in the selected
+byline, joined by commas. With no named author, a GitHub or GitLab
+repository uses its URL owner. Other pages use the publisher or site name
+as written, such as JSON-LD `publisher.name` or `og:site_name`, then the
+domain label. The first valid date in the following order becomes `published`.
+
+1. JSON-LD `datePublished`.
+2. `article:published_time`, then citation date meta tags.
+3. A `<time datetime>` with a class token equal to `published`, as in
+   `class="entry-date published"`, or `itemprop="datePublished"`.
+4. A valid `<time datetime>` inside an element marked as a byline or article
+   metadata, such as `class="article-meta"`. The fallback skips times marked
+   as updates or event boundaries and classes such as `unpublished`.
+5. A `/YYYY/MM/DD/` date in the same-site canonical URL's path when available,
+   otherwise in the final URL's path. The record marks this fallback with
+   `ext.published_from: url`.
+
+Dates use `YYYY-MM-DD`. The `updated` field uses JSON-LD and meta tags.
+Missing values are `unknown`. The record starts `pending`, records today's
+consultation date, and sets `via` to `user` unless supplied. Use `--kind` to
+override the inferred `docs`, `article`, `talk`, `package`, `standard`, `repo`,
+`paper`, or `thread`.
+A 404 or 410 is recorded as `discarded` with reason `dead`. Other failed
+fetches and non-HTML pages create pending records, derive the author from
+the URL, and warn that there is no snapshot. If you read the source another
+way, such as in a rendered browser or a package registry, save that text with
+`bkf sources snapshot ID --from FILE --note TEXT` before marking it as used.
+
+In manual mode provide a title and any metadata you know. The default URL
+is `unknown`, which permits multiple records without a URL. A supplied URL
+uses the same duplicate check. Records added in manual mode start with
+`snapshot: none`.
+
+The id combines an author's surname, organization, or site label with up to
+four significant title words in ASCII kebab-case. A standalone generic label
+such as `ai`, `www`, `docs`, `github`, or `gitlab` is replaced by a more
+specific label when available. An unknown or generic title uses the last
+meaningful URL path segment when available. Title words that repeat the
+label are dropped, and `unknown` is omitted. For a list of named authors, the
+id uses only the first author. In a single byline string, comma-separated
+parts with two or more words each are treated as full names. A single personal
+name can use `Surname, Given`.
+Collisions get a numeric suffix starting at `-2`. Search existing records with
+`bkf search QUERY --cwd PATH`, using the store path as `PATH`.
+
+**Snapshot.** Save the UTF-8 text you read to `records/ID/ID.txt`. Use
+`--from -` to read from stdin. Give a non-empty note naming where you got
+the text, such as “npm registry README of eslint-seatbelt.” The command
+requires non-empty text and records `ext.snapshot: manual` and
+`ext.snapshot_note`. It works on pending and finished records and preserves
+their citations. Fetched HTML headings and manual Markdown ATX headings
+(`#` through `######`) are saved as `## <heading>` lines with normalized
+whitespace and no zero-width characters. Every new manual snapshot starts
+with `<!-- BKF:SNAPSHOT:1 -->`, so reading it back never parses Markdown
+again; fetched snapshots carry the marker only when they need escapes. A backslash prefixes each
+literal line that starts with `## ` or a backslash, and a literal first line
+that equals the marker. Claim matching removes the marker and one leading
+backslash from each escaped line. Text in manual code fences remains part of
+the enclosing section. Older snapshots keep their original interpretation
+of `## ` headings and manual code fences. The command records
+today's consultation once. If any claim fails against the candidate, the
+command keeps the saved text and provenance, lists the failed claims on
+stderr, and exits `1`. Use a web fetch to replace a `web` snapshot.
+The note is required for `manual` and absent for `web` and `none`.
+
+**Complete.** Give a reason to reopen a source. The command appends today's
+date and the reason to `ext.completions` and opens a 30-minute grant for one
+Claude Code `WebFetch` of the record's URL or aliases. The first admitted
+`PreToolUse` reserves it for that session, agent, and tool use id. A matching
+`PostToolUse` consumes the grant and refreshes the record. Other calls are
+denied during the reservation and after consumption. A matching
+`PostToolUseFailure` releases the reservation immediately for another call
+within the window. If neither event arrives, the grant stays reserved until
+expiry. An admitted call may finish after expiry if its reservation is still
+recorded.
+The window is local state inside the store's `.git` directory. `complete`
+refuses to replace a live reservation, and its error states the expiry time
+(`HH:MM`, local) and that the reserving call has not reported back, as the
+hook's denial does. Once the call settles or the window
+expires, running `complete` again appends another reason and starts a new window.
+
+**Finish.** To close a source as `used`, open `records/ID/ID.md` and use
+this format for each Key claim. The command runs the full record check before
+writing either closed status. If the record has `snapshot: none`, save the text with
+`bkf sources snapshot` first.
+
+```md
+## Key claims
+
+- c1 (sec. Page heading): The claim in your words — "short verbatim anchor"
+
+## Notes
+```
+
+Use the heading from `records/ID/ID.txt`, where headings appear as
+`## <heading>`. Supply a one-line description for the catalog. To close a
+source as `discarded`, give a reason of `dead`, `paywall`, `copy-of:<id>`,
+`marketing`, or `outdated`. Use `--id NEW` to rename a pending record as
+part of closing it. Choose an unused id of lowercase letters and digits
+separated by single hyphens. The folder, record, any snapshot, and `ext.id`
+move together, and the catalog is refreshed in the same commit. The command
+prints the final id. After `finish`, the id is permanent. Record
+project-specific relevance in the consuming bundle.
+
+**Check.** Check the store schema and the selected records. An outdated
+`ext-schema.yaml` is an error and names `bkf sources init` as the fix.
+With no ids, check every record directory, including directories
+missing their `ID.md` file. Reports malformed frontmatter with the file
+path, missing or invalid metadata, impossible calendar dates, malformed
+HTTP(S) URLs, a discarded record without a reason, and a used record
+without Key claims. `check` and the schema reject raw whitespace, control
+characters, `<`, `>`, `"`, `{`, `}`, `|`, `\`, `^`, and the backtick in `url`,
+`aliases`, and `redirected_to`. An anchor passes within the named
+`## <heading>` section from its heading line to the next section or the end
+of the snapshot.
+The check normalizes whitespace and typographic quotes, and removes
+U+200B, U+200C, U+200D, U+2060, and U+FEFF when comparing headings and
+locators. A used record without snapshot text gets one missing-evidence
+error with recovery instructions. Pending records produce warnings. Exit `1`
+means there was an error. URL lookup, web capture, catalog updates, and hook
+search suggestions skip records whose frontmatter cannot be loaded and
+report their paths on stderr. This includes value construction errors such
+as an impossible unquoted date. `check` reports them as record errors and
+continues through the selected records.
+
+Exit `0` means success, `1` reports an operation error, and `2` reports
+invalid command syntax. `add`, `snapshot`, `complete`, and `finish` commit
+their record and any catalog or schema change, retrying Git lock conflicts.
+If the commit fails, the files remain on disk and the command warns on
+stderr and exits `0`. Git ignores
+`*.txt` snapshots, so they are local to the machine that saved them.
+
+Code can import `resolve_store_path`, `normalize_url`, `lookup_url`, `add`,
+and `rename` from `source_store`. The low-level `rename(directory, old_id, new_id)`
+API accepts pending records only. A URL lookup returns the id, record path, and
+`has_snapshot` flag, or `None` for a miss. `add` returns the id for either a
+new or existing record. Tests can pass `fetch=` with a function that takes
+the requested URL and returns a `source_page.FetchedPage` with the final URL
+and HTML, or raises a fetch error. `add` calls it again if it follows a
+client-side redirect.

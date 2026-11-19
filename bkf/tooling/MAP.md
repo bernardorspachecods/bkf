@@ -45,15 +45,20 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/tooling/bkf_cl
 - [navigation_map.py](/tooling/navigation_map.py) — Parses a document's `## Navigation map` table and checks it against the document's headings; shared by `bkf validate` and the guard hook.
 - [validate_bundle.py](/tooling/validate_bundle.py) — Checks BKF bundle structure, metadata, maps, and links.
 - [updates.py](/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.
-- [hook_events.py](/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, gives the agent the resulting warnings with its next prompt, and dispatches the `log`, `guard`, and `audit` hooks.
+- [hook_events.py](/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, gives the agent the resulting warnings with its next prompt, and dispatches the `log`, `guard`, `audit`, and `sources` hooks.
 - [session_number.py](/tooling/session_number.py) — Chooses the `<repo><N>` name (`bkf1`, `bkf2`) that the `tabname` hook gives an interactive Claude session on its first prompt.
-- [bkf_hooks.py](/tooling/bkf_hooks.py) — Previews, installs, and reports the eight hook groups (modes, orient, check, log, rules, guard, audit, tabname) for Claude Code and Codex.
+- [bkf_hooks.py](/tooling/bkf_hooks.py) — Previews, installs, and reports the nine hook groups (modes, orient, check, log, rules, guard, audit, tabname, sources) for Claude Code and Codex.
 - [default_rules.txt](/tooling/default_rules.txt) — Holds the default standing rules that `bkf hooks install --write` copies to `~/.agent-hooks/rules.md` when that file is missing.
 - [agent_modes.py](/tooling/agent_modes.py) — Implements the `w:`, `t:` and `g:` prompt-prefix hook and the `git stash` block, copied to the user's home on install.
 - [bkf_cli.py](/tooling/bkf_cli.py) — Dispatches the installed `bkf` command to the focused tooling modules.
 - [pyproject.toml](/tooling/pyproject.toml) — Declares the installable BKF tooling package, dependencies, and `bkf` command entry point.
 - [orient.py](/tooling/orient.py) — Prints the map chain and validation health for session-start orientation.
 - [search.py](/tooling/search.py) — Searches indexed BKF document sections with an in-memory FTS5 index.
+- [bkf_sources.py](/tooling/bkf_sources.py) — Handles the sources command arguments and exit statuses.
+- [source_hooks.py](/tooling/source_hooks.py) — Looks up and captures sources during Claude Code web tool calls.
+- [source_page.py](/tooling/source_page.py) — Fetches HTML and extracts source metadata and readable text.
+- [source_record.py](/tooling/source_record.py) — Defines source record ids, metadata, and claim validation.
+- [source_store.py](/tooling/source_store.py) — Provides the store API, catalog updates, and Git commits.
 - [audit.py](/tooling/audit.py) — Builds the whole-repository report of git changes and bundle health that the `bkf:` prompt prefix returns.
 - [read_guard.py](/tooling/read_guard.py) — Denies the first whole-file read of a large Markdown document with a navigation map and returns the map's section links.
 - [log_entry.py](/tooling/log_entry.py) — Appends user ideas and feedback to the selected bundle's ideas or feedback file.
