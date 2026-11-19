@@ -74,6 +74,44 @@ check "refuses an unknown option" '[ "$(cat "$work/rc")" != 0 ] && grep -q "unkn
 launch "$script" claude "$work/repo" prompt.md
 check "refuses a relative prompt path" '[ "$(cat "$work/rc")" != 0 ] && grep -q "absolute" "$work/stderr"'
 
+# Placement: the new window goes right after the caller when the working directory is in the
+# caller's repository, else right after the last window of its repository, else at the end.
+# place <caller-dir> <target-dir> [name:dir]...: the caller window is first, the other windows follow,
+# the launcher runs from the caller once every window exists; the result is the window order.
+for d in a b c; do
+  mkdir -p "$work/$d" && git -C "$work/$d" init -q && git -C "$work/$d" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
+done
+git -C "$work/a" worktree add -q "$work/a-wt" 2>/dev/null
+mkdir -p "$work/plain1" "$work/plain2"
+place() {
+  local caller_dir=$1 target=$2 w
+  shift 2
+  tmux -L "$sock" kill-server 2>/dev/null
+  rm -f "$work/rc" "$work/go"
+  PATH="$work/bin:$PATH" FAKE_OUT="$work/out" tmux -L "$sock" new-session -d -s main -n caller -c "$caller_dir" \
+    "while [ ! -e '$work/go' ]; do sleep 0.1; done; '$script' --window new claude '$target' '$work/prompt.md' 2>'$work/stderr'; echo \$? >'$work/rc'; sleep 30"
+  for w in "$@"; do tmux -L "$sock" new-window -d -t main: -n "${w%%:*}" -c "${w#*:}" "sleep 30"; done
+  touch "$work/go"
+  for _ in $(seq 100); do [ -s "$work/rc" ] && break; sleep 0.1; done
+  windows
+}
+check "placement: same repository goes right after the caller" \
+  '[ "$(place "$work/a" "$work/a" b1:"$work/b" a2:"$work/a")" = "caller,new,b1,a2" ]'
+check "placement: a worktree of the caller's repository counts as the same" \
+  '[ "$(place "$work/a" "$work/a-wt" b1:"$work/b" a2:"$work/a")" = "caller,new,b1,a2" ]'
+check "placement: another repository goes after the last of its windows" \
+  '[ "$(place "$work/a" "$work/b" b1:"$work/b" a2:"$work/a" b2:"$work/b" a3:"$work/a")" = "caller,b1,a2,b2,new,a3" ]'
+check "placement: a worktree window groups with its repository" \
+  '[ "$(place "$work/b" "$work/a-wt" a1:"$work/a" b1:"$work/b" a2:"$work/a-wt" b2:"$work/b")" = "caller,a1,b1,a2,new,b2" ]'
+check "placement: a repository with no window goes to the end" \
+  '[ "$(place "$work/a" "$work/c" b1:"$work/b" a2:"$work/a")" = "caller,b1,a2,new" ]'
+check "placement: a subdirectory belongs to its repository" \
+  '[ "$(mkdir -p "$work/b/sub"; place "$work/a" "$work/b/sub" b1:"$work/b" a2:"$work/a")" = "caller,b1,new,a2" ]'
+check "placement: outside git the directory itself is the key" \
+  '[ "$(place "$work/plain1" "$work/plain2" p1:"$work/plain1" p2:"$work/plain2" p3:"$work/plain1")" = "caller,p1,p2,new,p3" ]'
+check "placement: a plain directory of no other window goes to the end" \
+  '[ "$(place "$work/plain1" "$work/plain2" p1:"$work/plain1")" = "caller,p1,new" ]'
+
 launch "$handoff/launch-claude.sh" "$work/repo" "$work/prompt.md" opus max
 check "handoff claude: passes model and effort" '[ "$(arg_after --model)" = opus ] && [ "$(arg_after --effort)" = max ]'
 launch "$handoff/launch-codex.sh" "$work/repo" "$work/prompt.md"

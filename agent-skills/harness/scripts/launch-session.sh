@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Open an interactive Claude or Codex session in a new tab beside the caller, with a prompt
-# file as its first message. Shared by the handoff and crew skills.
+# Open an interactive Claude or Codex session in a new tab, with a prompt file as its first
+# message. In tmux the tab is grouped with the windows of the same repository (see below).
+# Shared by the handoff and crew skills.
 # Usage: launch-session.sh [--name NAME] [--model MODEL] [--effort EFFORT] [--delegated]
 #                          [--permission-mode MODE] [--window NAME] <claude|codex> <working-dir> <prompt-file>
 # --name and --permission-mode exist for Claude only. --window names the tmux window.
@@ -53,10 +54,15 @@ fi
 # because a typed line of tens of KB overflows the terminal.
 cmd="cd $(q "$dir") && $cmd \"\$(cat $(q "$prompt"))\""
 
-# Inside tmux, the tab is a tmux window placed right after the caller's window without taking
-# focus; under iTerm2's tmux -CC it shows as an iTerm2 tab. In Terminal.app it is a new window:
-# Terminal has no command to add a tab to a given window, and a simulated cmd+T lands in
-# whichever window has focus. After the agent exits, a login shell stays open in the tab.
+# Inside tmux, the tab is a tmux window that does not take focus; under iTerm2's tmux -CC it
+# shows as an iTerm2 tab. Its place groups windows by repository (the key of repo_key, so the
+# worktrees of one repository count as one):
+#   - the working directory is in the caller's repository: right after the caller's window;
+#   - else, other windows of the session are in its repository: right after the last of them;
+#   - else: at the end of the session.
+# In Terminal.app it is a new window: Terminal has no command to add a tab to a given window, and
+# a simulated cmd+T lands in whichever window has focus, so it cannot group. After the agent
+# exits, a login shell stays open in the tab.
 #
 # iTerm2 shows a new tmux window as a tab of its focused window, or of a new window when the
 # focused one belongs to another tmux client, never of the caller's window. So when iTerm2 is
@@ -94,13 +100,37 @@ end run
 APPLESCRIPT
 }
 
+# The repository of a directory: the directory that holds its git common dir, which worktrees
+# share; outside a git repository, the directory itself.
+repo_key() {
+  local common
+  if common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    dirname "$common"
+  else
+    (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"
+  fi
+}
+
 if [[ -n ${TMUX:-} ]]; then
   caller=$(tmux display-message -p -t "${TMUX_PANE:?TMUX set without TMUX_PANE}" '#{window_id}')
   focus=""
   if tmux list-clients -t "$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}')" -F '#{client_control_mode}' | grep -qx 1; then
     focus=$(iterm_focus_caller)
   fi
-  tmux new-window -d -a -t "$caller" ${window:+-n "$window"} "$cmd; exec \"\${SHELL:-/bin/zsh}\" -l"
+  session=$(tmux display-message -p -t "$TMUX_PANE" '#{session_id}')
+  target_key=$(repo_key "$dir")
+  if [[ $(repo_key "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_current_path}')") == "$target_key" ]]; then
+    place=(-a -t "$caller")
+  else
+    last="" last_index=-1 end=-1 # last: window of the target's repository with the highest index
+    while read -r id index path; do
+      (( index > end )) && end=$index
+      [[ $id != "$caller" && $index -gt $last_index ]] || continue
+      if [[ $(repo_key "$path") == "$target_key" ]]; then last=$id last_index=$index; fi
+    done < <(tmux list-panes -s -t "$session" -F '#{window_id} #{window_index} #{pane_current_path}')
+    if [[ -n $last ]]; then place=(-a -t "$last"); else place=(-t "$session:$((end + 1))"); fi
+  fi
+  tmux new-window -d "${place[@]}" ${window:+-n "$window"} "$cmd; exec \"\${SHELL:-/bin/zsh}\" -l"
   [[ -z $focus ]] || iterm_restore_focus $focus
 elif [[ ${TERM_PROGRAM:-} == Apple_Terminal ]]; then
   # The command travels as an argument, so it needs no AppleScript escaping.
