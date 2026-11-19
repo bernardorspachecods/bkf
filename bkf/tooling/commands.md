@@ -361,6 +361,14 @@ a tool whose folder is missing is skipped.
   and cut at 80 characters. The session is the source: renaming the tab by hand
   does not rename the session, and the next event renames the tab again. It
   does nothing outside tmux or while the session has no title yet.
+  On the first prompt of an interactive session whose name is still the one
+  Claude Code derived (`bkf-1a`), it also names the session `<repo><N>` (`bkf1`,
+  `bkf2`): the repository's folder name (the main checkout's, from a worktree)
+  and the lowest number no other live session holds, so sessions message each
+  other by a short name. It sets the name through the hook's `sessionTitle` and
+  renames the tmux window at once. A name chosen with `/rename` or `--name`, or
+  already of that form, is kept; a number is free again when its session ends.
+  [session_number.py](/tooling/session_number.py) owns the choice.
 
 `install` previews by default and prints one line per script and registration
 as `ok`, `missing`, or `differs`; `--write` applies it. Other settings and

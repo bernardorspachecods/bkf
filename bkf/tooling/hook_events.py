@@ -502,7 +502,14 @@ def main(argv: list[str]) -> int:
         elif event == "warnings":
             output = pending_warnings(data)
         elif event == "tabname":
-            tab_name(data)
+            import session_number
+
+            name = session_number.session_name(data)
+            if name is not None:
+                session_number.rename_window(name)
+                output = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "sessionTitle": name}}
+            else:
+                tab_name(data)
         elif event == "stop":
             output = stop(data)
         elif event == "guard":
