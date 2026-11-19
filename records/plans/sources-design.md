@@ -63,13 +63,25 @@ First consumer and test case: `~/software-factory/fontes.md` (F01–F14), organi
    - F14: find its URL (most likely `github.com/imbue-ai/ratchets`), then `add`.
    - F01 and F02 are known only through the summary `~/to-review/agent-engineering.md`: search for their original URLs; failing that, `--manual` records with `url: unknown`, outside deduplication, which the record states.
    - The old consultation date ("≤ 2026-11-19") is not invented: `consulted` gets the migration date and the record notes an earlier consultation with its date lost.
-   - Split of work: this session builds and migrates the records in `~/sources/`, then sends the `Fnn → id` map to the session that organizes the library; that session rewrites `fontes.md` as a citations table (`global id | what it supports here | used in`, plus local discards) and the practices' citations, because the bundle is its own.
    - Success measure: how many `?` become real values; the remaining `unknown` measure how often extraction fails.
+   - **Full migration, no fallback** (Bernardo, 2026-11-19): every `Fnn` of `fontes.md` becomes a record, and every `Fnn` citation in the bundle is replaced by its global id. `Fnn` does not survive as a local key. `fontes.md` becomes a citations table (`global id | what it supports here | used in`, plus local discards with their reason) holding no metadata.
 7. **The code lives in `bkf`**, because it uses BKF's validation, search and hook installation: a `bkf sources` command (`add`, `complete`, `finish`) in `bkf/tooling/`, its hooks installed by `bkf hooks`. `~/sources/` holds only data.
 
 ## State of the build
 
-Built in units by Codex `gpt-6.2-sol`, reviewed by the coordinating session; `~/sources/` created and F01–F14 migrated by a Sonnet agent (hand-off: `records/plans/sources-migration-map.md`). Two reviews by Codex `gpt-6.2-astra` found blockers (no public-network boundary in the fetcher, unbounded responses, redirect destinations merged into other sources, refresh able to erase evidence, one malformed record disabling capture, page text read as a section heading); all were fixed, and a third review by Opus 5.5 found the result ready to install, after which its remaining should-fix findings were fixed too. The `sources` hooks are installed (2026-11-19) and were seen working live: a registered URL denied in a session and in a subagent, a new URL captured as `pending` with its id. Still to do: have the library's session rewrite `fontes.md` from the migration map.
+Built in units by Codex `gpt-6.2-sol`, reviewed by the coordinating session; `~/sources/` created and F01–F14 migrated by a Sonnet agent (hand-off: `records/plans/sources-migration-map.md`). Two reviews by Codex `gpt-6.2-astra` found blockers (no public-network boundary in the fetcher, unbounded responses, redirect destinations merged into other sources, refresh able to erase evidence, one malformed record disabling capture, page text read as a section heading); all were fixed, and a third review by Opus 5.5 found the result ready to install, after which its remaining should-fix findings were fixed too. The `sources` hooks are installed (2026-11-19) and were seen working live: a registered URL denied in a session and in a subagent, a new URL captured as `pending` with its id. F01–F14 are migrated (map: `records/plans/sources-migration-map.md`; `~/sources/` holds 15 records, all `ok`).
+
+## Migration of the whole software-factory library (next)
+
+`~/software-factory/fontes.md` grew to about 97 sources (F01–F97, more as research continues), cited about 100 times in `ferramentas.md`, `missoes.md`, `novidades.md`, `praticas/*.md` and `inbox/*.md`. `~/software-factory` is **not a git repository**: nothing can be rolled back without a copy. Agents: **Haiku** subagents (Bernardo's choice), reviewed by the coordinating session. Steps:
+
+0. Copy `~/software-factory` whole to a backup before any edit.
+1. `bkf sources add <url> --via migration:software-factory` for every `Fnn` with a URL not already in `~/sources` (F01–F14 are; `bkf sources add` returns the id with exit 3 for a known URL). Records start `pending`. Sources without a URL: search for it; `--manual` only when none exists.
+2. Haiku agents in parallel, about 20 sources each: Key claims from each snapshot that support what `fontes.md` says the source supports (section-local anchors, `bkf sources check` clean), `finish --status used`, or `discarded` with a reason when the page is dead or a copy; `finish --id` to fix a poor id before closing; `bkf sources snapshot` when `add` got no text.
+3. One Haiku agent: rewrite `fontes.md` as the citations table and replace every `Fnn` citation in the bundle (links `/fontes.md#...` included) by the global id; `bkf validate ~/software-factory` clean.
+4. Review by the coordinating session; then message the sessions `desmor-hub1` and `crew-bd-isolada` that the migration is done and how to cite and look up sources from now on.
+
+Open with Bernardo, to ask before step 3: whether to ask `desmor-hub1` at the **start** to freeze `fontes.md` (other sessions add sources to it all day; edits during step 3 would be lost). Then, separately: the hooks run in every session on the machine; Bernardo thinks `sources` may serve only the software factory, not yet decided, so whether to restrict the hooks to some repositories is open.
 
 Known gaps, deferred on purpose:
 
