@@ -592,8 +592,8 @@ class TakeOutTests(MergeFixture):
             code, _, err = self.merge("wait", "--timeout", "30", task=b)
 
         self.assertEqual(code, 2)
-        self.assertIn("it was taken out of the queue", err)
-        self.assertIn("Do not re-enter on your own", err)
+        self.assertIn("the owner took the task out of the merge queue", err)
+        self.assertIn("do not re-enter on your own", err)
         self.assertNotIn("run bkf merge enter", err)
         self.assertEqual((self.card(b).status, self.card(b).attention), ("working", None))
 
@@ -633,6 +633,65 @@ class TakeOutTests(MergeFixture):
                 code = bkf_task.main(["start", a])
         self.assertEqual(code, 0)
         self.assertEqual(self.card(a).status, "working")
+
+
+class RecoveryDropTests(MergeFixture):
+    """A drop by recovery is not the owner's take-out: the session is told so and may enter again."""
+
+    def test_a_holder_that_lost_its_lease_is_told_it_may_enter_again_on_verify(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        b, _ = self.session("beta", "task/beta")
+        self.commit(wa, "alpha.txt", "alpha")
+        self.merge("enter", task=a)
+        self.merge("enter", task=b)
+        self.edit_queue(lambda queue: queue["entries"][0].update(lease_until=self.minutes_ago(5)))
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=b)[0], 0)
+
+        code, _, err = self.merge("verify", task=a)
+
+        self.assertEqual(code, 5)
+        self.assertIn("not in the merge queue", err)
+        self.assertIn("the queue removed it, not the owner", err)
+        self.assertIn("no sign of life for 60 minutes", err)
+        self.assertIn("You may run bkf merge enter again", err)
+        self.assertNotIn("do not re-enter", err)
+        self.assertEqual(self.merge("enter", task=a)[0], 0, "the session re-enters at the back")
+        self.assertEqual(self.states(), [(b, "turn"), (a, "waiting")])
+
+    def test_a_dormant_waiter_is_told_it_may_enter_again_when_its_wait_ends(self) -> None:
+        a, _ = self.session("alpha", "task/alpha")
+        b, _ = self.session("beta", "task/beta")
+        self.merge("enter", task=a)
+        self.merge("enter", task=b)
+
+        def stop_polling(_seconds: float) -> None:
+            self.edit_queue(lambda queue: queue["entries"][1].update(seen=self.minutes_ago(10)))
+
+        with patch.object(bkf_merge.time, "sleep", side_effect=stop_polling):
+            code, _, err = self.merge("wait", "--timeout", "30", task=b)
+
+        self.assertEqual(code, 2)
+        self.assertIn("did not poll for the turn for 3 minutes", err)
+        self.assertIn("the queue removed it, not the owner", err)
+        self.assertIn("You may run bkf merge enter again", err)
+        self.assertNotIn("tell the owner", err)
+
+    def test_a_card_whose_branch_already_landed_is_not_told_to_enter_again(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        self.commit(wa, "alpha.txt", "alpha")
+        self.merge("enter", task=a)
+        self.merge("verify", task=a)
+        self.git(self.repo, "merge", "-q", "--ff-only", "task/alpha")
+        self.edit_queue(lambda queue: queue["entries"][0].update(phase="landing"))
+        b, _ = self.session("beta", "task/beta")
+        self.assertEqual(self.merge("enter", task=b)[0], 0)  # recovery records a's land as landed
+
+        code, _, err = self.merge("verify", task=a)
+
+        self.assertEqual(code, 5)
+        self.assertIn("its branch already landed", err)
+        self.assertIn("do not enter again", err)
+        self.assertNotIn("You may run bkf merge enter again", err)
 
 
 if __name__ == "__main__":

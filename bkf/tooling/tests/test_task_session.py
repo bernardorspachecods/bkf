@@ -128,14 +128,14 @@ class TaskSessionTest(unittest.TestCase):
     def test_first_prompt_names_the_card_and_later_prompts_do_not(self) -> None:
         self.start()
         self.fire("UserPromptSubmit", prompt="Fix the parser\nand the lexer too")
-        self.assertEqual(self.card().title, "Fix the parser and the lexer too")
+        self.assertEqual(self.card().title, "Fix the parser")
         self.fire("UserPromptSubmit", prompt="Now the docs")
-        self.assertEqual(self.card().title, "Fix the parser and the lexer too")
+        self.assertEqual(self.card().title, "Fix the parser")
 
-    def test_title_from_a_prompt_is_one_line_of_at_most_120_characters(self) -> None:
+    def test_title_from_a_prompt_is_its_first_line_at_most_80_characters(self) -> None:
         self.start()
-        self.fire("UserPromptSubmit", prompt="x" * 300)
-        self.assertEqual(self.card().title, "x" * 120)
+        self.fire("UserPromptSubmit", prompt="# " + "x" * 300)
+        self.assertEqual(self.card().title, "x" * 79 + "…")
 
     def test_an_empty_first_prompt_keeps_the_default_title_for_the_next(self) -> None:
         self.start()
@@ -258,10 +258,24 @@ class TaskSessionTest(unittest.TestCase):
             self.assertEqual(task_hook.run(environ=self.env, stream=io.StringIO("{not json")), 0)
         self.assertEqual(self.cards(), [])
 
-    def test_title_rule_is_one_line_of_at_most_120_characters(self) -> None:
+    def test_title_is_the_first_line_with_words_without_markdown_marks(self) -> None:
         self.assertIsNone(task_store.title_from_text("  \n  "))
-        self.assertEqual(task_store.title_from_text("a\n b  "), "a  b")
-        self.assertEqual(len(task_store.title_from_text("y" * 500) or ""), 120)
+        self.assertIsNone(task_store.title_from_text("###  \n\t\n"))
+        self.assertEqual(task_store.title_from_text("a\n b  "), "a")
+        self.assertEqual(task_store.title_from_text("\n\n## \t  D7b:   regiões   que crescem\nmore"),
+                         "D7b: regiões que crescem")
+        self.assertEqual(task_store.title_from_text("###\n## Second line\n"), "Second line")
+        self.assertEqual(task_store.title_from_text("# D7b: CLS, até `layout` 0  Repositório: desmor-hub (monorepo "
+                                                    "pnpm). Web em `apps/web`"),
+                         "D7b: CLS, até `layout` 0 Repositório: desmor-hub (monorepo pnpm). Web em `apps/…")
+
+    def test_long_titles_end_with_an_ellipsis_at_eighty_characters(self) -> None:
+        title = task_store.title_from_text("y" * 500)
+        self.assertEqual((len(title), title[-1]), (80, "…"))
+        exact = task_store.title_from_text("x" * 80)
+        self.assertEqual(exact, "x" * 80, "a title of exactly the limit is not cut")
+        self.assertEqual(len(task_store.title_from_text("x" * 81)), 80)
+        self.assertTrue(task_store.title_from_text(("word " * 30).strip()).endswith("…"))
 
 
 if __name__ == "__main__":

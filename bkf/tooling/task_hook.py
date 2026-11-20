@@ -16,6 +16,8 @@ from task_store import TaskError
 
 
 TASK_ENV = "BKF_TASK"
+# Opt-in: the file that receives every raw hook input as one line, to read a real payload (never set by default).
+DEBUG_ENV = "BKF_HOOK_DEBUG_FILE"
 # A script owns the card of these kinds, so the session is not told to move it.
 OWNED_KINDS = ("unit",)
 # The hook marks a card of these kinds while it is working; other kinds are never marked.
@@ -128,14 +130,31 @@ def _renew_lease(store: Path, task_id: str, environ: Mapping[str, str]) -> None:
         return
 
 
-def hook_input(stream: TextIO | None) -> dict[str, Any]:
-    """Return the hook's JSON input as a dict, or an empty dict when the input is empty or invalid."""
+def hook_input(stream: TextIO | None, debug_file: str | None = None) -> dict[str, Any]:
+    """Return the hook's JSON input as a dict, or an empty dict when the input is empty or invalid.
+
+    With debug_file (BKF_HOOK_DEBUG_FILE), the raw input is also appended to it as one line, so the real payload
+    of an event can be read. Write failures are swallowed.
+    """
     try:
         text = (sys.stdin if stream is None else stream).read()
+    except Exception:
+        return {}
+    if debug_file:
+        _record_raw(debug_file, text)
+    try:
         data: Any = json.loads(text)
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _record_raw(path: str, text: str) -> None:
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(text.rstrip("\n") + "\n")
+    except OSError:
+        return
 
 
 def run(environ: Mapping[str, str] | None = None, stream: TextIO | None = None) -> int:
@@ -159,7 +178,7 @@ def run(environ: Mapping[str, str] | None = None, stream: TextIO | None = None) 
 
 
 def _run_bound(env: Mapping[str, str], stream: TextIO | None) -> None:
-    data = hook_input(stream)
+    data = hook_input(stream, env.get(DEBUG_ENV))
     event = data.get("hook_event_name")
     store = task_store.store_dir(env)
     if event in MARK_EVENTS:
@@ -173,7 +192,7 @@ def _run_bound(env: Mapping[str, str], stream: TextIO | None) -> None:
 
 
 def _run_session(env: Mapping[str, str], stream: TextIO | None) -> None:
-    data = hook_input(stream)
+    data = hook_input(stream, env.get(DEBUG_ENV))
     event = data.get("hook_event_name")
     store = task_store.store_dir(env)
     session_id = data.get("session_id")

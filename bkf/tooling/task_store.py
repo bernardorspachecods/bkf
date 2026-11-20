@@ -32,6 +32,8 @@ FIELDS = (
 )
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 TITLE_LIMIT = 120
+# The title a session card takes from its window name or its first prompt.
+SESSION_TITLE_LIMIT = 80
 # The folder of the Claude session links, one JSON file per session. Its dot name keeps list_tasks from reading it.
 SESSIONS_FOLDER = ".sessions"
 # Written once the legacy statuses (done, review) are migrated; its dot name keeps list_tasks from reading it.
@@ -41,6 +43,7 @@ _ID = re.compile(r"[a-z0-9-]{1,64}")
 _STAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 _GENERATION = re.compile(r"[0-9]+")
 _SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+_LEADING_MARKS = re.compile(r"^[#\s]+")
 _BREAK = re.compile(r"[\r\n\v\f\x1c-\x1e\x85  ]")
 
 
@@ -387,9 +390,20 @@ def _normalize_title(title: str) -> str:
 
 
 def title_from_text(text: str) -> str | None:
-    """Return a card title from free text: one line, at most TITLE_LIMIT characters; None when nothing is left."""
-    title = _normalize_title(text)[:TITLE_LIMIT].rstrip()
-    return title or None
+    """Return a card title from free text: the first line that has words, without leading markdown marks.
+
+    Leading `#` marks and spaces are removed, runs of whitespace collapse to one space, and a title longer than
+    SESSION_TITLE_LIMIT characters ends with an ellipsis. None when no line has words.
+    """
+    for line in str(text).splitlines():
+        words = _LEADING_MARKS.sub("", line)
+        title = " ".join(words.split())
+        if not title:
+            continue
+        if len(title) > SESSION_TITLE_LIMIT:
+            title = title[: SESSION_TITLE_LIMIT - 1].rstrip() + "…"
+        return title
+    return None
 
 
 def _problem(data: dict[str, Any], folder: str | None) -> str | None:

@@ -26,6 +26,8 @@ from task_store import Task, TaskError
 
 
 TASK_ENV = "BKF_TASK"
+# Events that take an entry out of the queue without the owner: recovery, and a failed land or merge.
+RECOVERY_EVENTS = ("lock-recovered", "dropped-dormant", "failed")
 JSON_SCHEMA = 1
 WAIT_TIMEOUT_SECONDS = 540
 WAIT_POLL_SECONDS = 1.0
@@ -226,8 +228,8 @@ def _turn_entry(queue: dict[str, Any], task: str) -> dict[str, Any]:
     if head is not None and head["task"] == task:
         return head
     if merge_store.find(queue, task) is None:
-        raise Stop(EXIT_NOT_TURN, f"task {task} is not in the merge queue: the owner took it out or the queue "
-                                  "dropped it; stop the merge flow and do not re-enter on your own")
+        kind, reason = _gone(queue, task)
+        raise Stop(EXIT_NOT_TURN, f"task {task} is not in the merge queue: {_gone_message(kind, reason)}")
     raise Stop(EXIT_NOT_TURN, f"not your turn: {head['task']} holds the turn, your entry waits")
 
 
@@ -279,10 +281,8 @@ def cmd_wait(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) 
         index = merge_store.find(queue, ctx.task)
         if index is None:
             if joined:
-                reason = _last_reason(queue, ctx.task)
-                raise Stop(EXIT_ENTRY_GONE, f"your entry left the merge queue: {reason}. Stop the merge flow: "
-                                            "the owner took the task out, or the queue dropped it. Do not "
-                                            "re-enter on your own; tell the owner and wait for instructions")
+                kind, reason = _gone(queue, ctx.task)
+                raise Stop(EXIT_ENTRY_GONE, f"your entry left the merge queue: {_gone_message(kind, reason)}")
             if place is None:
                 place = _work_place(ctx.card, args.worktree)
             _join(ctx, queue, now, *place)
@@ -309,15 +309,33 @@ def cmd_wait(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) 
         time.sleep(WAIT_POLL_SECONDS)
 
 
-def _last_reason(queue: dict[str, Any], task: str) -> str:
+def _gone(queue: dict[str, Any], task: str) -> tuple[str, str]:
+    """Why the task's entry left the queue, from its last event: ("takeout", ""), ("landed", why) or ("recovery", why).
+
+    A take-out is a `leave`, by the owner or by the session. A recovery drop is the queue's own doing (a lost
+    lease or window, a dormant waiter, a land that died); its reason is the event's reason.
+    """
     for event in reversed(queue["events"]):
         if event["task"] != task:
             continue
-        if event["reason"]:
-            return event["reason"]
         if event["event"] == "left":
-            return "it was taken out of the queue"
-    return "the queue dropped it"
+            return "takeout", ""
+        if event["event"] == "landed":
+            return "landed", event["reason"] or "it landed"
+        if event["event"] in RECOVERY_EVENTS:
+            return "recovery", event["reason"] or "the queue removed it"
+    return "recovery", "the queue dropped it"
+
+
+def _gone_message(kind: str, reason: str) -> str:
+    """What a session whose entry is gone should do next; the take-out and the recovery read differently."""
+    if kind == "takeout":
+        return ("the owner took the task out of the merge queue. Stop the merge flow: do not land, and do not "
+                "re-enter on your own; tell the owner and wait for instructions")
+    if kind == "landed":
+        return f"its branch already landed ({reason}), so there is nothing left to land; do not enter again"
+    return (f"the queue removed it, not the owner: {reason}. You may run bkf merge enter again if you still want "
+            "to land; it joins the back of the queue")
 
 
 def cmd_verify(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) -> int:
