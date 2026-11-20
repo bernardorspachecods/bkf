@@ -53,6 +53,14 @@ class UnitHooks:
     def progress(self, text):
         raise NotImplementedError
 
+    def unit_started(self, unit, checkout):
+        """Called when a unit's implementer is about to run: its first round, or a close after a takeover."""
+        return None
+
+    def unit_ended(self, unit, state, reason):
+        """Called when a unit's loop ends: passed, blocked, escalated, takeover or failed."""
+        return None
+
     @contextmanager
     def around_implement(self, checkout, unit, base, brief):
         yield
@@ -234,6 +242,17 @@ def run_review_round(run, label, checkout, round_dir, hooks, settings, tier,
     return result.verdict, result.reason
 
 
+def _unit_state(directory, ok):
+    """How a unit's loop ended, read from its status file: passed, blocked, escalated, takeover or failed."""
+    if ok:
+        return "passed"
+    status_path = os.path.join(directory, "status")
+    status = _read(status_path).strip() if os.path.isfile(status_path) else ""
+    if status in ("blocked", "escalated", "takeover"):
+        return status
+    return "failed"
+
+
 def run_unit_loop(
     run,
     unit,
@@ -247,7 +266,29 @@ def run_unit_loop(
     step=None,
     base_from=None
 ):
-    """Run implementation rounds until review passes or the unit must stop."""
+    """Run implementation rounds until review passes or the unit must stop, then tell the hooks how it ended."""
+    result = _unit_loop(
+        run, unit, checkout, source_brief=source_brief, hooks=hooks, settings=settings, tier=tier,
+        limits=limits, step=step, base_from=base_from,
+    )
+    directory = os.path.join(os.fspath(run.path), unit)
+    _optional(hooks, "unit_ended", unit, _unit_state(directory, result.ok), result.reason)
+    return result
+
+
+def _unit_loop(
+    run,
+    unit,
+    checkout,
+    *,
+    source_brief,
+    hooks,
+    settings,
+    tier,
+    limits,
+    step=None,
+    base_from=None
+):
     directory = os.path.join(os.fspath(run.path), unit)
     checkout = os.fspath(checkout)
     source_brief = os.fspath(source_brief)
@@ -266,6 +307,7 @@ def run_unit_loop(
     takeover_marker = os.path.join(directory, "takeover")
     closing_marker = os.path.join(directory, "closing")
     if os.path.isfile(takeover_marker) and os.path.isfile(closing_marker):
+        _optional(hooks, "unit_started", unit, checkout)
         ok, reason = close_takeover(
             run, unit, checkout, directory, hooks, settings, tier, limits,
             step_prefix, "unidade {0}".format(unit),
@@ -326,6 +368,7 @@ def run_unit_loop(
     if resumed and os.path.isfile(earlier_handoff):
         previous_handoff = earlier_handoff
 
+    _optional(hooks, "unit_started", unit, checkout)
     while True:
         round_count += 1
         round_dir = os.path.join(rounds_path, str(round_count))

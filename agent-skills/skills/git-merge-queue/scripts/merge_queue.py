@@ -61,6 +61,40 @@ def split_paths(text):
     return [p for p in text.split(",") if p]
 
 
+def warn(message):
+    print(f"Warning: {message}", file=sys.stderr)
+
+
+def bkf_task(repo, *args):
+    """Run `bkf task ARGS` in repo; its stdout, or None after one warning."""
+    exe = shutil.which("bkf")
+    if exe is None:
+        warn("bkf is not on PATH; task cards were not updated.")
+        return None
+    result = subprocess.run([exe, "task", *args], cwd=repo, capture_output=True, text=True)
+    if result.returncode:
+        warn(f"bkf task {args[0]} failed, task cards were not updated: "
+             f"{(result.stderr or result.stdout).strip()}")
+        return None
+    return result.stdout
+
+
+def task_cards(repo):
+    """Every task card of this repository, or None after one warning."""
+    stdout = bkf_task(repo, "list", "--repo", str(repo), "--json")
+    if stdout is None:
+        return None
+    try:
+        return json.loads(stdout)["tasks"]
+    except (ValueError, KeyError, TypeError):
+        warn("bkf task list printed no task cards; task cards were not updated.")
+        return None
+
+
+def cards_of_branch(cards, branch):
+    return [c for c in cards if (c.get("worktree") or {}).get("branch") == branch]
+
+
 def register(args):
     repo = Path.cwd()
     for level in ("fast", "full"):
@@ -83,6 +117,21 @@ def register(args):
     qdir = queue_dir(repo)
     (qdir / "entries" / f"{slug(args.session)}.json").write_text(json.dumps(entry, indent=2))
     print(f"Registered {args.session} ({args.branch} at {head[:10]}).")
+    queue_cards(repo, args.branch)
+
+
+def queue_cards(repo, branch):
+    """Move the one card of `branch` to review: it is queued for merge."""
+    cards = task_cards(repo)
+    if cards is None:
+        return
+    found = cards_of_branch(cards, branch)
+    if len(found) > 1:
+        print(f"{len(found)} task cards are on {branch}; none moved to review.")
+        return
+    if found and found[0]["status"] in ("working", "review"):
+        if bkf_task(repo, "ready", found[0]["id"], "--no-git", "--note", "queued for merge") is not None:
+            print(f"Task card {found[0]['id']} moved to review.")
 
 
 def describe(entry, stale):
@@ -206,6 +255,20 @@ def merge_entry(args, qdir, state, entries):
     return None
 
 
+def finish_cards(repo, branches):
+    """Move the one card of each merged branch to done, when it is working or in review."""
+    cards = task_cards(repo)
+    if cards is None:
+        return
+    for branch in branches:
+        found = cards_of_branch(cards, branch)
+        if len(found) > 1:
+            print(f"{len(found)} task cards are on {branch}; none moved to done.")
+        elif found and found[0]["status"] in ("working", "review"):
+            if bkf_task(repo, "done", found[0]["id"]) is not None:
+                print(f"Task card {found[0]['id']} moved to done.")
+
+
 def integrate(args):
     repo = Path.cwd()
     qdir = queue_dir(repo)
@@ -268,6 +331,7 @@ def integrate(args):
             git(repo, "update-ref", f"refs/heads/{target}", tip)
         for key in state["done"]:
             (qdir / "entries" / f"{key}.json").unlink(missing_ok=True)
+        finish_cards(repo, [entries[key]["branch"] for key in state["done"]])
         leftovers = [clean_session(repo, entries[key]) for key in state["done"]]
 
     print(f"Merged into {target}: {', '.join(entries[k]['session'] for k in state['done']) or 'nothing'}.")

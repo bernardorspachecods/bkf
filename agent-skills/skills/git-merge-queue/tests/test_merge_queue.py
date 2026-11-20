@@ -30,6 +30,7 @@ class QueueCase(unittest.TestCase):
         (self.repo / "shared.txt").write_text("one\ntwo\nthree\n")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-qm", "init")
+        self.env = {**ENV, "BKF_TASKS_DIR": str(self.root / "tasks")}  # never the real store
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -46,7 +47,7 @@ class QueueCase(unittest.TestCase):
 
     def run_queue(self, cwd, *args, expect=0):
         r = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd,
-                           capture_output=True, text=True, env=ENV)
+                           capture_output=True, text=True, env=self.env)
         self.assertEqual(r.returncode, expect, r.stdout + r.stderr)
         return r.stdout + r.stderr
 
@@ -248,6 +249,107 @@ class IntegrateTests(QueueCase):
         self.register("b", wb)
         self.run_queue(self.repo, "integrate", *self.PASS, expect=2)
         self.run_queue(self.repo, "integrate", *self.PASS, expect=1)
+
+
+TOOLING = Path(__file__).resolve().parents[4] / "bkf" / "tooling"
+
+
+class CardTests(QueueCase):
+    """Task cards move with the queue; `bkf` is a shim running this worktree's bkf_cli."""
+
+    def setUp(self):
+        super().setUp()
+        shim_dir = self.root / "shim"
+        shim_dir.mkdir()
+        shim = shim_dir / "bkf"
+        shim.write_text(f'#!/bin/sh\nPYTHONPATH="{TOOLING}" exec "{sys.executable}" -m bkf_cli "$@"\n')
+        shim.chmod(0o755)
+        self.env["PATH"] = f"{shim_dir}{os.pathsep}{os.environ['PATH']}"
+
+    def bkf(self, *args):
+        r = subprocess.run(["bkf", *args], capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r.stdout.strip()
+
+    def card(self, branch, wt, status="working"):
+        """A card on `branch` at `wt`, started (working) or left in todo."""
+        cid = self.bkf("task", "new", "--repo", str(self.repo), "--title", branch, "--no-parent")
+        if status != "todo":
+            self.bkf("task", "start", cid, "--branch", branch, "--worktree", str(wt))
+        return cid
+
+    def status(self, cid):
+        return json.loads(self.bkf("task", "show", cid, "--json"))
+
+    def test_register_moves_the_card_to_review_with_the_note(self):
+        wa = self.session("a", {"a.txt": "a\n"})
+        cid = self.card("a", wa)
+        out = self.register("a", wa)
+        card = self.status(cid)
+        self.assertEqual(card["status"], "review")
+        self.assertEqual(card["note"], "queued for merge")
+        self.assertIn("Registered", out)
+
+    def test_register_leaves_a_todo_card_alone(self):
+        wa = self.session("a", {"a.txt": "a\n"})
+        cid = self.card("a", wa, status="todo")
+        self.register("a", wa)
+        self.assertEqual(self.status(cid)["status"], "todo")
+
+    def test_integrate_moves_merged_cards_to_done_and_leaves_unmerged_ones(self):
+        wa = self.session("a", {"a.txt": "a\n"})
+        wb = self.session("b", {"b.txt": "b\n"})
+        wc = self.session("c", {"c.txt": "c\n"})
+        ca = self.card("a", wa)
+        cc = self.card("c", wc)
+        self.register("a", wa)
+        self.register("b", wb)  # no card for b
+        self.run_queue(self.repo, "integrate", "--fast-check", "true", "--full-check", "true")
+        self.assertTrue((self.repo / "a.txt").exists())
+        self.assertEqual(self.status(ca)["status"], "done")
+        self.assertEqual(self.status(cc)["status"], "working")  # c never registered
+
+    def test_no_card_leaves_the_queue_as_before(self):
+        wa = self.session("a", {"a.txt": "a\n"})
+        self.register("a", wa)
+        self.assertEqual(self.bkf("task", "list"), "")
+        self.run_queue(self.repo, "integrate", "--fast-check", "true", "--full-check", "true")
+        self.assertTrue((self.repo / "a.txt").exists())
+
+    def test_two_cards_on_one_branch_are_reported_and_left_alone(self):
+        wa = self.session("a", {"a.txt": "a\n"})
+        first = self.card("a", wa)
+        second = self.card("a", wa)
+        out = self.register("a", wa)
+        self.assertIn("2 task cards are on a", out)
+        self.assertEqual(self.status(first)["status"], "working")
+        self.assertEqual(self.status(second)["status"], "working")
+
+    def test_missing_bkf_warns_once_and_the_queue_result_is_unchanged(self):
+        wa = self.session("a", {"a.txt": "a\n"})
+        self.env["PATH"] = "/usr/bin:/bin"
+        r = subprocess.run([sys.executable, str(SCRIPT), "register", "--session", "a [abc]",
+                            "--branch", "a", "--plans", "p.md", "--base",
+                            git(self.repo, "rev-parse", "main"), "--fast", "pass", "--full", "pass"],
+                           cwd=wa, capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Registered a [abc]", r.stdout)
+        self.assertEqual(len(r.stderr.strip().splitlines()), 1)
+        self.assertIn("bkf", r.stderr)
+        self.run_queue(self.repo, "integrate", "--fast-check", "true", "--full-check", "true")
+        self.assertTrue((self.repo / "a.txt").exists())
+
+    def test_failing_bkf_warns_and_the_queue_result_is_unchanged(self):
+        wa = self.session("a", {"a.txt": "a\n"})
+        self.card("a", wa)
+        failing = self.root / "failing"
+        failing.mkdir()
+        (failing / "bkf").write_text("#!/bin/sh\necho broken >&2\nexit 1\n")
+        (failing / "bkf").chmod(0o755)
+        self.env["PATH"] = f"{failing}{os.pathsep}{self.env['PATH']}"
+        out = self.register("a", wa)  # the run still succeeds
+        self.assertIn("not updated", out)
+        self.assertIn("a [abc]", self.run_queue(self.repo, "list"))
 
 
 if __name__ == "__main__":

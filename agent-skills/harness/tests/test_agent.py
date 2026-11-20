@@ -318,6 +318,11 @@ class AgentCliTests(unittest.TestCase):
         for in_thread in (False, True):
             self.assertEqual(self.spawn_kwargs(in_thread)["env"]["BKF_DELEGATED"], "1")
 
+    def test_agent_does_not_inherit_the_callers_task(self):
+        with mock.patch.dict(os.environ, {"BKF_TASK": "t20260101-000000-abcd"}):
+            for in_thread in (False, True):
+                self.assertNotIn("BKF_TASK", self.spawn_kwargs(in_thread)["env"])
+
     def test_main_thread_masks_signals_while_the_agent_registers(self):
         self.assertIn("preexec_fn", self.spawn_kwargs(in_thread=False))
 

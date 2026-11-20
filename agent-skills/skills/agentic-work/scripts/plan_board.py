@@ -9,12 +9,16 @@ from pathlib import Path
 
 from harness.engine.checkout import remove_tree
 
+import plan_cards
+
 
 _EXCLUDES = (
     "*.events.jsonl", "*.stderr.log", "*.last-message.md", ".*", "*.attempt-*",
     "untracked-*.txt", "base", "plan-base", "*.worktree.log", "repo", "pause",
     "settings", "status", "status.log", "tree",
 )
+# A task card id is a file named task (the run's and each unit's); a folder named task is a unit's and is kept.
+_CARD_FILE = "task"
 
 
 def _read(path, default=""):
@@ -266,8 +270,10 @@ def write_summary(run):
         status.write("".join(output))
 
 
-def _excluded(relative):
-    return any(fnmatch.fnmatch(part, pattern) for part in relative.parts for pattern in _EXCLUDES)
+def _excluded(relative, is_file=False):
+    if any(fnmatch.fnmatch(part, pattern) for part in relative.parts for pattern in _EXCLUDES):
+        return True
+    return is_file and relative.name == _CARD_FILE
 
 
 def _copy_record(source, destination):
@@ -288,7 +294,7 @@ def _copy_record(source, destination):
         dirs[:] = kept_dirs
         for name in files:
             relative = relative_base / name
-            if _excluded(relative):
+            if _excluded(relative, is_file=True):
                 continue
             origin, target = source / relative, destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -309,10 +315,12 @@ def _record_matches(source, destination):
         for base, dirs, files in os.walk(str(root), topdown=True, followlinks=False):
             relative_base = Path(base).relative_to(root)
             dirs[:] = [name for name in dirs if not _excluded(relative_base / name)]
-            for name in dirs + files:
-                relative = relative_base / name
-                if not _excluded(relative):
-                    result.add(relative)
+            for name in dirs:
+                if not _excluded(relative_base / name):
+                    result.add(relative_base / name)
+            for name in files:
+                if not _excluded(relative_base / name, is_file=True):
+                    result.add(relative_base / name)
         return result
 
     source_paths, destination_paths = kept(source), kept(destination)
@@ -355,6 +363,7 @@ def finish(ctx):
     except OSError:
         from harness.engine.run import RunError
         raise RunError("copy to {0} failed; nothing deleted".format(destination))
+    plan_cards.finish_run(run)
     branch = remove_tree(run_path, repo)
     shutil.rmtree(run_path)
     print("Kept in {0}; removed {1}".format(destination, run_path))

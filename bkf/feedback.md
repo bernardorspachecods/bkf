@@ -8,6 +8,17 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
+## 2026-11-20 — the tooling test command tests the main checkout from a worktree
+
+Link: [tooling map](/tooling/MAP.md) (the test command). Noticed by me. The
+installed `bkf` is an editable install of `/Users/bernardopacheco/bkf/bkf/tooling`
+whose finder maps each module by name, so
+`"$(uv tool dir)/bkf-tooling/bin/python3" -m unittest discover -s bkf/tooling/tests`
+run in a linked worktree imports the main checkout's modules: `import source_store`
+resolved to `/Users/bernardopacheco/bkf/bkf/tooling/source_store.py`. With
+`PYTHONPATH=bkf/tooling` it resolves to the worktree's file. A worktree's tests
+can pass while testing code that is not the change.
+
 ## 2026-11-09 — plan run: "review attempt was not usable" keeps happening
 
 Link: `agent-skills/skills/plan/scripts/plan-run.sh` (review). Noticed by me. Units 7 and 10 of `comercial-bd-completa`

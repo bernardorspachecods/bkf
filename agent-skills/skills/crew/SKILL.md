@@ -36,7 +36,7 @@ Settle the intent with the user first (`align-intent`), for the crew as a whole:
 
 A coordinator is for work that needs coordination: several sub-plans, or one sub-plan complex enough to need its own workflows. A simple, localized fix is not: do it yourself in this chat, following `code-work`, and open no coordinator for it.
 
-Run it inside tmux (`$TMUX` is set): coordinators open as tmux windows. In Terminal.app they open as separate windows, and in any other terminal the launcher refuses.
+Run it inside tmux (`$TMUX` is set): coordinators open as tmux windows beside this chat. Outside tmux, `bkf launch` opens them in the repository's tmux session in iTerm2 or Terminal.app, or prints the attach command.
 
 ## Brief
 
@@ -55,7 +55,7 @@ The launcher appends the crew's rules for the coordinator: when to message the o
 ## Launch
 
 1. Run `ListAgents`. Its first line is your own session name, which the coordinators message. Check that no live session already has the name `crew-<name>`.
-2. Run [scripts/launch-coordinator.sh](scripts/launch-coordinator.sh) `<name> <your-session-name> <working-dir> <absolute-brief-path> [model] [effort]`. The model (`opus`, `sonnet`, `haiku` or a full id) and the effort (`low` to `max`) are those of the coordinator session; give them only when the user chose them while settling the crew, otherwise the session takes the user's defaults. It opens session `crew-<name>` in a window of the same name, without keeping focus: right after this one when the working directory is in this chat's repository, else after the last window of that repository in the session, else at the end of the session. With iTerm2 it shows in this chat's iTerm2 window. The session's first message is the brief followed by the rules; the full message is written next to the brief as `<name>.prompt.md`. It prints the session name.
+2. Run [scripts/launch-coordinator.sh](scripts/launch-coordinator.sh) `<name> <your-session-name> <working-dir> <absolute-brief-path> [model] [effort]`. The model (`opus`, `sonnet`, `haiku` or a full id) and the effort (`low` to `max`) are those of the coordinator session; give them only when the user chose them while settling the crew, otherwise the session takes the user's defaults. It opens session `crew-<name>` in a window of the same name, without keeping focus; `bkf help launch` says where the window goes. The session's first message is the brief followed by the rules; the full message is written next to the brief as `<name>.prompt.md`. The first coordinator of a crew also makes the crew's task card, and every coordinator gets one; the cards are in `crew-<crew>/cards/` and listed by `bkf task list`. It prints the session name.
 3. Open only the coordinators of the current phase. When one joins a crew that already has others, send the new roster to each of them.
 4. Write the review handoff and start the waiter, as the next section says. Then stop: do not wait on the coordinators in this chat.
 
@@ -65,16 +65,18 @@ A coordinator whose action is denied, or waits on the user's approval, tells you
 
 ## End of a phase
 
-This chat does not stay awake for the phase: every wake reloads its whole context, and a long phase outlasts the cache. The coordinators write a done file instead of a message, and a script opens a fresh orchestrator on the results.
+This chat does not stay awake for the phase: every wake reloads its whole context, and a long phase outlasts the cache. Each coordinator writes its done file, its report, and then marks its task card ready instead of messaging. A script opens a fresh orchestrator once every coordinator's card is in review or done.
 
 1. Write `crew-<crew>/review-handoff.md` by the rules of [handoff](../handoff/SKILL.md). It is the first message of the orchestrator who reviews the phase, and it carries: the intent agreed with the user; the decisions taken that are not to be reopened; the roster, with each brief and its done file `crew-<crew>/done/<name>.md`; `crew-<crew>/decisions.md`, to read for what the coordinators decided; what to check in each sub-plan against its brief; and the rules of this skill that apply to it (this section, "While it runs" and the end-of-phase stop). Say that, once the user approves, it opens the next phase the same way, with its own review handoff and waiter.
 2. Start the waiter in a window of its own, so that it outlives this chat (`<session>` is this chat's tmux session):
 
    ```
-   tmux new-window -d -n crew-await '<skill>/scripts/await-crew.sh <crew-dir> <session>:crew-<name>... -- <handoff>/scripts/launch-claude.sh <working-dir> <crew-dir>/review-handoff.md [model] [effort]'
+   tmux new-window -d -n crew-await '<skill>/scripts/await-crew.sh <crew-dir> -- bkf launch claude --dir <working-dir> --prompt-file <crew-dir>/review-handoff.md --title "review crew <crew>" [--model M] [--effort E]'
    ```
 
-   [scripts/await-crew.sh](scripts/await-crew.sh) uses no tokens. It watches the coordinators that are not done, with [watch-coordinators.sh](scripts/watch-coordinators.sh), and sends the user a system notification on every alert (permission prompt, stalled, gone, overdue); the user answers in the coordinator's window. When every `done/<name>.md` exists and is not empty, it runs the command, which opens the new orchestrator. It never opens one for a phase where a coordinator is not done: if one fails for good, the user opens the review by hand with the same command.
+   The command is the one that opens the review orchestrator, a session of its own with its own task card (`bkf help launch`).
+
+   [scripts/await-crew.sh](scripts/await-crew.sh) uses no tokens. It reads the coordinators from the task cards in `crew-<crew>/cards/` (not the crew's own card) and watches those not yet in review or done, with [watch-coordinators.sh](scripts/watch-coordinators.sh), on each card's tmux window. Each alert sends the user a system notification (permission prompt, stalled, gone, overdue) and sets the card's attention, which `bkf task list` shows until the pane changes; the user answers in the coordinator's window. When every coordinator's card is in review or done, it runs the command, which opens the new orchestrator. A card that cannot be read counts as not done. It never opens one for a phase where a coordinator is not done: if one fails for good, the user opens the review by hand with the same command.
 3. This chat stays open and is the only one an escalation wakes: a coordinator writes to it only when blocked by something the objective does not settle, or when a decision touches a third sub-plan. Handle it as before; nothing else reaches this chat.
 
 The orchestrator that the script opens reviews the whole phase: it reads the done files and the decisions log, checks each return against its brief and looks at the result, as "While it runs" says, and gives the user the outcome of each sub-plan.

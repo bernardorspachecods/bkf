@@ -1,4 +1,5 @@
 """Throwaway repository and fake Codex helpers for plan workflow tests."""
+import json
 import os
 import subprocess
 import sys
@@ -36,11 +37,22 @@ class PlanRunFixture:
         codex = self.bin / "codex"
         codex.write_text(_FAKE_CODEX, encoding="utf-8")
         codex.chmod(0o755)
+        # The `bkf` shim runs this worktree's tooling with a task store of the fixture's own.
+        self.tasks = self.root / "tasks"
+        bkf = self.bin / "bkf"
+        bkf.write_text(
+            "#!/bin/sh\nPYTHONPATH={0} exec {1} -m bkf_cli \"$@\"\n".format(
+                _TOOLING, sys.executable),
+            encoding="utf-8",
+        )
+        bkf.chmod(0o755)
         self.state = self.root / "state"
         self.state.mkdir()
         self.env = os.environ.copy()
+        self.env.pop("BKF_TASK", None)
         self.env.update({
             "PATH": str(self.bin) + os.pathsep + self.env.get("PATH", ""),
+            "BKF_TASKS_DIR": str(self.tasks),
             "PLAN_RUNS_DIR": str(self.runs),
             "PLAN_GUIDES": str(self.guides),
             "FAKE_STATE": str(self.state),
@@ -70,6 +82,14 @@ class PlanRunFixture:
         finally:
             os.chdir(previous)
 
+    def cards(self):
+        """Every task card in the fixture's store, as `bkf task list --json` shows them."""
+        completed = subprocess.run(
+            [str(self.bin / "bkf"), "task", "list", "--json"], env=self.env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True,
+        )
+        return json.loads(completed.stdout)["tasks"]
+
     def close(self):
         self.temp.cleanup()
 
@@ -88,6 +108,8 @@ class _environment:
         os.environ.clear()
         os.environ.update(self.previous)
 
+
+_TOOLING = str(Path(__file__).resolve().parents[4] / "bkf" / "tooling")
 
 _WORKFLOW = Path(os.environ.get(
     "PLAN_WORKFLOW_PATH", str(Path(__file__).parents[1] / "scripts" / "plan.py")

@@ -20,6 +20,9 @@ _LIVE_PROCESSES = set()
 # Set in the environment of every agent the harness starts, so a session-start hook can tell a delegated agent from a chat.
 DELEGATED_VARIABLE = "BKF_DELEGATED"
 
+# Removed from the environment of every agent: an agent is never the session of the caller's task.
+TASK_VARIABLE = "BKF_TASK"
+
 # Returned by run_agent for an agent that wrote nothing for the stall timeout and was ended (the exit code of a timeout).
 STALLED_EXIT = 124
 _DEFAULT_STALL_SECONDS = 1200.0
@@ -351,6 +354,7 @@ def _spawn(command, directory, stdin, stdout, stderr):
     """Start the backend and register it so a handled signal can end it."""
 
     environment = dict(os.environ, **{DELEGATED_VARIABLE: "1"})
+    environment.pop(TASK_VARIABLE, None)
 
     def popen(**extra):
         return subprocess.Popen(

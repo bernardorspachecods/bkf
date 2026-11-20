@@ -1,0 +1,484 @@
+"""Keep the machine-wide store of agent tasks, one folder per task, under the BKF state directory."""
+
+from __future__ import annotations
+
+import contextlib
+import copy
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import tempfile
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from fcntl import LOCK_EX, LOCK_UN, flock
+from pathlib import Path
+from typing import Any, Callable, Iterator
+
+
+SCHEMA = 1
+KINDS = ("task", "handoff", "coordinator", "unit", "crew")
+STATUSES = ("todo", "working", "review", "done", "failed")
+REASONS = ("prompt", "still", "overdue", "gone", "quota", "launch-failed", "escalated", "paused")
+SESSION_KEYS = ("agent", "model", "effort", "reviewer", "tmux_session", "tmux_window")
+WORKTREE_KEYS = ("path", "branch", "head")
+ATTENTION_KEYS = ("reason", "since", "note")
+FIELDS = (
+    "id", "kind", "parent", "repo", "title", "body", "source", "status", "attention", "session",
+    "worktree", "run_dir", "exit", "note", "created", "updated",
+)
+STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+_ID = re.compile(r"[a-z0-9-]{1,64}")
+_STAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+_GENERATION = re.compile(r"[0-9]+")
+_BREAK = re.compile(r"[\r\n\v\f\x1c-\x1e\x85  ]")
+
+
+class TaskError(Exception):
+    """Base class of every error this module raises."""
+
+
+class InvalidId(TaskError):
+    pass
+
+
+class InvalidValue(TaskError):
+    pass
+
+
+class UnknownTask(TaskError):
+    pass
+
+
+class CorruptTask(TaskError):
+    pass
+
+
+class InvalidTransition(TaskError):
+    def __init__(self, from_status: str, to_status: str) -> None:
+        self.from_status = from_status
+        self.to_status = to_status
+        super().__init__(f"a task cannot go from {from_status} to {to_status}")
+
+
+@dataclass
+class Task:
+    id: str
+    kind: str
+    parent: str | None
+    repo: str
+    title: str
+    body: str
+    source: str | None
+    status: str
+    attention: dict[str, Any] | None
+    session: dict[str, Any] | None
+    worktree: dict[str, Any] | None
+    run_dir: str | None
+    exit: int | None
+    note: str | None
+    created: str
+    updated: str
+
+    def to_json(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"schema": SCHEMA}
+        for name in FIELDS:
+            data[name] = copy.deepcopy(getattr(self, name))
+        return data
+
+    @classmethod
+    def from_json(cls, data: Any, folder_name: str) -> Task:
+        if not isinstance(data, dict):
+            raise CorruptTask(f"task {folder_name} is not a JSON object")
+        problem = _problem(data, folder_name)
+        if problem:
+            raise CorruptTask(f"task {folder_name} is unreadable: {problem}")
+        return cls(**{name: copy.deepcopy(data[name]) for name in FIELDS})
+
+
+@dataclass
+class TaskList:
+    tasks: list[Task]
+    unreadable: list[str]
+
+
+def store_dir(environ: Any = os.environ) -> Path:
+    """Return the store folder: BKF_TASKS_DIR, else XDG_STATE_HOME, else ~/.local/state."""
+    explicit = environ.get("BKF_TASKS_DIR")
+    if explicit:
+        return Path(explicit)
+    state_home = environ.get("XDG_STATE_HOME")
+    if state_home:
+        return Path(state_home) / "bkf" / "tasks"
+    home = Path(environ["HOME"]) if environ.get("HOME") else Path.home()
+    return home / ".local" / "state" / "bkf" / "tasks"
+
+
+def is_valid_id(text: Any) -> bool:
+    return isinstance(text, str) and _ID.fullmatch(text) is not None
+
+
+def repo_identity(path: str | os.PathLike[str]) -> str:
+    """Return the folder holding the git common dir, so linked worktrees share one identity."""
+    resolved = Path(path).resolve()
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(resolved), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError:
+        return str(resolved)
+    if result.returncode != 0 or not result.stdout.strip():
+        return str(resolved)
+    return str(Path(result.stdout.strip()).resolve().parent)
+
+
+def generation(store: Path) -> int:
+    path = Path(store) / "generation"
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return 0
+    if not _GENERATION.fullmatch(text):
+        raise TaskError(f"the store generation is not a number: {path}")
+    return int(text)
+
+
+def create(
+    store: Path,
+    *,
+    repo: str,
+    title: str,
+    kind: str = "task",
+    body: str = "",
+    source: str | None = None,
+    parent: str | None = None,
+    now: datetime | None = None,
+) -> Task:
+    store = Path(store)
+    when = _utc(now)
+    stamp = _stamp(when)
+    with _locked(store):
+        task_id = _fresh_id(store, when)
+        task = Task(
+            id=task_id, kind=kind, parent=parent, repo=repo,
+            title=_normalize_title(title), body=body, source=source, status="todo",
+            attention=None, session=None, worktree=None, run_dir=None, exit=None, note=None,
+            created=stamp, updated=stamp,
+        )
+        text = _record_text(task, task_id)
+        staging = Path(tempfile.mkdtemp(prefix=".new-", dir=store))
+        try:
+            _write_atomic(staging / "task.json", text)
+            os.rename(staging, store / task_id)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        _bump(store)
+    return task
+
+
+def read(store: Path, task_id: str) -> Task:
+    return _read_task(_existing(store, task_id))
+
+
+def list_tasks(store: Path) -> TaskList:
+    store = Path(store)
+    if not store.is_dir():
+        return TaskList(tasks=[], unreadable=[])
+    tasks: list[Task] = []
+    unreadable: list[str] = []
+    for entry in sorted(store.iterdir(), key=lambda item: item.name):
+        if not is_valid_id(entry.name) or not entry.is_dir():
+            continue
+        try:
+            tasks.append(_read_task(entry))
+        except CorruptTask:
+            unreadable.append(entry.name)
+    tasks.sort(key=lambda task: (task.created, task.id))
+    return TaskList(tasks=tasks, unreadable=unreadable)
+
+
+def update(
+    store: Path,
+    task_id: str,
+    change: Callable[[Task], Any],
+    now: datetime | None = None,
+) -> Task:
+    store = Path(store)
+    folder = _existing(store, task_id)
+    with _locked(store):
+        folder = _existing(store, task_id)
+        task = _read_task(folder)
+        change(task)
+        task.updated = _stamp(now)
+        text = _record_text(task, folder.name)
+        _write_atomic(folder / "task.json", text)
+        _bump(store)
+    return task
+
+
+def write_prompt(store: Path, task_id: str, text: str) -> None:
+    store = Path(store)
+    _existing(store, task_id)
+    with _locked(store):
+        folder = _existing(store, task_id)
+        _write_atomic(folder / "prompt.md", text)
+        _bump(store)
+
+
+def read_prompt(store: Path, task_id: str) -> str | None:
+    path = _existing(store, task_id) / "prompt.md"
+    try:
+        with open(path, encoding="utf-8", newline="") as handle:
+            return handle.read()
+    except FileNotFoundError:
+        return None
+
+
+def delete(store: Path, task_id: str) -> None:
+    store = Path(store)
+    _existing(store, task_id)
+    with _locked(store):
+        folder = _existing(store, task_id)
+        shutil.rmtree(folder)
+        _bump(store)
+
+
+# Transitions: pure functions that change a Task in place; store.update writes the result.
+
+def start(
+    task: Task,
+    *,
+    session: dict[str, Any] | None = None,
+    worktree: dict[str, Any] | None = None,
+    run_dir: str | None = None,
+) -> None:
+    _require(task, ("todo", "failed"), "working")
+    task.status = "working"
+    task.attention = None
+    task.exit = None
+    if session is not None:
+        task.session = _object(session, SESSION_KEYS)
+    if worktree is not None:
+        task.worktree = _object(worktree, WORKTREE_KEYS)
+    if run_dir is not None:
+        task.run_dir = run_dir
+
+
+def mark_ready(
+    task: Task,
+    *,
+    branch: str | None = None,
+    head: str | None = None,
+    note: str | None = None,
+) -> None:
+    _require(task, ("working", "review"), "review")
+    task.status = "review"
+    if task.worktree is None:
+        task.worktree = {"path": None, "branch": None, "head": None}
+    if branch is not None:
+        task.worktree["branch"] = branch
+    if head is not None:
+        task.worktree["head"] = head
+    if note is not None:
+        task.note = note
+
+
+def mark_done(task: Task) -> None:
+    _require(task, ("working", "review"), "done")
+    task.status = "done"
+    task.attention = None
+
+
+def mark_failed(task: Task, *, exit: int | None = None, note: str | None = None) -> None:
+    _require(task, ("working",), "failed")
+    task.status = "failed"
+    task.attention = None
+    if exit is not None:
+        task.exit = exit
+    if note is not None:
+        task.note = note
+
+
+def set_attention(task: Task, reason: str, *, note: str | None = None, now: datetime | None) -> None:
+    if reason not in REASONS:
+        raise InvalidValue(f"unknown attention reason: {reason}")
+    _require(task, ("todo", "working", "review", "failed"), task.status)
+    task.attention = {"reason": reason, "since": _stamp(now), "note": note}
+
+
+def clear_attention(task: Task) -> None:
+    task.attention = None
+
+
+# Internal helpers.
+
+def _require(task: Task, from_statuses: tuple[str, ...], to_status: str) -> None:
+    if task.status not in from_statuses:
+        raise InvalidTransition(task.status, to_status)
+
+
+def _object(value: Any, keys: tuple[str, ...]) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) - set(keys):
+        raise InvalidValue(f"expected only the fields {', '.join(keys)}")
+    return {key: value.get(key) for key in keys}
+
+
+def _normalize_title(title: str) -> str:
+    return " ".join(str(title).splitlines()).strip()
+
+
+def _problem(data: dict[str, Any], folder: str | None) -> str | None:
+    for name in ("schema", *FIELDS):
+        if name not in data:
+            return f"missing {name}"
+    if type(data["schema"]) is not int or data["schema"] != SCHEMA:
+        return "unsupported schema"
+    if not is_valid_id(data["id"]) or (folder is not None and data["id"] != folder):
+        return "id does not match the folder name"
+    if data["kind"] not in KINDS:
+        return f"unknown kind {data['kind']!r}"
+    if data["parent"] is not None and not is_valid_id(data["parent"]):
+        return "parent is not a valid id"
+    if not _one_line(data["repo"]):
+        return "repo must be one non-empty line"
+    if not _one_line(data["title"]) or data["title"] != data["title"].strip():
+        return "title must be one non-empty line without surrounding spaces"
+    if not isinstance(data["body"], str):
+        return "body is not text"
+    if not _opt_str(data["source"]):
+        return "source is not text"
+    if data["status"] not in STATUSES:
+        return f"unknown status {data['status']!r}"
+    attention = data["attention"]
+    if attention is not None:
+        if not _has_keys(attention, ATTENTION_KEYS):
+            return "attention has the wrong fields"
+        if attention["reason"] not in REASONS:
+            return f"unknown attention reason {attention['reason']!r}"
+        if not _stamp_ok(attention["since"]) or not _opt_str(attention["note"]):
+            return "attention has a bad since or note"
+    for name, keys in (("session", SESSION_KEYS), ("worktree", WORKTREE_KEYS)):
+        value = data[name]
+        if value is None:
+            continue
+        if not _has_keys(value, keys) or not all(_opt_str(value[key]) for key in keys):
+            return f"{name} has the wrong fields"
+    if not _opt_str(data["run_dir"]):
+        return "run_dir is not text"
+    if data["exit"] is not None and type(data["exit"]) is not int:
+        return "exit is not a whole number"
+    if not _opt_str(data["note"]):
+        return "note is not text"
+    if not _stamp_ok(data["created"]) or not _stamp_ok(data["updated"]):
+        return "created or updated is not a UTC timestamp"
+    return None
+
+
+def _one_line(value: Any) -> bool:
+    return isinstance(value, str) and value.strip() != "" and _BREAK.search(value) is None
+
+
+def _opt_str(value: Any) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def _has_keys(value: Any, keys: tuple[str, ...]) -> bool:
+    return isinstance(value, dict) and all(key in value for key in keys)
+
+
+def _stamp_ok(value: Any) -> bool:
+    if not isinstance(value, str) or _STAMP.fullmatch(value) is None:
+        return False
+    try:
+        datetime.strptime(value, STAMP_FORMAT)
+    except ValueError:
+        return False
+    return True
+
+
+def _utc(now: datetime | None) -> datetime:
+    if now is None:
+        return datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now.astimezone(timezone.utc)
+
+
+def _stamp(now: datetime | None) -> str:
+    return _utc(now).strftime(STAMP_FORMAT)
+
+
+def _fresh_id(store: Path, when: datetime) -> str:
+    stamp = when.astimezone().strftime("%Y%m%d-%H%M%S")
+    while True:
+        candidate = f"t{stamp}-{secrets.token_hex(2)}"
+        if not (store / candidate).exists():
+            return candidate
+
+
+def _existing(store: Path, task_id: str) -> Path:
+    if not is_valid_id(task_id):
+        raise InvalidId(f"not a valid task id: {task_id!r}")
+    folder = Path(store) / task_id
+    if not folder.is_dir():
+        raise UnknownTask(f"no task {task_id}")
+    return folder
+
+
+def _read_task(folder: Path) -> Task:
+    path = folder / "task.json"
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        raise CorruptTask(f"task {folder.name} has no task.json") from None
+    except (OSError, UnicodeDecodeError) as error:
+        raise CorruptTask(f"task {folder.name} cannot be read: {error}") from None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise CorruptTask(f"task {folder.name} is not valid JSON") from None
+    return Task.from_json(data, folder.name)
+
+
+def _record_text(task: Task, folder_name: str) -> str:
+    problem = _problem(task.to_json(), folder_name)
+    if problem:
+        raise InvalidValue(f"task {folder_name} cannot be saved: {problem}")
+    return json.dumps(task.to_json(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+        raise
+
+
+def _bump(store: Path) -> None:
+    _write_atomic(store / "generation", f"{generation(store) + 1}\n")
+
+
+@contextmanager
+def _locked(store: Path) -> Iterator[None]:
+    store.mkdir(parents=True, exist_ok=True)
+    fd = os.open(store / ".lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        flock(fd, LOCK_EX)
+        yield
+    finally:
+        flock(fd, LOCK_UN)
+        os.close(fd)

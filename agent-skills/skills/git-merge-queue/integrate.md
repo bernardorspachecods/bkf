@@ -8,9 +8,11 @@ judge in its own case.
 2. `integrate --fast-check "<cmd>" --full-check "<cmd>"` with the repo's named
    checks. It merges each entry in registration order into a temporary
    worktree, runs the fast check after each merge, then the full suite once on
-   the combined result. Only then does it fast-forward `main`, delete the
-   merged sessions' worktrees and branches, and report any it left (a
-   worktree with uncommitted or untracked files, or the main checkout).
+   the combined result. Only then does it fast-forward `main`, move the task
+   card of each merged branch to done (when exactly one card is on it and it is
+   working or in review), delete the merged sessions' worktrees and branches,
+   and report any it left (a worktree with uncommitted or untracked files, or
+   the main checkout).
 3. Act on the exit code:
 
 | Exit | Meaning | What you do |

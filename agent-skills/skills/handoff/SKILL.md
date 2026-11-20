@@ -31,14 +31,11 @@ after the task belong in the repository's documents, placed by
 
 ## Launch
 
-Each script takes `<working-dir> <absolute-handoff-path> [model] [effort]`, opens a new tab in that directory and starts the agent there with the whole handoff as its first message, so the user sees it in full. The current chat is untouched. Use Claude unless the user asks for Codex, and give a model or effort only when the user chose one; without them the session takes the user's defaults.
+Run `bkf launch claude --dir <working-dir> --prompt-file <absolute-handoff-path> --title "<one-line name of the task>" [--model M] [--effort E]`, with `codex` in place of `claude` only when the user asked for Codex. The working directory may be any directory, not only the caller's. The new session's first message is the whole handoff file, so the user sees it in full, and the current chat is untouched. Give a model or effort only when the user chose one; without them the session takes the user's defaults.
 
-- [scripts/launch-claude.sh](scripts/launch-claude.sh) starts `claude`; the model is `opus`, `sonnet`, `haiku` or a full id, the effort `low` to `max`.
-- [scripts/launch-codex.sh](scripts/launch-codex.sh) starts `codex`; the model is a Codex model such as `gpt-6-luna`, the effort its reasoning effort.
-- Run them only when `$TMUX` is set or `$TERM_PROGRAM` is `Apple_Terminal`. In another terminal, give the user the path and the command to run themselves.
-- The working directory may be any directory, not only the caller's. Inside tmux, the tab is a tmux window that does not take focus, grouped by repository (worktrees of one repository count as one): right after the caller's window when the directory is in the caller's repository; else right after the last window of the session in that repository; else at the end of the session. Under iTerm2's `tmux -CC` it shows as an iTerm2 tab, and the caller's window gets focus for a moment while the tab appears. In Terminal.app it is a new window, because Terminal cannot add a tab to a chosen window. Both scripts call the harness's shared [launch-session.sh](../../harness/scripts/launch-session.sh); read it only to change how the tab opens.
+Each launch makes a new task card of kind `handoff`, a child of this session's task when it has one. `bkf launch` opens the window and says where it went: inside tmux, beside the caller and grouped by repository; outside tmux, in the repository's tmux session in iTerm2 or Terminal.app. Where it can open no window, it prints an attach command, which you give the user. For how the window is placed, read `bkf help launch` and the `## bkf launch` section of [the command reference](../../../bkf/tooling/commands.md).
 
-Afterward, tell the user the handoff path and that the new session is open.
+Afterward, tell the user the handoff path, the card id that `bkf launch` printed, and that the new session is open, or give the attach command it printed.
 
 ## Runtime metadata
 

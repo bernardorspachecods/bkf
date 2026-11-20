@@ -17,7 +17,7 @@ import agent_modes
 
 
 SCRIPT_NAME = "mode.py"
-HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "guard", "audit", "tabname", "sources")
+HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "task", "guard", "audit", "tabname", "sources")
 EDIT_TOOLS = "Edit|Write|NotebookEdit|MultiEdit|apply_patch"
 TIMEOUT = 10
 RULES_LIMIT = 4000
@@ -84,6 +84,7 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
         Registration("guard", "PreToolUse", "Read|Bash", f"{bkf_command(home)} hooks run guard", re.compile(r"(^|/)bkf hooks run guard$")),
         Registration("orient", "SessionStart", None, f"{bkf_command(home)} orient", orient_owner),
         Registration("rules", "SessionStart", None, f"{bkf_command(home)} hooks run rules", re.compile(r"(^|/)bkf hooks run rules$")),
+        Registration("task", "SessionStart", None, f"{bkf_command(home)} hooks run task", re.compile(r"(^|/)bkf hooks run task$")),
         Registration("check", "SessionStart", None, f"{bkf_command(home)} hooks run snapshot", re.compile(r"(^|/)bkf hooks run snapshot$")),
         Registration("check", "PostToolUse", EDIT_TOOLS, f"{bkf_command(home)} hooks run record", re.compile(r"(^|/)bkf hooks run record$")),
         Registration("check", "Stop", None, f"{bkf_command(home)} hooks run stop", re.compile(r"(^|/)bkf hooks run stop$"), 60),
@@ -212,7 +213,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
     """Return a short failure reason when a registered command cannot run."""
     if registration.hook == "modes":
         probe_input = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "bkf-probe", "prompt": "probe"})
-    elif registration.hook == "orient" or registration.hook == "rules":
+    elif registration.hook in ("orient", "rules", "task"):
         probe_input = ""
     else:
         probe_input = json.dumps({"hook_event_name": "BKFProbe", "probe": True})
@@ -220,6 +221,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
     try:
         with tempfile.TemporaryDirectory() as directory:
             env = os.environ.copy()
+            env.pop("BKF_TASK", None)
             env["HOME"] = directory
             env["USERPROFILE"] = directory
             result = subprocess.run(
@@ -307,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.event == "rules":
                 home = (args.home or Path.home()).expanduser().resolve()
                 return run_rules(home)
+            if args.event == "task":
+                import task_hook
+
+                return task_hook.run()
             import hook_events as handler
 
             return handler.main([args.event or ""])

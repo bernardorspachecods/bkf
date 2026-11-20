@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,8 @@ TOOLING = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOLING))
 import generate_inventory
 import hook_events
+import task_hook
+import task_store
 import validate_bundle
 
 MAP = (
@@ -610,3 +613,79 @@ class TabNameTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TaskHookTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Path(self.tmp.name) / "tasks"
+        self.env = {"BKF_TASKS_DIR": str(self.store), "HOME": self.tmp.name}
+
+    def make(self, kind: str = "task", status: str | None = None) -> str:
+        task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
+        if status == "done":
+            task_store.update(self.store, task.id, task_store.start)
+            task_store.update(self.store, task.id, task_store.mark_done)
+        elif status == "review":
+            task_store.update(self.store, task.id, task_store.start)
+            task_store.update(self.store, task.id, task_store.mark_ready)
+        return task.id
+
+    def text(self, task_id: str | None) -> str | None:
+        env = dict(self.env)
+        if task_id is not None:
+            env["BKF_TASK"] = task_id
+        return task_hook.session_text(env)
+
+    def test_names_the_task_and_the_two_commands(self) -> None:
+        task_id = self.make()
+        text = self.text(task_id)
+        self.assertIn(f"This session works on task {task_id} (task): Fix the parser.", text)
+        self.assertIn('run `bkf task ready --note "<one-line summary>"`', text)
+        self.assertIn("run `bkf task done`", text)
+        self.assertTrue(text.endswith("\n"))
+
+    def test_review_status_still_gets_the_text(self) -> None:
+        task_id = self.make(status="review")
+        self.assertIn(f"task {task_id} (task)", self.text(task_id))
+
+    def test_handoff_kind_gets_the_text(self) -> None:
+        task_id = self.make(kind="handoff")
+        self.assertIn(f"task {task_id} (handoff)", self.text(task_id))
+
+    def test_unit_and_crew_kinds_stay_silent(self) -> None:
+        self.assertIsNone(self.text(self.make(kind="unit")))
+        self.assertIsNone(self.text(self.make(kind="crew")))
+
+    def test_done_task_stays_silent(self) -> None:
+        self.assertIsNone(self.text(self.make(status="done")))
+
+    def test_no_variable_or_empty_variable_stays_silent(self) -> None:
+        self.make()
+        self.assertIsNone(self.text(None))
+        self.assertIsNone(self.text(""))
+
+    def test_unknown_invalid_and_corrupt_tasks_stay_silent(self) -> None:
+        self.assertIsNone(self.text("t20990101-000000-ffff"))
+        self.assertIsNone(self.text("../escape"))
+        task_id = self.make()
+        (self.store / task_id / "task.json").write_text("{not json", encoding="utf-8")
+        self.assertIsNone(self.text(task_id))
+
+    def test_hook_exits_zero_and_prints_nothing_for_a_corrupt_task(self) -> None:
+        task_id = self.make()
+        (self.store / task_id / "task.json").write_text("[]", encoding="utf-8")
+        output = io.StringIO()
+        with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
+            code = task_hook.run()
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "")
+
+    def test_hook_prints_the_text_on_standard_output(self) -> None:
+        task_id = self.make()
+        output = io.StringIO()
+        with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
+            code = task_hook.run()
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), task_hook.session_text({**self.env, "BKF_TASK": task_id}))
