@@ -13,7 +13,6 @@ It contains only package metadata and supported runtime metadata derived from th
 | [brainstorm](skills/brainstorm/SKILL.md) | Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions. |  |
 | [code-work](skills/code-work/SKILL.md) | Use whenever you write or fix code: the principles for building it and verifying it, whoever coordinates the work. |  |
 | [council](skills/council/SKILL.md) | Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume. |  |
-| [crew](skills/crew/SKILL.md) | Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (agentic-work, research, council) or to continue one task in a new chat (handoff). | yes |
 | [disk-report](skills/disk-report/SKILL.md) | Measure what takes disk space on the user's Mac and present it as a table with a risk per item (Claude and Codex sessions, caches, Xcode, VMs, app data). Use when the user wants to free disk space or asks what is filling the disk. It is read-only and never deletes anything; do not use to clean up git branches or worktrees (use git-worktree-cleanup). |  |
 | [git-merge-queue](skills/git-merge-queue/SKILL.md) | Merge the finished work of several sessions of one repository as a batch. Each session registers its branch in a shared queue, then one integrator merges the batch, tests the result and cleans up the sessions it merged. Use only when the user asks to queue a branch, close the batch or resume an integration; do not use for a single session's merge (use git-worktree-cleanup). | yes |
 | [git-status-cleanup](skills/git-status-cleanup/SKILL.md) | Commit the uncommitted changes of the current worktree, either only what this session changed (default) or everything. Do not use to delete merged branches or worktrees (use git-worktree-cleanup). | yes |
@@ -93,16 +92,6 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Council
   - `short_description`: Five advisors and five reviewers on one question
-
-## crew
-
-- Description: Open and run a crew for large work split into sub-plans, with this chat as the orchestrator. It writes a brief for each sub-plan, opens one Claude coordinator session per brief in a tmux window beside this chat, and keeps the orchestrator, the coordinators and the user in contact. Use only when the user asks for a crew or for coordinators on several sub-plans; do not use for the work itself (agentic-work, research, council) or to continue one task in a new chat (handoff).
-- Package: [`agent-skills/skills/crew`](skills/crew/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Crew
-  - `short_description`: Open coordinator sessions for the sub-plans of a large piece of work
-- Runtime policy: `explicit invocation required`
 
 ## disk-report
 

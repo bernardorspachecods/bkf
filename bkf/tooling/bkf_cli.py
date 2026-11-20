@@ -78,7 +78,7 @@ COMMANDS = {
     "launch": (
         "bkf_launch",
         "Open an interactive agent session in tmux, with its task card",
-        "called by the handoff and crew skills and the Agentic app; not by hand",
+        "called by the handoff skill and the Agentic app; not by hand",
         "called by skills and the app",
     ),
 }

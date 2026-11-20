@@ -20,9 +20,9 @@ from typing import Any, Callable, Iterator
 
 
 SCHEMA = 1
-KINDS = ("task", "handoff", "coordinator", "unit", "crew")
+KINDS = ("task", "handoff", "unit")
 STATUSES = ("todo", "working", "review", "done", "failed")
-REASONS = ("prompt", "still", "overdue", "gone", "quota", "launch-failed", "escalated", "paused")
+REASONS = ("prompt", "quota", "launch-failed", "escalated", "paused")
 SESSION_KEYS = ("agent", "model", "effort", "reviewer", "tmux_session", "tmux_window")
 WORKTREE_KEYS = ("path", "branch", "head")
 ATTENTION_KEYS = ("reason", "since", "note")

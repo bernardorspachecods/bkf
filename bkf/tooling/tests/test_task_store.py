@@ -238,7 +238,7 @@ class TransitionTests(unittest.TestCase):
 
     def test_mark_done_and_mark_failed(self) -> None:
         done = self.task("review")
-        set_attention(done, "still", now=NOW)
+        set_attention(done, "quota", now=NOW)
         mark_done(done)
         self.assertEqual(done.status, "done")
         self.assertIsNone(done.attention)
@@ -253,7 +253,7 @@ class TransitionTests(unittest.TestCase):
         set_attention(failed, "launch-failed", note="boom", now=NOW)
         self.assertEqual(failed.attention["reason"], "launch-failed")
         with self.assertRaises(InvalidTransition):
-            set_attention(self.task("done"), "still", now=NOW)
+            set_attention(self.task("done"), "quota", now=NOW)
         self.assertEqual(task.attention, {"reason": "prompt", "since": "2026-11-20T14:30:05Z", "note": "Needs an answer"})
         self.assertEqual(task.status, "working")
         clear_attention(task)
@@ -290,7 +290,7 @@ class TransitionTests(unittest.TestCase):
         for status in ("done",):
             with self.subTest("attention", status=status):
                 with self.assertRaises(InvalidTransition):
-                    set_attention(self.task(status), "still", now=NOW)
+                    set_attention(self.task(status), "quota", now=NOW)
 
 
 class WriteTests(TempStore):

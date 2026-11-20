@@ -654,9 +654,8 @@ class TaskHookTest(unittest.TestCase):
         task_id = self.make(kind="handoff")
         self.assertIn(f"task {task_id} (handoff)", self.text(task_id))
 
-    def test_unit_and_crew_kinds_stay_silent(self) -> None:
+    def test_unit_kind_stays_silent(self) -> None:
         self.assertIsNone(self.text(self.make(kind="unit")))
-        self.assertIsNone(self.text(self.make(kind="crew")))
 
     def test_done_task_stays_silent(self) -> None:
         self.assertIsNone(self.text(self.make(status="done")))
@@ -746,7 +745,7 @@ class TaskTurnHookTest(unittest.TestCase):
         self.assertEqual(self.attention(task_id)["note"], self.NOTE)
 
     def test_stop_keeps_any_existing_attention(self) -> None:
-        for attention in (("prompt", "crew says hi"), ("still", None), ("escalated", "look")):
+        for attention in (("prompt", "another note"), ("quota", None), ("escalated", "look")):
             task_id = self.make(attention=attention)
             before = task_store.read(self.store, task_id).to_json()
             self.fire("Stop", task_id)
@@ -760,12 +759,11 @@ class TaskTurnHookTest(unittest.TestCase):
             self.assertEqual((code, output), (0, ""))
             self.assertEqual(task_store.read(self.store, task_id).to_json(), before, status)
 
-    def test_stop_leaves_unit_crew_and_coordinator_cards_alone(self) -> None:
-        for kind in ("unit", "crew", "coordinator"):
-            task_id = self.make(kind=kind)
-            before = task_store.read(self.store, task_id).to_json()
-            self.fire("Stop", task_id)
-            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, kind)
+    def test_stop_leaves_unit_cards_alone(self) -> None:
+        task_id = self.make(kind="unit")
+        before = task_store.read(self.store, task_id).to_json()
+        self.fire("Stop", task_id)
+        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
 
     def test_user_prompt_clears_only_the_waiting_mark(self) -> None:
         task_id = self.make(attention=("prompt", self.NOTE))
@@ -775,13 +773,13 @@ class TaskTurnHookTest(unittest.TestCase):
         self.assertEqual(task_store.read(self.store, task_id).status, "working")
 
     def test_user_prompt_keeps_prompt_with_another_note(self) -> None:
-        task_id = self.make(attention=("prompt", "crew says hi"))
+        task_id = self.make(attention=("prompt", "another note"))
         before = task_store.read(self.store, task_id).to_json()
         self.fire("UserPromptSubmit", task_id)
         self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
 
     def test_user_prompt_keeps_other_reasons_and_no_attention(self) -> None:
-        for attention in (("still", self.NOTE), ("overdue", None), None):
+        for attention in (("escalated", self.NOTE), ("quota", None), None):
             task_id = self.make(attention=attention)
             before = task_store.read(self.store, task_id).to_json()
             code, output = self.fire("UserPromptSubmit", task_id)

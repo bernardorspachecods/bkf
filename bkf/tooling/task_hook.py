@@ -13,8 +13,8 @@ from task_store import TaskError
 
 
 TASK_ENV = "BKF_TASK"
-# A script or the crew orchestrator owns the card of these kinds, so the session is not told to move it.
-OWNED_KINDS = ("unit", "crew")
+# A script owns the card of these kinds, so the session is not told to move it.
+OWNED_KINDS = ("unit",)
 # A session that stops on a working card of these kinds is waiting for the owner's reply.
 WAITING_KINDS = ("task", "handoff")
 WAITING_REASON = "prompt"

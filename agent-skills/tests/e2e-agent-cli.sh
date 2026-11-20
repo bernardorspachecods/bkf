@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end check of the agent CLI: bkf task, launch and hooks, the crew, delegate and merge-queue scripts,
+# End-to-end check of the agent CLI: bkf task, launch and hooks, the delegate and merge-queue scripts,
 # a plan run, the bkf suites, and (with AGENTIC_ROOT) the Agentic app's bkf client. No model is called and
 # nothing is written under the real home, the user's task store or the user's tmux server: the run uses a
 # sandbox home, a temporary task store and a throwaway tmux server (tmux -L <unique>), killed on exit.
@@ -51,7 +51,7 @@ export HOME=$work/home
 mkdir -p "$HOME" "$work/bin" "$work/calls" "$work/behave" "$work/repos" "$work/state"
 export UV_TOOL_DIR=$uv_tool_dir
 export E2E=$work BKF_TASKS_DIR=$work/tasks BKF_TMUX_SOCKET=$sock SHELL=/bin/sh
-export XDG_STATE_HOME=$work/xdg-state WATCH_WAITS=$work/waits
+export XDG_STATE_HOME=$work/xdg-state
 unset TMUX TMUX_PANE TERM_PROGRAM BKF_TASK BKF_DELEGATED
 export PATH=$work/bin:$PATH
 
@@ -143,14 +143,6 @@ spawn() {
   for kv in "$@"; do envs+=(-e "$kv"); done
   t new-window -d -P -F '#{window_id}' -t main: -n "$name" -c "$dir" ${envs[@]+"${envs[@]}"} "sh '$file'; sleep 600"
 }
-# A tmux for the watcher scripts, which call plain tmux and do not read BKF_TMUX_SOCKET: this one adds -L.
-real_tmux=$(command -v tmux)
-mkdir -p "$work/tmuxshim"
-cat >"$work/tmuxshim/tmux" <<SHIM
-#!/bin/sh
-exec "$real_tmux" -L "$sock" "\$@"
-SHIM
-chmod +x "$work/tmuxshim/tmux"
 window_index() { t list-windows -t main -F '#{window_index} #{window_name}' | awk -v n="$1" '{name=substr($0, index($0, " ")+1)} name==n {print $1}'; }
 window_id_named() { t list-windows -t main -F '#{window_id} #{window_name}' | awk -v n="$1" '{name=substr($0, index($0, " ")+1)} name==n {print $1}'; }
 
@@ -264,82 +256,6 @@ print(slug + "-" + hashlib.sha1(repo.encode()).hexdigest()[:6])' "$repo")
   eq "$(field "$card" status)" working "the card is working"
   eq "$(field "$card" session.tmux_session)" "$session" "the card names the session"
   eq "$(field "$card" session.tmux_window)" "$window" "the card names the window"
-  end
-}
-
-case_crew() {
-  begin "crew of two"
-  local repo crew orch_win crew_card b_card c_card orch_rc
-  repo=$(mkrepo crew)
-  crew=$work/crew-e2e
-  mkdir -p "$crew/done"
-  printf 'Sub-plan B: first part.\n' >"$crew/b.md"
-  printf 'Sub-plan C: second part.\n' >"$crew/c.md"
-  clear_calls
-  # Each coordinator writes its done file and marks its card ready; crew-c waits, so await-crew sees a partial phase first.
-  cat >"$E2E/behave/claude" <<BEHAVE
-name=\$(sed -n '/^--name\$/{n;p;q;}' "\$1.args")
-if [ "\$name" = crew-c ]; then sleep 4; fi
-printf 'done %s\n' "\$name" >"$crew/done/\${name#crew-}.md"
-bkf task ready --no-git --note "\$name done"
-BEHAVE
-  # The orchestrator's window launches both coordinators, then a window runs await-crew with a command that records each card's status.
-  orch_win=$(spawn orch-crew "$repo" "'$bkf_root/agent-skills/skills/crew/scripts/launch-coordinator.sh' b orch-1 '$repo' '$crew/b.md' >'$work/crew-b.out' 2>'$work/crew-b.err'; rb=\$?
-'$bkf_root/agent-skills/skills/crew/scripts/launch-coordinator.sh' c orch-1 '$repo' '$crew/c.md' >'$work/crew-c.out' 2>'$work/crew-c.err'; echo \"\$rb \$?\" >'$work/crew.rc'")
-  wait_for 30 test -s "$work/crew.rc"
-  eq "$(cat "$work/crew.rc" 2>/dev/null)" "0 0" "both launches exit 0"
-  crew_card=$(cat "$crew/cards/crew" 2>/dev/null)
-  b_card=$(cat "$crew/cards/b" 2>/dev/null)
-  c_card=$(cat "$crew/cards/c" 2>/dev/null)
-  check "a crew card and two coordinator cards exist" test -n "$crew_card" -a -n "$b_card" -a -n "$c_card"
-  if [ -n "$crew_card" ]; then
-    eq "$(field "$crew_card" kind)" crew "the crew card is kind crew"
-    eq "$(field "$crew_card" status)" working "the crew card is working in the orchestrator's window"
-    eq "$(field "$crew_card" session.tmux_window)" "$orch_win" "the crew card names the orchestrator's window"
-    eq "$(bkf task list --json | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin)["tasks"] if t["kind"] == "crew"))')" 1 "there is one crew card"
-  fi
-  if [ -n "$b_card" ] && [ -n "$c_card" ]; then
-    eq "$(field "$b_card" kind)" coordinator "crew-b's card is a coordinator"
-    eq "$(field "$c_card" kind)" coordinator "crew-c's card is a coordinator"
-    eq "$(field "$b_card" parent)" "$crew_card" "crew-b's card has the crew card as parent"
-    eq "$(field "$c_card" parent)" "$crew_card" "crew-c's card has the crew card as parent"
-  fi
-  cat >"$crew/snap.sh" <<'SNAP'
-#!/bin/sh
-for f in "$1"/cards/*; do
-  n=${f##*/}
-  [ "$n" = crew ] && continue
-  status=$(bkf task show "$(cat "$f")" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
-  printf '%s %s\n' "$n" "$status" >>"$1/ran"
-done
-SNAP
-  spawn await-crew "$repo" "PATH=$work/tmuxshim:\$PATH AWAIT_INTERVAL=1 WATCH_INTERVAL=1 WATCH_NOTIFY=/usr/bin/true WATCH_WAITS='$work/waits' '$bkf_root/agent-skills/skills/crew/scripts/await-crew.sh' '$crew' -- sh '$crew/snap.sh' '$crew' >'$work/await.out' 2>&1; echo \$? >'$work/await.rc'" >/dev/null
-  wait_for 60 test -s "$work/await.rc"
-  eq "$(cat "$work/await.rc" 2>/dev/null)" 0 "await-crew exits 0 after running its command"
-  eq "$(cat "$crew/ran" 2>/dev/null | paste -sd, -)" "b review,c review" "the command ran once, after both coordinators were in review"
-  unbehave claude
-  end
-}
-
-case_watch() {
-  begin "watcher attention"
-  local repo card win state pid1 pid2 i
-  repo=$(mkrepo watch)
-  card=$(bkf task new --repo "$repo" --title 'watch card')
-  win=$(spawn still-win "$repo" "printf 'steady\n'; sleep 600")
-  state=$work/watch-state
-  mkdir -p "$state"
-  PATH=$work/tmuxshim:$PATH WATCH_INTERVAL=1 WATCH_STILL=2 WATCH_NOTIFY=/usr/bin/true \
-    "$bkf_root/agent-skills/skills/crew/scripts/watch-coordinators.sh" "$state" "$win=$card" >"$work/watch1.out" 2>&1
-  eq "$(cat "$work/watch1.out" | head -1)" "STILL $win" "the watcher alerts STILL for the unchanged pane"
-  eq "$(field "$card" attention.reason)" still "the card's attention is still"
-  t send-keys -t "$win" 'echo changed' Enter
-  PATH=$work/tmuxshim:$PATH WATCH_INTERVAL=1 WATCH_STILL=600 WATCH_NOTIFY=/usr/bin/true \
-    "$bkf_root/agent-skills/skills/crew/scripts/watch-coordinators.sh" "$state" "$win=$card" >"$work/watch2.out" 2>&1 &
-  pid2=$!
-  for ((i = 0; i < 150; i++)); do [ -z "$(field "$card" attention.reason)" ] && break; sleep 0.1; done
-  eq "$(field "$card" attention.reason)" "" "the first change of the pane clears the card's attention"
-  kill "$pid2" 2>/dev/null; wait "$pid2" 2>/dev/null
   end
 }
 
@@ -473,7 +389,7 @@ case_no_leftovers() {
 
 if [ -n "$bkf_missing" ]; then
   for c in "handoff from inside tmux" "handoff with parent" "task session hook" "app-style launch from outside tmux" \
-    "crew of two" "watcher attention" "delegate run" "merge queue" "plan run"; do
+    "delegate run" "merge queue" "plan run"; do
     skip "$c" "$bkf_missing"
   done
   skip "bkf suites" "$bkf_missing"
@@ -483,8 +399,6 @@ else
   case_handoff_parent
   case_hook
   case_app_style
-  case_crew
-  case_watch
   case_delegate
   case_merge_queue
   case_plan
@@ -515,7 +429,6 @@ else
   suite "agentic-work tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/skills/agentic-work/tests
   suite "agentic-work delegate shell test" bash agent-skills/skills/agentic-work/tests/test-delegate-run.sh
   suite "agentic-work plan gate shell test" bash agent-skills/skills/agentic-work/tests/test-plan-run-gate.sh
-  suite "crew shell tests" bash -c 'for f in agent-skills/skills/crew/tests/test-*.sh; do bash "$f" || exit 1; done'
   suite "merge queue tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/skills/git-merge-queue/tests
   suite "bkf skills check" bkf skills --check .
   suite "bkf validate" bkf validate .

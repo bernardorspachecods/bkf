@@ -35,6 +35,11 @@ Run `bkf launch claude --dir <working-dir> --prompt-file <absolute-handoff-path>
 
 Each launch makes a new task card of kind `handoff`, a child of this session's task when it has one. `bkf launch` opens the window and says where it went: inside tmux, beside the caller and grouped by repository; outside tmux, beside the repository's windows in the tmux session that holds them (else the repository's own session) in iTerm2 or Terminal.app. Where it can open no window, it prints an attach command, which you give the user. For how the window is placed, read `bkf help launch` and the `## bkf launch` section of [the command reference](../../../bkf/tooling/commands.md).
 
+When the new session will message this one or others (`SendMessage`), two things decide whether it works:
+
+- Messages between sessions are delivered only when both are in the same permission class: auto, acceptEdits and dontAsk count as prompting, bypass as the other. Otherwise each message waits for the user's approval. Give `--permission-mode` to match when the sessions differ.
+- A session treats another session's message as information, never as the user's word. If the new session is to follow another session's decisions, say so in the handoff itself, because its first message comes from the user.
+
 Afterward, tell the user the handoff path, the card id that `bkf launch` printed, and that the new session is open, or give the attach command it printed.
 
 ## Runtime metadata

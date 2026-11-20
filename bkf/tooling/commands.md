@@ -293,14 +293,14 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   > the environment.
 
   It prints nothing when `BKF_TASK` is unset, when the task cannot be read, when
-  its kind is `unit` or `crew` (a script or the orchestrator owns those cards)
-  or when its status is `done`. The `Stop` event marks a card that is `working`
+  its kind is `unit` (a script owns those cards) or when its status is
+  `done`. The `Stop` event marks a card that is `working`
   and of kind `task` or `handoff` as waiting for the owner, with attention
   reason `prompt` and the note `waiting for your reply`, when the card has no
   attention yet; a card with any other attention, or in another status, is left
   alone. The `UserPromptSubmit` event clears attention only when it is that same
   `prompt` with that same note, so a person's reply resumes the card while a
-  `prompt` set by the crew watcher stays. `Stop` and `UserPromptSubmit` print
+  `prompt` set by anything else stays. `Stop` and `UserPromptSubmit` print
   nothing, since their standard output would go to the agent's context. Both
   change the card through the store's locked helpers, as `bkf task attention`
   does. Empty or invalid input is treated as `SessionStart`. The hook always
@@ -706,7 +706,7 @@ Writes replace files atomically.
 | Key | Holds |
 | --- | --- |
 | `id` | the folder name |
-| `kind` | `task`, `handoff`, `coordinator`, `unit`, or `crew` |
+| `kind` | `task`, `handoff`, or `unit` |
 | `parent` | the parent task's id, or null |
 | `repo` | the repository's identity: the folder holding its git common directory |
 | `title` | one line |
@@ -729,8 +729,8 @@ Writes replace files atomically.
 `--clear` is always allowed. `delete` removes the
 folder whatever its status. A transition that is not allowed is refused.
 
-The attention reasons are `prompt`, `still`, `overdue`, `gone`, `quota`,
-`launch-failed`, `escalated` and `paused`. A plan run sets `escalated` on a unit
+The attention reasons are `prompt`, `quota`, `launch-failed`, `escalated` and
+`paused`. A plan run sets `escalated` on a unit
 or run that needs its coordinator (blocked, escalated, takeover or stopped; the
 note says which) and `paused` on a run that waits for its owner at a checkpoint.
 
