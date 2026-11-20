@@ -13,7 +13,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bkf_cli
-import bkf_task
 import task_store
 import task_tmux
 
@@ -213,7 +212,7 @@ class BkfTaskTests(unittest.TestCase):
     def test_missing_id_is_refused_when_no_environment_task(self) -> None:
         status, output, error = self.run_task("show")
         self.assertRefused(status, output, error, "pass an id")
-        status, output, error = self.run_task("done")
+        status, output, error = self.run_task("close")
         self.assertRefused(status, output, error, "pass an id")
 
     def test_unknown_task_is_refused(self) -> None:
@@ -244,13 +243,13 @@ class BkfTaskTests(unittest.TestCase):
         task = task_store.read(self.store, task_id)
         self.assertEqual((task.status, task.session, task.worktree, task.run_dir), ("working", None, None, None))
 
-    def test_start_of_a_working_task_is_refused_and_leaves_it_unchanged(self) -> None:
+    def test_start_of_a_working_task_is_a_rerun_that_clears_its_attention(self) -> None:
         task_id = self.new()
         self.run_task("start", task_id)
-        before = task_store.read(self.store, task_id).to_json()
-        status, output, error = self.run_task("start", task_id)
-        self.assertRefused(status, output, error, "a task cannot go from working to working")
-        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+        self.run_task("attention", task_id, "--set", "paused", "--note", "report")
+        self.assertEqual(self.run_task("start", task_id)[0], 0)
+        task = task_store.read(self.store, task_id)
+        self.assertEqual((task.status, task.attention), ("working", None))
 
     def test_start_of_an_unknown_task_is_refused(self) -> None:
         status, output, error = self.run_task("start", "t20000101-000000-0000")
@@ -264,97 +263,51 @@ class BkfTaskTests(unittest.TestCase):
         task = task_store.read(self.store, task_id)
         self.assertEqual((task.status, task.exit), ("working", None))
 
-    # ready
+    # the removed commands, close
 
-    def test_ready_outside_git_records_nulls(self) -> None:
+    def test_ready_and_done_are_no_longer_commands(self) -> None:
         task_id = self.new()
-        plain = self.root / "plain"
-        plain.mkdir()
-        self.run_task("start", task_id, "--worktree", str(plain))
-        status, output, error = self.run_task("ready", task_id, "--note", "done for now")
-        self.assertEqual((status, output, error), (0, "", ""))
-        task = task_store.read(self.store, task_id)
-        self.assertEqual(task.status, "review")
-        self.assertEqual(task.worktree, {"path": str(plain), "branch": None, "head": None})
-        self.assertEqual(task.note, "done for now")
+        for command in ("ready", "done"):
+            with self.subTest(command):
+                status, output, error = self.run_task(command, task_id)
+                self.assertEqual(status, 2)
+                self.assertIn("invalid choice", error)
 
-    def test_ready_in_a_clean_repository_records_branch_and_head(self) -> None:
-        self.git(self.repo, "init", "-q")
-        self.git(self.repo, "-c", "user.email=t@example.invalid", "-c", "user.name=test",
-                 "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "init")
-        task_id = self.new()
-        self.run_task("start", task_id, "--worktree", str(self.repo))
-        status, _, error = self.run_task("ready", task_id)
-        self.assertEqual((status, error), (0, ""))
-        task = task_store.read(self.store, task_id)
-        self.assertEqual(task.status, "review")
-        self.assertEqual(task.worktree["branch"], self.git(self.repo, "rev-parse", "--abbrev-ref", "HEAD"))
-        self.assertEqual(task.worktree["head"], self.git(self.repo, "rev-parse", "HEAD"))
+    def test_close_deletes_the_card_from_any_status(self) -> None:
+        for status_name in ("todo", "working", "to-merge", "failed"):
+            with self.subTest(status_name):
+                task_id = self.new()
+                if status_name in ("working", "to-merge", "failed"):
+                    self.run_task("start", task_id)
+                if status_name == "to-merge":
+                    task_store.update(self.store, task_id, task_store.enter_merge)
+                if status_name == "failed":
+                    self.run_task("fail", task_id)
+                self.assertEqual(task_store.read(self.store, task_id).status, status_name)
+                with patch.dict(os.environ, {"BKF_TASK": task_id}):
+                    self.assertEqual(self.run_task("close")[0], 0)
+                self.assertFalse((self.store / task_id).exists())
 
-    def test_ready_uses_the_current_folder_without_a_worktree(self) -> None:
-        self.git(self.repo, "init", "-q")
-        self.git(self.repo, "-c", "user.email=t@example.invalid", "-c", "user.name=test",
-                 "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "init")
+    def test_close_of_an_unknown_task_is_refused(self) -> None:
+        status, output, error = self.run_task("close", "t20000101-000000-0000")
+        self.assertRefused(status, output, error, "no task")
+
+    def test_a_card_in_to_merge_is_listed_with_its_status(self) -> None:
         task_id = self.new()
         self.run_task("start", task_id)
-        previous = os.getcwd()
-        os.chdir(self.repo)
-        try:
-            status, _, error = self.run_task("ready", task_id)
-        finally:
-            os.chdir(previous)
+        task_store.update(self.store, task_id, task_store.enter_merge)
+        status, output, error = self.run_task("list", "--status", "to-merge")
         self.assertEqual((status, error), (0, ""))
-        self.assertEqual(task_store.read(self.store, task_id).worktree["head"], self.git(self.repo, "rev-parse", "HEAD"))
+        self.assertIn(f"{task_id}  to-merge  task  first", output)
+        self.assertEqual(self.run_task("list", "--status", "review")[0], 2)
 
-    def test_ready_with_a_dirty_tree_is_refused_and_leaves_the_task_unchanged(self) -> None:
-        self.git(self.repo, "init", "-q")
-        self.git(self.repo, "-c", "user.email=t@example.invalid", "-c", "user.name=test",
-                 "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "init")
+    def test_merge_failed_is_an_attention_reason(self) -> None:
         task_id = self.new()
-        self.run_task("start", task_id, "--worktree", str(self.repo))
-        before = task_store.read(self.store, task_id).to_json()
-        (self.repo / "changed.txt").write_text("x", encoding="utf-8")
-        status, output, error = self.run_task("ready", task_id)
-        self.assertRefused(status, output, error, "commit them on the branch first")
-        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
-
-    def test_ready_no_git_accepts_a_dirty_tree_and_keeps_branch_and_head(self) -> None:
-        self.git(self.repo, "init", "-q")
-        self.git(self.repo, "-c", "user.email=t@example.invalid", "-c", "user.name=test",
-                 "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "init")
-        task_id = self.new()
-        self.run_task("start", task_id, "--worktree", str(self.repo), "--branch", "delegate/x")
-        (self.repo / "changed.txt").write_text("x", encoding="utf-8")
-        with patch.object(bkf_task, "_git", side_effect=AssertionError("git must not be read")):
-            status, output, error = self.run_task("ready", task_id, "--no-git", "--note", "2 files changed")
-        self.assertEqual((status, output, error), (0, "", ""))
-        task = task_store.read(self.store, task_id)
-        self.assertEqual(task.status, "review")
-        self.assertEqual(task.worktree, {"path": str(self.repo), "branch": "delegate/x", "head": None})
-        self.assertEqual(task.note, "2 files changed")
-
-    def test_ready_no_git_from_todo_is_refused(self) -> None:
-        task_id = self.new()
-        status, output, error = self.run_task("ready", task_id, "--no-git")
-        self.assertRefused(status, output, error, "a task cannot go from todo to review")
-        self.assertEqual(task_store.read(self.store, task_id).status, "todo")
-
-    def test_ready_from_todo_is_refused_before_git_is_read(self) -> None:
-        task_id = self.new()
-        status, output, error = self.run_task("ready", task_id)
-        self.assertRefused(status, output, error, "a task cannot go from todo to review")
-        self.assertEqual(task_store.read(self.store, task_id).status, "todo")
-
-    # done, fail, attention, delete
-
-    def test_done_moves_working_to_done_and_refuses_todo(self) -> None:
-        task_id = self.new()
-        status, output, error = self.run_task("done", task_id)
-        self.assertRefused(status, output, error, "a task cannot go from todo to done")
         self.run_task("start", task_id)
-        with patch.dict(os.environ, {"BKF_TASK": task_id}):
-            self.assertEqual(self.run_task("done")[0], 0)
-        self.assertEqual(task_store.read(self.store, task_id).status, "done")
+        self.assertEqual(self.run_task("attention", task_id, "--set", "merge-failed", "--note", "why")[0], 0)
+        self.assertEqual(task_store.read(self.store, task_id).attention["reason"], "merge-failed")
+
+    # fail, attention, delete
 
     def test_fail_records_exit_and_note(self) -> None:
         task_id = self.new()

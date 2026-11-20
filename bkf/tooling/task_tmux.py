@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 
+TMUX_MISSING = 127  # the status default_runner gives when tmux is not on PATH
+
+
 class TmuxError(RuntimeError):
     """A tmux step that failed, with the step and tmux's standard error on one line."""
 
@@ -376,6 +379,21 @@ def capture_pane(
         args += ["-S", f"-{history}"]
     args += ["-t", f"{session}:{window}"]
     return _tmux_status(runner or default_runner, environ, *args)
+
+
+def window_alive(
+    window_id: str,
+    *,
+    environ: Mapping[str, str] = os.environ,
+    runner: Runner | None = None,
+) -> bool | None:
+    """Return True when tmux lists the window id, False when it does not (or no server runs), None without tmux."""
+    result = _tmux_status(runner or default_runner, environ, "list-windows", "-a", "-F", "#{window_id}")
+    if result.returncode == TMUX_MISSING:
+        return None
+    if result.returncode != 0:
+        return False
+    return window_id in result.stdout.split()
 
 
 SEND_TEXT_LIMIT = 10000

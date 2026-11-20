@@ -8,6 +8,18 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
+## 2026-11-20 — the merge-queue design did not say how plan runs use the removed statuses
+
+Link: `agent-skills/skills/agentic-work/script-run.md` (the card lifecycle of plan runs) and the [bkf task statuses](/tooling/commands.md#bkf-task). Noticed by me. The approved list named `delegate-run.sh` for `bkf task ready`, but `plan_cards.py` and `plan_unit.py` also called `ready` and `done`, and their tests asserted `review` and `done`. I mapped a finished agent run or a run's final report to `working` with the `paused` attention (the design's checkpoint reason), and a passed unit or a finished run to `bkf task close`. The owner should confirm that mapping, because it changes what the app shows for plan units.
+
+## 2026-11-20 — the merge-queue design had `status` read-only and a store migration on the first read
+
+Link: [bkf merge status](/tooling/commands.md#bkf-merge). Noticed by me. The design says `status` never mutates, and that the legacy statuses are migrated once on the first read of the store. A `status` call on a store that still holds `done` or `review` cards therefore runs the migration. I let it, because the store read path is the one place that migrates, and documented it. The owner should decide whether the migration belongs to the first write instead.
+
+## 2026-11-20 — `bkf merge wait` both joins the queue and reports a dropped entry as exit 2
+
+Link: [bkf merge exit status](/tooling/commands.md#bkf-merge). Noticed by me. The design says `wait` takes the branch and worktree from the cwd when they are missing, and that an entry gone during a wait exits 2. It does not say what a first `wait` does when the task is not queued. I made it join the queue, so a session whose entry was dropped while it was idle re-enters at the back without being told. Exit 2 applies only to an entry that disappears during a wait.
+
 ## 2026-11-20: The U3 gate could not pass its real-tmux tests in this…
 
 > The U3 gate could not pass its real-tmux tests in this sandbox. The implementer confirmed with an isolated socket in /private/tmp that tmux reports Operation not permitted. See the [BKF launch command](/tooling/commands.md#bkf-launch).

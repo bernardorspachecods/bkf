@@ -3,7 +3,7 @@
 # Usage: [DELEGATE_IN_PLACE=1] delegate-run.sh <name> <brief-file> [base-ref] [model] [effort]
 # DELEGATE_IN_PLACE=1 runs in the main checkout instead of a new worktree.
 # The run's state is its task card (bkf task): the run folder names it in `task`; `bkf task show "$(cat <run>/task)"` shows it.
-# DELEGATE_RERUN=1 reuses the run's card unless it is done or missing.
+# DELEGATE_RERUN=1 reuses the run's card unless it is missing; a rerun starts the card again.
 # DELEGATE_UNIT_DIR=<unit folder> records the card id and lets `ponte gate` write the receipt there.
 # New worktrees run the repository's committed .plan-run.json setup; its bridge can run allowed pnpm scripts.
 # Codex only: a Claude implementer is a subagent (git tag agentic-work-claude-launcher has the launcher with a Claude backend).
@@ -50,11 +50,7 @@ if [ -s "$runs/task" ]; then
 fi
 if [ -n "$task_id" ]; then
   if previous_card=$(bkf task show "$task_id" --json 2>&1); then
-    if ! previous_status=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<<"$previous_card" 2>/dev/null); then
-      progress "warning: could not read the status of task card $task_id"
-    elif [ "$previous_status" = done ]; then
-      task_id=
-    fi
+    :
   elif [ "$previous_card" = "bkf task: no task $task_id" ]; then
     task_id=
   else
@@ -190,9 +186,9 @@ if [ "$code" -eq 0 ]; then
   else
     changed=$(git -C "$worktree" diff --name-only -z "$base" | tr -cd '\000' | wc -c | tr -d '[:space:]') || changed=0
   fi
-  # The delegate's changes stay uncommitted, so the card is marked ready without git state.
+  # The delegate's changes stay uncommitted, so they never join the merge queue: the card waits for its owner, paused.
   if [ -n "$task_id" ]; then
-    bkf task ready "$task_id" --no-git --note "$changed files changed" >/dev/null || progress "warning: could not mark the task card ready"
+    bkf task attention "$task_id" --set paused --note "$changed files changed" >/dev/null || progress "warning: could not mark the task card waiting for its owner"
   fi
   progress "concluído · $changed ficheiros"
 else

@@ -43,24 +43,24 @@ class PlanCardTests(unittest.TestCase):
     def cards(self):
         return {card["title"]: card for card in self.fixture.cards()}
 
-    def test_one_unit_run_to_ready_has_a_run_card_and_a_unit_card_under_it(self):
+    def test_one_unit_run_to_ready_has_a_run_card_waiting_for_its_owner_and_no_unit_card(self):
         self.fixture.add_brief("unit")
         code, out, err = self.start("sample")
 
         self.assertEqual(code, 0, err)
         cards = self.cards()
-        run_card, unit_card = cards["plan sample"], cards["01-unit"]
-        self.assertEqual((run_card["status"], run_card["kind"]), ("review", "unit"))
-        self.assertEqual((unit_card["status"], unit_card["kind"]), ("done", "unit"))
+        run_card = cards["plan sample"]
+        self.assertEqual((run_card["status"], run_card["kind"]), ("working", "unit"))
+        self.assertEqual(run_card["attention"]["reason"], "paused")
         self.assertIsNone(run_card["parent"])
-        self.assertEqual(unit_card["parent"], run_card["id"])
         tree = str(self.run / "tree")
         self.assertEqual(run_card["worktree"], {"path": tree, "branch": "plan/sample", "head": None})
         self.assertEqual(run_card["run_dir"], str(self.run))
-        self.assertEqual(unit_card["worktree"], {"path": tree, "branch": "plan/sample", "head": None})
-        self.assertEqual(unit_card["run_dir"], str(self.run / "01-unit"))
         self.assertEqual((self.run / "task").read_text(encoding="utf-8"), run_card["id"] + "\n")
-        self.assertEqual((self.run / "01-unit" / "task").read_text(encoding="utf-8"), unit_card["id"] + "\n")
+        # The passed unit's card is closed: its id is still in its folder, but no card carries it any more.
+        unit_id = (self.run / "01-unit" / "task").read_text(encoding="utf-8").strip()
+        self.assertNotIn(unit_id, [card["id"] for card in self.fixture.cards()])
+        self.assertNotIn("01-unit", cards)
         self.assertNotIn("task card", err)
 
     def test_a_takeover_leaves_the_unit_escalated_and_the_run_stopped(self):
@@ -99,8 +99,11 @@ class PlanCardTests(unittest.TestCase):
 
         self.assertEqual(code, 1)
         cards = self.cards()
-        self.assertEqual(cards["01-unit"]["status"], "failed")
-        self.assertIn("implementer exit=3", cards["01-unit"]["note"])
+        unit_card = cards["01-unit"]
+        self.assertEqual(unit_card["status"], "failed")
+        self.assertIn("implementer exit=3", unit_card["note"])
+        self.assertEqual(unit_card["parent"], cards["plan failing"]["id"])
+        self.assertEqual(unit_card["run_dir"], str(self.fixture.runs / "failing" / "01-unit"))
         self.assertEqual(cards["plan failing"]["attention"]["note"], "stopped")
 
         self.fixture.env["FAKE_IMPLS"] = "{}"
@@ -108,8 +111,9 @@ class PlanCardTests(unittest.TestCase):
 
         self.assertEqual(code, 0, err)
         cards = self.cards()
-        self.assertEqual((cards["01-unit"]["status"], cards["01-unit"]["attention"]), ("done", None))
-        self.assertEqual((cards["plan failing"]["status"], cards["plan failing"]["attention"]), ("review", None))
+        self.assertNotIn("01-unit", cards)
+        run_attention = cards["plan failing"]["attention"]
+        self.assertEqual((cards["plan failing"]["status"], run_attention["reason"]), ("working", "paused"))
 
     def test_a_pause_is_an_attention_that_resume_clears(self):
         self.fixture.add_brief("unit")
@@ -121,8 +125,8 @@ class PlanCardTests(unittest.TestCase):
 
         self.assertEqual(code, 0, err)
         cards = self.cards()
-        self.assertIsNone(cards["plan paused"]["attention"])
-        self.assertEqual(cards["plan paused"]["status"], "review")
+        self.assertEqual(cards["plan paused"]["attention"]["reason"], "paused")
+        self.assertEqual(cards["plan paused"]["status"], "working")
 
     def test_a_group_run_has_one_card_per_unit_without_a_branch(self):
         self.fixture.add_brief("a", "## Result\nCreate A.\n\nUNIT-A-REVIEW-MARKER\n")
@@ -132,25 +136,18 @@ class PlanCardTests(unittest.TestCase):
 
         self.assertEqual(code, 0, err)
         cards = self.cards()
-        run = self.fixture.runs / "group"
-        for unit in ("01-a", "02-b"):
-            card = cards[unit]
-            self.assertEqual((card["status"], card["parent"]), ("done", cards["plan group"]["id"]))
-            self.assertEqual(card["worktree"], {"path": str(run / "worktrees" / unit), "branch": None, "head": None})
-            self.assertEqual(card["run_dir"], str(run / unit))
+        self.assertEqual(sorted(cards), ["plan group"])
+        self.assertEqual(cards["plan group"]["attention"]["reason"], "paused")
 
-    def test_finish_keeps_the_cards_done_and_the_records_without_task_files(self):
+    def test_finish_closes_the_cards_and_the_records_keep_no_task_files(self):
         self.fixture.add_brief("unit")
         self.assertEqual(self.start("kept")[0], 0)
-        run_card = self.cards()["plan kept"]
+        self.assertEqual(sorted(card["title"] for card in self.fixture.cards()), ["plan kept"])
 
         code, _, err = self.call("finish", "kept")
 
         self.assertEqual(code, 0, err)
-        cards = self.cards()
-        self.assertEqual(cards["plan kept"]["status"], "done")
-        self.assertEqual(cards["01-unit"]["status"], "done")
-        self.assertEqual(cards["plan kept"]["id"], run_card["id"])
+        self.assertEqual(self.fixture.cards(), [])
         record = self.fixture.repo / "records" / "plans" / "kept"
         self.assertTrue((record / "report.md").is_file())
         self.assertFalse((record / "task").exists())
@@ -159,7 +156,7 @@ class PlanCardTests(unittest.TestCase):
     def test_discard_deletes_the_run_card_and_its_unit_cards(self):
         self.fixture.add_brief("unit")
         self.assertEqual(self.start("dropped")[0], 0)
-        self.assertEqual(len(self.fixture.cards()), 2)
+        self.assertEqual(len(self.fixture.cards()), 1)
 
         code, _, err = self.call("finish", "--discard", "dropped")
 

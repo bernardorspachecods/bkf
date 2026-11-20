@@ -24,6 +24,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Read the text of a task's tmux window | [bkf task output](#bkf-task) |
 | Send text to a task's tmux window | [bkf task send](#bkf-task) |
 | Open an agent session in tmux with its task card | [bkf launch](#bkf-launch) |
+| Queue a session's branch to land on the target, one at a time | [bkf merge](#bkf-merge) |
 
 ## Install
 
@@ -289,16 +290,19 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   reads the task from the [task store](#bkf-task). On `SessionStart` it prints
   this text, and nothing on the other events:
 
-  > This session works on task <id> (<kind>): <title>. When the work is done,
-  > reviewed and committed on its branch, run `bkf task ready --note "<one-line
-  > summary>"` so the card moves to review, then wait for the owner. After the
-  > owner merges it, run `bkf task done`. Both commands read the task id from
-  > the environment.
+  > This session works on task <id> (<kind>): <title>. When the owner moves
+  > this card to "to be merged", you will get a message: follow the
+  > git-merge-queue skill. `bkf task ready` and `bkf task done` no longer exist;
+  > the card leaves the board with `bkf task close` once its branch has landed.
 
-  It prints nothing when the task cannot be read, when its kind is `unit`
-  (a script owns those cards) or when its status is `done`. Unknown events and unreadable input print the text as `SessionStart`
-  does. The mark events and `SessionEnd` never print, since their standard
-  output would go to the agent's context.
+  It prints nothing when the task cannot be read or when its kind is `unit`
+  (a script owns those cards). Unknown events and unreadable input print the
+  text as `SessionStart` does. The mark events and `SessionEnd` never print,
+  since their standard output would go to the agent's context.
+
+  On `PostToolUse` and `Stop` the hook also renews the lease of the merge turn
+  when the task holds it and the lease is more than a minute old (see
+  [bkf merge](#bkf-merge)). Nothing else changes with those events.
 
   The hook keeps its own mark on the card: attention reason `prompt` with one of
   three notes. It applies only to a card that is `working` and of kind `task` or
@@ -336,18 +340,16 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
     folder's name), and its session records `tmux_session` and `tmux_window`
     (the window id) of `TMUX_PANE`. Outside a git repository nothing is read or
     written. A link whose card is missing is replaced by a new card.
-  - `SessionStart` with a card (`resume`, `compact`): reuses it, points its
-    session at the pane's window again, and takes a `done` card back to
-    `working`. That is the store's `resume` transition, which only a `done` card
-    takes; `bkf task start` keeps its own rules.
+  - `SessionStart` with a card (`resume`, `compact`): reuses it and points its
+    session at the pane's window again.
   - `UserPromptSubmit`: while the card's title is still the one it was created
     with, the first prompt with text names it: the prompt is cut to one line of
     at most 120 characters. Later prompts never rename it, and a title someone
     else set is kept.
-  - `SessionEnd`: a card that is `working` or `review` becomes `done`; a card in
-    any other status is left as it is. The link stays, so a resume with the same
-    id reuses the card and brings it back to `working`: one card for the whole
-    life of a session id. A link is replaced only when its card is gone.
+  - `SessionEnd`: the card is deleted, unless it is `to-merge` or has the
+    `merge-failed` attention: those wait for the owner (the merge queue, or the
+    failed merge), so they stay. The link stays either way; a resume whose card
+    is gone gets a new card, and a link is replaced only when its card is gone.
   - The mark events act on a session card as on a launched one. A link whose
     card is missing does nothing on these events.
 - **check** registers a `SessionStart` hook that records a git snapshot,
@@ -722,8 +724,8 @@ writing either closed status. If the record has `snapshot: none`, save the text 
 The task store is machine-wide and holds the state of agent tasks: one folder
 per task under the state directory. `BKF_TASKS_DIR` overrides the folder;
 otherwise `$XDG_STATE_HOME/bkf/tasks`, else `~/.local/state/bkf/tasks`.
-Skills, `bkf launch`, and the Agentic app call these subcommands. An agent in a
-task's window runs `bkf task ready` and `bkf task done` itself.
+Skills, `bkf launch`, `bkf merge`, and the Agentic app call these subcommands. An
+agent in a task's window runs `bkf task close` itself once its branch has landed.
 
 ```sh
 bkf task new --repo DIR --title T [--body-file F|-] [--source S] [--kind K] [--parent ID | --no-parent] [--json]
@@ -733,9 +735,8 @@ bkf task output [ID] [--lines N]
 bkf task send [ID] (--text T | --message-file F|-) [--no-enter]
 bkf task start ID [--agent A] [--model M] [--effort E] [--reviewer R] [--tmux-session S] [--tmux-window W] [--worktree PATH] [--branch B] [--run-dir D]
 bkf task worktree ID [--base REV] [--json]
-bkf task ready [ID] [--note T] [--no-git]
-bkf task done [ID]
 bkf task fail [ID] [--exit N] [--note T]
+bkf task close [ID]
 bkf task attention [ID] (--set REASON [--note T] | --clear)
 bkf task delete ID
 ```
@@ -748,6 +749,12 @@ where `default_title` is kept until the first prompt names the card. The folder
 name starts with a dot, so `bkf task list` does not read it as a task. An id is `t` followed by the
 local time, a dash, and four hex digits, such as `t20261120-143005-a1b2`.
 Writes replace files atomically.
+
+**Legacy statuses.** The first read or write of a store that predates the four
+statuses below migrates it once, under the lock: `done` cards are deleted,
+`review` cards become `working`, and the file `.migrated-statuses` records that
+it ran. The merge queue's files live under `<store>/.merge/` (see
+[bkf merge](#bkf-merge)).
 
 **task.json.** Every file has `"schema": 1` and these keys:
 
@@ -769,18 +776,26 @@ Writes replace files atomically.
 | `note` | free text, or null |
 | `created`, `updated` | UTC timestamps, `YYYY-MM-DDTHH:MM:SSZ` |
 
-**Statuses and transitions.** `todo` starts at `new`. `start` moves `todo`,
-`review`, or `failed` to `working` and clears `attention` and `exit`. `ready`
-moves `working` or `review` to `review`. `done` moves `working` or `review` to
-`done`. `fail` moves `working` or `review` to `failed`. `attention` is allowed in `todo`,
-`working`, `review`, and `failed` (a failed card is one that needs its owner);
-`--clear` is always allowed. `delete` removes the
-folder whatever its status. A transition that is not allowed is refused.
+**Statuses and transitions.** `todo` starts at `new`. The statuses are `todo`,
+`working`, `to-merge` (in the merge queue; see [bkf merge](#bkf-merge)), and
+`failed`. `start` moves `todo`, `working` or `failed` to `working` and clears
+`attention` and `exit`; a `working` card that starts again is a rerun, and the
+start clears its attention. `bkf merge enter` moves `todo`, `working`, `failed`
+or `to-merge` to `to-merge` and clears `attention`. The merge queue moves a card
+to `working` with the `merge-failed` attention when it leaves the queue with a
+reason (`bkf merge fail`, or recovery), and to `working` without attention when
+the session leaves it. `fail` moves `working` or `to-merge` to `failed`.
+`attention` is allowed in `todo`, `working`, `to-merge`, and `failed` (a failed
+card is one that needs its owner); `--clear` is always allowed. `close` and
+`delete` remove the folder whatever its status. A transition that is not
+allowed is refused.
 
-The attention reasons are `prompt`, `quota`, `launch-failed`, `escalated` and
-`paused`. A plan run sets `escalated` on a unit
+The attention reasons are `prompt`, `quota`, `launch-failed`, `escalated`,
+`paused` and `merge-failed`. A plan run sets `escalated` on a unit
 or run that needs its coordinator (blocked, escalated, takeover or stopped; the
-note says which) and `paused` on a run that waits for its owner at a checkpoint.
+note says which) and `paused` on a run that waits for its owner at a checkpoint,
+such as a finished run's report or a delegate's finished work. The merge queue
+sets `merge-failed` with the reason as the note.
 
 **New.** Prints the id, or the task JSON with `--json`. `--repo` is turned into
 the repository identity, so linked worktrees share one. `--body-file -` reads
@@ -788,15 +803,12 @@ standard input. `--parent` defaults to `$BKF_TASK` when that is set;
 `--no-parent` makes the task without a parent.
 
 **Start.** An option object is recorded only when at least one of its options
-is given, and its other keys stay null.
+is given, and its other keys stay null. A `working` card may start again (a
+rerun); the store refuses a start from `to-merge`.
 
-**Ready.** Reads git only. In the task's worktree path when it has one,
-otherwise in the current folder. Outside a git work tree, `branch` and `head`
-stay null. Inside one, uncommitted changes refuse the command: commit them on
-the branch first. Otherwise the current branch (`rev-parse --abbrev-ref HEAD`)
-and head (`rev-parse HEAD`) are recorded. With `--no-git` it reads no git state
-at all: the task's branch and head stay as they are and a dirty tree is
-accepted. A delegate's changes are uncommitted by design, so its runs use this.
+**Close.** Deletes the card, whatever its status: a session runs it after its
+branch has landed, and a plan run's passed unit is closed the same way. It
+prints nothing, and an unknown id is refused like the other commands.
 
 **List.** Filters combine with AND, and `--status` may repeat. `--repo DIR`
 keeps tasks whose repository identity is that of `DIR`. Without `--json`, one
@@ -865,6 +877,117 @@ and the command never changes the card.
 a transition not allowed, a dirty tree, or a missing id. A refusal prints one
 line on standard error starting with `bkf task: `, and nothing on standard
 output. `2` is a usage error from argument parsing.
+
+## bkf merge
+
+The merge queue lands the finished branches of one repository on its target
+branch, one session at a time, so each session merges the target as it is at
+its turn and tests that result. The steps a session runs are in the
+`git-merge-queue` skill (`agent-skills/skills/git-merge-queue/SKILL.md`); this
+section owns the queue's rules and exit statuses. The queue of a repository is
+`<store>/.merge/<repo-key>/queue.json` (the task store, and a slug of the
+repository identity with a hash). Each change runs under the store's lock and
+raises the store generation, which the app watches.
+
+```sh
+bkf merge enter [--task ID] [--worktree PATH] [--target BRANCH]
+bkf merge wait [--task ID] [--timeout S] [--worktree PATH] [--target BRANCH]
+bkf merge verify [--task ID] [--target BRANCH]
+bkf merge land [--task ID] [--target BRANCH]
+bkf merge fail --reason TEXT [--task ID] [--target BRANCH]
+bkf merge leave [--task ID] [--target BRANCH]
+bkf merge status [--repo DIR] [--task ID] [--json]
+```
+
+**Target.** `--target`, else the queue's target when the queue exists, else the
+branch that `origin/HEAD` names, else `main`, else `master`. A `--target` that
+differs from an existing queue's target is refused.
+
+**Task.** `--task` defaults to `$BKF_TASK`. The card names the repository, so
+the queue is the card's.
+
+**Worktree.** `enter`, and `wait` when it joins the queue, take the worktree from
+`--worktree`, else from the card's recorded path, else from the current work
+tree. The branch is the one checked out there. A detached head, or the target
+branch itself, is refused.
+
+**Entry and turn.** `enter` adds the task at the back, moves its card to
+`to-merge` and clears its attention. When nobody holds the turn, the new entry
+takes it at once. `wait` joins the queue first when the task is not in it. The
+entry at the head whose state is `turn` is the lock: only it verifies and lands.
+When it leaves (by landing, failing, leaving or recovery), the next entry takes
+the turn in the same locked change.
+
+**Verify and land.** `verify` refuses a dirty work tree, then records the
+branch's head and the target's head, and sets phase `testing`. `land` refuses
+unless the target's head is unchanged since verify, the branch head is unchanged
+since verify, and the target is an ancestor of the branch head. It refuses when
+the target's checkout has uncommitted changes. Before it moves the target it
+writes phase `landing` to disk, then fast-forwards the target only: `git merge
+--ff-only <branch>` in the target's checkout, or a compare-and-swap of the ref
+when no worktree has the target checked out. On success the entry is removed,
+and the card stays `to-merge` until the session runs `bkf task close`.
+
+**Fail and leave.** `fail --reason TEXT` removes the entry, moves the card to
+`working` with the attention `merge-failed` and the reason as its note, and
+gives the turn to the next entry. `leave` removes the entry and moves the card
+to `working` without attention. Neither runs during a land.
+
+**Recovery.** Every mutating command, and every poll of `wait`, first settles
+the queue under the lock; `status` only reports what recovery would do.
+
+- The holder loses the turn when its card is gone, when its recorded tmux window
+  is gone (a card that records no window is not checked for one), or when its
+  lease has run out. The lease is 60 minutes from the last sign of life, and
+  `BKF_MERGE_LEASE_MINUTES` sets its length in minutes. Any `bkf merge` call by
+  the holder renews it, and so does the task hook on `PostToolUse` and `Stop`, at
+  most once a minute. A single tool call longer than the lease ends the turn.
+- A waiting entry is dropped when its card is gone, or when it has not been
+  polled for three minutes. `wait` polls every second and refreshes the entry at
+  most every ten seconds, so the store does not write on each poll.
+- A dropped holder or waiter returns its card to `working` with the attention
+  `merge-failed` and the note `lost its place in the merge queue: <why>`.
+- A holder in phase `landing` when the queue is read again means its land died
+  before it wrote the result. The branch decides: an ancestor of the target is
+  recorded as landed; anything else is dropped as failed, with the card marked.
+
+Each recovery is an event in the queue: `lock-recovered`, `dropped-dormant`,
+`landed` or `failed`. `main-moved` records a land that found the target moved.
+
+**Exit status.**
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Done: entered, your turn, verified, landed, failed or left. |
+| `1` | Refused, with the reason on standard error: no task, a dirty work tree, no branch, the target branch, a land in progress. |
+| `2` | `wait`: the entry left the queue. The output says why; enter again after fixing it. |
+| `3` | `land`: not verified, the branch changed since verify, the target moved (recorded as `main-moved`), or the branch does not contain the target. The entry keeps the turn. |
+| `4` | `land`: the target's checkout has uncommitted changes, or the fast-forward was refused. The entry keeps the turn. |
+| `5` | Not your turn, or the task is not in the queue. |
+| `75` | `wait`: the timeout passed (default 540 seconds, `--timeout S`); run it again. |
+
+**Status.** Read-only: it never changes the queue. The one-time store migration
+can run on its first read, as for every store read. `--repo DIR` picks a
+repository's queue; `--task ID` adds the task's place. With `--json` it prints
+one object, which the Agentic app reads (the field names are its contract):
+
+```json
+{"schema": 1, "store": "<abs>", "generation": 12,
+ "queues": [{"repo": "<abs>", "target": "main", "target_head": "<sha>",
+   "lock": {"task": "<id>", "since": "<utc>", "lease_until": "<utc>", "phase": "testing|landing|null", "stale": false} | null,
+   "entries": [{"position": 1, "task": "<id>", "branch": "<name>", "worktree": "<abs>|null", "state": "turn|waiting",
+     "entered": "<utc>", "turn_since": "<utc>|null", "stale": false}],
+   "events": [{"at": "<utc>", "task": "<id>", "event": "<name>", "reason": "<text>|null"}]}],
+ "task": {"in_queue": true, "position": 1, "state": "turn", "queue_ahead": 0}}
+```
+
+`stale` is true when recovery would drop the entry, even when no command has run
+it. `task` appears only with `--task`; its `queue_ahead` counts the entries
+before it and is `null` when it is not queued. `events` keeps the last 50. The
+file's top-level `lock` is reserved and stays `null` in schema 1; the lock is the
+head entry whose state is `turn`.
+
+**Settings.** `BKF_MERGE_LEASE_MINUTES` sets the lease (default 60).
 
 ## bkf launch
 

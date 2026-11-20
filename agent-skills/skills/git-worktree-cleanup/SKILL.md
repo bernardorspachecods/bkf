@@ -1,6 +1,6 @@
 ---
 name: git-worktree-cleanup
-description: Close out git worktrees and branches. `mine` (default) commits this session's changes, merges its branch locally into the default branch and removes the session worktree (if any) and branch. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup).
+description: Close out git worktrees and branches. `mine` (default) commits this session's changes, lands its branch on the default branch through the merge queue (bkf merge, never a rebase), then removes the session worktree (if any) and branch and closes its card. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup).
 ---
 
 `mine` (default): this session's work only, in a linked worktree or in the main checkout. `all`: delete every local branch merged into default and clean worktrees; no commits, merges or pull requests.
@@ -12,14 +12,11 @@ description: Close out git worktrees and branches. `mine` (default) commits this
 
 ## `mine`
 
-1. Commit with `git-status-cleanup mine` (`all` if the user says so); no session changes may remain uncommitted.
-2. Rebase the session branch onto the local default, from inside the worktree: `git rebase <default>` (no `-C`, never `origin/<default>`). The branch is local, so rewriting it is safe; cite commit SHAs only after this step. Resolve conflicts only when both sides make the right result clear; otherwise `git rebase --abort`, leave the branch and ask the user. Then the final merge is always a fast-forward and the check below runs on exactly what will land.
-3. Run the repo's named check on that result; on failure or if none is named, stop, leave all and explain. Then, if the `git-merge-queue` skill's `scripts/merge_queue.py` exists, run `python3 -I <that script> busy; echo "exit=$?"`; read the exit code: if 1, stop, leave all and tell the user to use `git-merge-queue`.
-4. Land it with one command: `git -C <default-checkout> merge --ff-only <branch>`. If default moved since step 2, repeat steps 2-3 once (`--ff-only` never creates a merge commit). If the environment denies `git -C <default-checkout>` (worktree isolation; a permission rule does not lift it), leave the worktree with `ExitWorktree` (`keep`) and run the same commands from the default checkout, without `-C`. No menu, no other workaround. If that is impossible too (the worktree was not entered with `EnterWorktree`), give the user the exact commands (this merge, `git worktree remove`, `git branch -d`) to run with `!`; leave branch and worktree.
-5. After the merge, in a linked worktree remove it first (`git worktree remove`), then delete the branch (`git -C <default-checkout> branch -d`).
-6. Tell the user what is gone: the worktree/session directory, or only the branch.
-
-Main checkout: there is no worktree to remove. If the session branch is not default, the checkout must be clean after step 1; switch it to default (`git switch <default>`), merge, delete the branch, and say the checkout is now on default. If the session is already on default, stop after step 1: there is nothing to merge or delete.
+1. Commit with `git-status-cleanup mine` (`all` if the user says so); no session changes may remain uncommitted. If the session is on the default branch, stop here: there is nothing to land.
+2. Land through the queue: follow the steps of [git-merge-queue](../git-merge-queue/SKILL.md) (`bkf merge enter`, `bkf merge wait`, then on its turn `git merge <default>` into the branch, the repository's named check, `bkf merge verify`, `bkf merge land`). The merge is a merge commit, never a rebase, so the branch's history is what the sessions made. If no check is named, or the queue or the checks refuse, stop, leave all, and tell the user. A session without a task card cannot join the queue: stop and say so.
+3. After `bkf merge land` exits 0, remove the session's own state: in a linked worktree, leave it with `ExitWorktree` (`keep`) when the session is inside it, remove it (`git worktree remove`), then delete the branch (`git -C <default-checkout> branch -d <branch>`). In the main checkout, switch it to default (`git switch <default>`; the checkout is clean, and land does not move it), then delete the branch. If the environment denies `git -C <default-checkout>` (worktree isolation; a permission rule does not lift it), run the same commands from the default checkout without `-C`. If that is impossible too, give the user the exact commands to run with `!`; leave the branch and worktree.
+4. Close the card: `bkf task close`. It deletes the card; run it only after the branch has landed.
+5. Tell the user what is gone: the worktree or session directory, the branch, and the card, or only what was left and why.
 
 ## `all`
 

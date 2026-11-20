@@ -79,7 +79,7 @@ def _close_card(unit_dir, status, note=None):
         return
     if not task_id:
         return
-    action = "done" if status == "done" else "fail"
+    action = "close" if status == "done" else "fail"
     command = ["bkf", "task", action, task_id]
     if action == "fail" and note is not None:
         command += ["--note", note]

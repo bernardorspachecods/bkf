@@ -103,9 +103,8 @@ class TaskSessionTest(unittest.TestCase):
             self.fire("SessionStart", cwd=self.plain)
         self.assertFalse(self.store.exists())
 
-    def test_resume_reuses_the_card_and_moves_a_done_card_back_to_working(self) -> None:
+    def test_resume_reuses_the_card_and_points_it_at_the_window_again(self) -> None:
         card = self.start()
-        task_store.update(self.store, card.id, task_store.mark_done)
         self.tmux.result = Result(0, "main\t@9\tAgentic work\n", "")
         self.fire("SessionStart", source="resume")
         self.fire("SessionStart", source="compact")
@@ -151,34 +150,41 @@ class TaskSessionTest(unittest.TestCase):
         self.fire("UserPromptSubmit", prompt="Something else")
         self.assertEqual(self.card().title, "My own name")
 
-    def test_session_end_marks_a_working_card_done_and_keeps_the_link(self) -> None:
+    def test_session_end_deletes_a_working_card_and_keeps_the_link(self) -> None:
         card = self.start()
         self.fire("SessionEnd", reason="other")
-        self.assertEqual(self.card().status, "done")
+        self.assertEqual(self.cards(), [])
         self.assertEqual(task_store.session_link(self.store, SESSION)["task"], card.id)
 
-    def test_resume_after_session_end_reuses_the_card(self) -> None:
+    def test_resume_after_session_end_makes_a_new_card(self) -> None:
         card = self.start()
         self.fire("SessionEnd", reason="other")
         self.tmux.result = Result(0, "main\t@9\tAgentic work\n", "")
         self.fire("SessionStart", source="resume")
         again = self.card()
-        self.assertEqual((again.id, again.status), (card.id, "working"))
-        self.assertEqual(again.session["tmux_window"], "@9")
+        self.assertNotEqual(again.id, card.id)
+        self.assertEqual((again.status, again.session["tmux_window"]), ("working", "@9"))
+        self.assertEqual(task_store.session_link(self.store, SESSION)["task"], again.id)
         self.fire("SessionEnd", reason="other")
-        self.assertEqual(self.card().status, "done")
+        self.assertEqual(self.cards(), [])
 
-    def test_session_end_takes_a_card_in_review_to_done(self) -> None:
+    def test_session_end_keeps_a_card_in_the_merge_queue(self) -> None:
         card = self.start()
-        task_store.update(self.store, card.id, task_store.mark_ready)
+        task_store.update(self.store, card.id, task_store.enter_merge)
         self.fire("SessionEnd", reason="other")
-        self.assertEqual(self.card().status, "done")
+        self.assertEqual((self.card().id, self.card().status), (card.id, "to-merge"))
 
-    def test_session_end_leaves_a_card_someone_else_moved(self) -> None:
+    def test_session_end_keeps_a_card_that_failed_to_merge(self) -> None:
+        card = self.start()
+        task_store.update(self.store, card.id, lambda task: task_store.merge_failed(task, note="tests", now=None))
+        self.fire("SessionEnd", reason="other")
+        self.assertEqual((self.card().id, self.card().attention["reason"]), (card.id, "merge-failed"))
+
+    def test_session_end_deletes_a_failed_card(self) -> None:
         card = self.start()
         task_store.update(self.store, card.id, task_store.mark_failed)
         self.fire("SessionEnd", reason="other")
-        self.assertEqual(self.card().status, "failed")
+        self.assertEqual(self.cards(), [])
         self.assertIsNotNone(task_store.session_link(self.store, SESSION))
 
     def test_a_stale_link_does_nothing_on_turn_events(self) -> None:
@@ -218,7 +224,8 @@ class TaskSessionTest(unittest.TestCase):
         self.assertEqual(output, "")
 
     def test_session_cards_are_not_reported_as_unreadable(self) -> None:
-        self.start()
+        card = self.start()
+        task_store.update(self.store, card.id, task_store.enter_merge)
         self.fire("SessionEnd", reason="other")
         listing = task_store.list_tasks(self.store)
         self.assertEqual(listing.unreadable, [])

@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TextIO
 
+import merge_store
 import task_session
 import task_store
 from task_store import TaskError
@@ -29,6 +30,8 @@ OWN_NOTES = (REPLY_NOTE, APPROVAL_NOTE, ANSWER_NOTE)
 QUESTION_TOOL = "AskUserQuestion"
 # Events that set or clear the hook's own mark; each prints nothing.
 MARK_EVENTS = ("Stop", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "PostToolUse")
+# Events that show the session is alive: a session that holds the merge turn renews its lease on them.
+LEASE_EVENTS = ("PostToolUse", "Stop")
 # Claude Code's end of a session: the card of an interactive session is done then. Prints nothing.
 SESSION_END = "SessionEnd"
 # Stop with background work or scheduled wake-ups in flight is not a wait for the owner.
@@ -50,13 +53,13 @@ def session_text(environ: Mapping[str, str]) -> str | None:
         task = task_store.read(task_store.store_dir(environ), task_id)
     except TaskError:
         return None
-    if task.kind in OWNED_KINDS or task.status == "done":
+    if task.kind in OWNED_KINDS:
         return None
     return (
         f"This session works on task {task.id} ({task.kind}): {task.title}. "
-        "When the work is done, reviewed and committed on its branch, run "
-        "`bkf task ready --note \"<one-line summary>\"` so the card moves to review, then wait for the owner. "
-        "After the owner merges it, run `bkf task done`. Both commands read the task id from the environment.\n"
+        "When the owner moves this card to \"to be merged\", you will get a message: follow the "
+        "git-merge-queue skill. `bkf task ready` and `bkf task done` no longer exist; the card leaves the "
+        "board with `bkf task close` once its branch has landed.\n"
     )
 
 
@@ -117,6 +120,14 @@ def _mark(store: Path, task_id: str, event: str, data: Mapping[str, Any]) -> Non
         return
 
 
+def _renew_lease(store: Path, task_id: str, environ: Mapping[str, str]) -> None:
+    """Renew the merge turn's lease when this task holds it. Failures are swallowed, as for every hook event."""
+    try:
+        merge_store.touch_from_hook(store, task_id, environ)
+    except (TaskError, merge_store.MergeError, OSError, UnicodeError):
+        return
+
+
 def hook_input(stream: TextIO | None) -> dict[str, Any]:
     """Return the hook's JSON input as a dict, or an empty dict when the input is empty or invalid."""
     try:
@@ -131,8 +142,9 @@ def run(environ: Mapping[str, str] | None = None, stream: TextIO | None = None) 
     """Handle the hook event on standard input. Always exits 0 and never raises.
 
     With BKF_TASK, the mark events (Stop, UserPromptSubmit, PermissionRequest, PreToolUse, PostToolUse) set
-    or clear the hook's own mark and print nothing; any other event but SessionEnd, or unreadable input,
-    prints the session-start text, as SessionStart does. Without BKF_TASK, an interactive Claude session
+    or clear the hook's own mark and print nothing, and PostToolUse and Stop also renew the lease of a merge
+    turn the task holds; any other event but SessionEnd, or unreadable input, prints the session-start text,
+    as SessionStart does. Without BKF_TASK, an interactive Claude session
     in tmux keeps its session card (task_session); every other session returns before reading its input.
     """
     env = os.environ if environ is None else environ
@@ -149,9 +161,12 @@ def run(environ: Mapping[str, str] | None = None, stream: TextIO | None = None) 
 def _run_bound(env: Mapping[str, str], stream: TextIO | None) -> None:
     data = hook_input(stream)
     event = data.get("hook_event_name")
+    store = task_store.store_dir(env)
     if event in MARK_EVENTS:
-        _mark(task_store.store_dir(env), env[TASK_ENV], event, data)
-    elif event != SESSION_END:
+        _mark(store, env[TASK_ENV], event, data)
+    if event in LEASE_EVENTS:
+        _renew_lease(store, env[TASK_ENV], env)
+    if event not in MARK_EVENTS and event != SESSION_END:
         text = session_text(env)
         if text:
             sys.stdout.write(text)

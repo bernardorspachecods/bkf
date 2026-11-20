@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,13 +12,13 @@ from typing import Any
 import task_store
 import task_tmux
 import task_worktree
-from task_store import KINDS, REASONS, STATUSES, InvalidTransition, Task, TaskError
+from task_store import KINDS, REASONS, STATUSES, Task, TaskError
 
 
 JSON_SCHEMA = 1
 TASK_ENV = "BKF_TASK"
 OUTPUT_LINES_DEFAULT = 200
-TMUX_MISSING = 127  # the status task_tmux.default_runner gives when tmux is not on PATH
+TMUX_MISSING = task_tmux.TMUX_MISSING
 
 
 class Refusal(Exception):
@@ -65,19 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--branch")
     start.add_argument("--run-dir", dest="run_dir", metavar="D")
 
-    ready = commands.add_parser("ready", help="mark a task ready for review, recording its git branch and head")
-    ready.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
-    ready.add_argument("--note")
-    ready.add_argument("--no-git", dest="no_git", action="store_true",
-                       help="read no git state: keep the task's branch and head, and accept a dirty tree")
-
     worktree = commands.add_parser("worktree", help="create or reuse the git worktree of a task")
     worktree.add_argument("id", metavar="ID")
     worktree.add_argument("--base", metavar="REV", help="start a new branch from REV (default: HEAD of the repository)")
     worktree.add_argument("--json", action="store_true", help="print path, branch and created as one JSON object")
 
-    done = commands.add_parser("done", help="mark a task done")
-    done.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
+    close = commands.add_parser("close", help="delete a task's card once its work has landed")
+    close.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
 
     fail = commands.add_parser("fail", help="mark a task failed")
     fail.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
@@ -125,32 +117,6 @@ def _body(path: str | None) -> str:
     if path == "-":
         return sys.stdin.read()
     return Path(path).read_text(encoding="utf-8")
-
-
-def _git(cwd: str, *arguments: str) -> subprocess.CompletedProcess[str] | None:
-    try:
-        return subprocess.run(
-            ["git", "-C", cwd, *arguments], capture_output=True, text=True, check=False,
-        )
-    except OSError:
-        return None
-
-
-def _git_state(cwd: str) -> tuple[str | None, str | None]:
-    """Return (branch, head) of the work tree at cwd, or nulls outside a work tree; refuse a dirty tree."""
-    inside = _git(cwd, "rev-parse", "--is-inside-work-tree")
-    if inside is None or inside.returncode != 0 or inside.stdout.strip() != "true":
-        return None, None
-    status = _git(cwd, "status", "--porcelain")
-    if status is None or status.returncode != 0:
-        raise Refusal(f"cannot read git status in {cwd}")
-    if status.stdout.strip():
-        raise Refusal(f"uncommitted changes in {cwd}: commit them on the branch first")
-    branch = _git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
-    head = _git(cwd, "rev-parse", "HEAD")
-    if branch is None or head is None or branch.returncode != 0 or head.returncode != 0:
-        raise Refusal(f"cannot read the branch and head in {cwd}")
-    return branch.stdout.strip(), head.stdout.strip()
 
 
 def _transition_result(store: Path, task_id: str, change: Any) -> Task:
@@ -228,24 +194,6 @@ def _list(args: argparse.Namespace, store: Path) -> int:
     for name in listing.unreadable:
         print(f"bkf task: unreadable task folder {name}", file=sys.stderr)
     return 0
-
-
-def _ready(args: argparse.Namespace, store: Path) -> None:
-    task_id = _task_id(args.id)
-    task = task_store.read(store, task_id)
-    try:
-        task_store.mark_ready(copy.deepcopy(task))
-    except InvalidTransition as exc:
-        raise Refusal(str(exc)) from None
-    if args.no_git:
-        branch, head = None, None
-    else:
-        cwd = task.worktree["path"] if task.worktree and task.worktree.get("path") else os.getcwd()
-        branch, head = _git_state(cwd)
-    _transition_result(
-        store, task_id,
-        lambda current: task_store.mark_ready(current, branch=branch, head=head, note=args.note),
-    )
 
 
 def _output_lines(text: str | None) -> int:
@@ -329,8 +277,6 @@ def main(argv: list[str] | None = None) -> int:
                 store, args.id,
                 lambda task: task_store.start(task, session=session, worktree=worktree, run_dir=args.run_dir),
             )
-        elif args.command == "ready":
-            _ready(args, store)
         elif args.command == "worktree":
             prepared = task_worktree.prepare(store, args.id, base=args.base)
             if args.json:
@@ -340,8 +286,8 @@ def main(argv: list[str] | None = None) -> int:
                 ))
             else:
                 print(f"{prepared.path}\n{prepared.branch}")
-        elif args.command == "done":
-            _transition_result(store, _task_id(args.id), task_store.mark_done)
+        elif args.command == "close":
+            task_store.delete(store, _task_id(args.id))
         elif args.command == "fail":
             _transition_result(
                 store, _task_id(args.id),

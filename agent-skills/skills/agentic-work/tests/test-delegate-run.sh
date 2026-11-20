@@ -104,9 +104,9 @@ run inplace DELEGATE_IN_PLACE=1 DELEGATE_UNIT_DIR="$unit_dir"; code=$?
 runs=$work/runs/repo/inplace
 check "in place: exits 0" '[ $code -eq 0 ]'
 check "in place: the agent's file is in the checkout" '[ -f "$work/repo/made.txt" ]'
-check "in place: the card is in review" '[ "$(card_field "$runs" status)" = review ]'
+check "in place: the card waits for its owner: working, paused" '[ "$(card_field "$runs" status)" = working ] && [ "$(card_field "$runs" attention.reason)" = paused ]'
 check "in place: the card is a unit with the codex session" '[ "$(card_field "$runs" kind)" = unit ] && [ "$(card_field "$runs" session.agent)" = codex ]'
-check "in place: the card's note counts the changed file" '[ "$(card_field "$runs" note)" = "1 files changed" ]'
+check "in place: the card's attention note counts the changed file" '[ "$(card_field "$runs" attention.note)" = "1 files changed" ]'
 check "in place: the card names the checkout and the run folder" '[ "$(card_field "$runs" worktree.path)" = "$work/repo" ] && [ "$(card_field "$runs" run_dir)" = "$runs" ]'
 check "in place: the agent ran while the card was working" '[ "$(cat "$work/inplace.status.seen")" = working ]'
 check "in place: the worktree is the checkout" '[ "$(cat "$runs/worktree")" = "$work/repo" ]'
@@ -124,20 +124,20 @@ check "rerun: refused without DELEGATE_RERUN" '[ $code -ne 0 ] && grep -q DELEGA
 old_task=$(cat "$runs/task")
 for round in 2 3; do
   FAKE_REVIEW_VERDICT=back plan_unit check --review-model test >"$work/review.log" 2>&1; code=$?
-  check "back before round $round: the card stays in review" '[ $code -eq 1 ] && [ "$(card_field "$runs" status)" = review ]'
+  check "back before round $round: the card keeps waiting for its owner" '[ $code -eq 1 ] && [ "$(card_field "$runs" status)" = working ] && [ "$(card_field "$runs" attention.reason)" = paused ]'
   run inplace DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1 DELEGATE_UNIT_DIR="$unit_dir"; code=$?
-  check "round $round: a card in review is reused" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" = "$old_task" ] && [ "$(card_field "$runs" status)" = review ]'
+  check "round $round: the card is reused and waits again" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" = "$old_task" ] && [ "$(card_field "$runs" status)" = working ] && [ "$(card_field "$runs" attention.reason)" = paused ]'
   check "round $round: the card is working while the agent runs" '[ "$(cat "$work/inplace.status.seen")" = working ]'
 done
 FAKE_REVIEW_VERDICT=pass plan_unit check --review-model test >"$work/review.log" 2>&1; code=$?
-check "back, back, pass: only one card exists and it is done" '[ $code -eq 0 ] && [ "$(bkf task list --kind unit)" = "$old_task  done  unit  inplace" ]'
+check "back, back, pass: the passed unit's card is closed" '[ $code -eq 0 ] && [ -z "$(bkf task list --kind unit)" ] && ! bkf task show "$old_task" >/dev/null 2>&1'
 run inplace DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1 DELEGATE_UNIT_DIR="$unit_dir"; code=$?
-check "rerun: a done card is replaced" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" != "$old_task" ] && [ "$(card_field "$runs" status)" = review ]'
+check "rerun: a closed card is replaced" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" != "$old_task" ] && [ "$(card_field "$runs" status)" = working ] && [ "$(card_field "$runs" attention.reason)" = paused ]'
 check "unit folder: points to the replacement card" 'cmp -s "$runs/task" "$unit_dir/task"'
 removed_task=$(cat "$runs/task")
 bkf task delete "$removed_task"
 run inplace DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1; code=$?
-check "rerun: a deleted card is replaced" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" != "$removed_task" ] && [ "$(card_field "$runs" status)" = review ]'
+check "rerun: a deleted card is replaced" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" != "$removed_task" ] && [ "$(card_field "$runs" status)" = working ] && [ "$(card_field "$runs" attention.reason)" = paused ]'
 rm -f "$work/repo/made.txt"
 
 # Worktree: the agent works in a sibling worktree on its own branch and the checkout stays clean.
@@ -150,7 +150,7 @@ isolated_slug="isolated-$(cat "$work/runs/repo/isolated/task" | tail -c 5)"
 check "worktree: the path is <repo>/.claude/worktrees/<slug>" '[ "$wt" = "$work/repo/.claude/worktrees/$isolated_slug" ] && [ "$(card_field "$work/runs/repo/isolated" worktree.path)" = "$wt" ]'
 check "worktree: the branch is task/<slug>" '[ "$(git -C "$wt" branch --show-current)" = "task/$isolated_slug" ] && [ "$(card_field "$work/runs/repo/isolated" worktree.branch)" = "task/$isolated_slug" ]'
 check "worktree: the diffstat names the file" 'grep -q made.txt "$work/runs/repo/isolated/diffstat.txt"'
-check "worktree: the card is in review" '[ "$(card_field "$work/runs/repo/isolated" status)" = review ]'
+check "worktree: the card waits for its owner: working, paused" '[ "$(card_field "$work/runs/repo/isolated" status)" = working ] && [ "$(card_field "$work/runs/repo/isolated" attention.reason)" = paused ]'
 check "worktree without bridge: delegated brief has no ponte section" '! grep -q "Command bridge" "$work/runs/repo/isolated/brief.md"'
 
 # A newly created worktree is prepared from the committed declaration before the fake agent starts.
@@ -193,7 +193,7 @@ check "agent failure: the card is failed with the exit status" '[ "$(card_field 
 run failing DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1; code=$?
 check "rerun of a failed card: the same card is reused" '[ $code -eq 0 ] && [ "$(cat "$work/runs/repo/failing/task")" = "$fail_task" ]'
 check "rerun of a failed card: the card is working while the agent runs" '[ "$(cat "$work/failing.status.seen")" = working ]'
-check "rerun of a failed card: the card ends in review" '[ "$(card_field "$work/runs/repo/failing" status)" = review ] && [ -z "$(card_field "$work/runs/repo/failing" exit)" ]'
+check "rerun of a failed card: the card ends waiting for its owner, with no exit status" '[ "$(card_field "$work/runs/repo/failing" status)" = working ] && [ "$(card_field "$work/runs/repo/failing" attention.reason)" = paused ] && [ -z "$(card_field "$work/runs/repo/failing" exit)" ]'
 
 # The base-listed bridge is described to the agent and the run-base file is already present.
 cat >"$work/repo/.plan-run.json" <<'JSON'

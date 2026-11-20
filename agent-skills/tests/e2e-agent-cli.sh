@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end check of the agent CLI: bkf task, launch and hooks, the delegate and merge-queue scripts,
+# End-to-end check of the agent CLI: bkf task, launch and hooks, the delegate scripts, the merge queue (bkf merge),
 # a plan run, the bkf suites, and (with AGENTIC_ROOT) the Agentic app's bkf client. No model is called and
 # nothing is written under the real home, the user's task store or the user's tmux server: the run uses a
 # sandbox home, a temporary task store and a throwaway tmux server (tmux -L <unique>), killed on exit.
@@ -88,6 +88,7 @@ behave() { printf '%s\n' "$2" >"$E2E/behave/$1"; }
 unbehave() { rm -f "$E2E/behave/$1"; }
 clear_calls() { rm -f "$work"/calls/*; }
 status_is() { [ "$(field "$1" status)" = "$2" ]; }
+attention_is() { [ "$(field "$1" attention.reason)" = "$2" ]; }
 first_call() { ls "$work"/calls/claude.*.env 2>/dev/null | head -1 | sed 's/\.env$//'; }
 has_call() { [ -n "$(first_call)" ]; }
 env_field() { sed -n "s/^$2=//p" "$1.env"; }
@@ -156,7 +157,7 @@ case_handoff() {
   printf 'Handoff line one.\nLine two: "quoted" text, a $ sign that stays literal.\n' >"$prompt"
   clear_calls
   behave claude 'while [ ! -e "$E2E/release-handoff" ]; do sleep 0.1; done
-bkf task ready --no-git --note "handoff done"'
+bkf task attention "$BKF_TASK" --set paused --note "handoff done"'
   out=$work/out-handoff
   win=$(spawn caller-handoff "$repo" "bkf launch claude --dir '$repo' --prompt-file '$prompt' --title 'handoff e2e' >'$out.stdout' 2>'$out.stderr'; echo \$? >'$out.rc'")
   wait_for 30 test -s "$out.rc"
@@ -176,9 +177,9 @@ bkf task ready --no-git --note "handoff done"'
     eq "$(env_field "$prefix" BKF_DELEGATED)" unset "a handoff session is not delegated"
     eq "$(env_field "$prefix" pwd)" "$repo" "the agent starts in the folder it was given"
     touch "$work/release-handoff"
-    wait_for 20 status_is "$card" review
-    eq "$(field "$card" status)" review "the card is in review after the agent ran bkf task ready"
-    eq "$(field "$card" note)" "handoff done" "the card keeps the note of ready"
+    wait_for 20 attention_is "$card" paused
+    eq "$(field "$card" status)" working "the card stays working while it waits for its owner"
+    eq "$(field "$card" attention.note)" "handoff done" "the card keeps the note the agent gave"
   fi
   unbehave claude
   end
@@ -278,8 +279,9 @@ case_delegate() {
   ok_card=$(cat "$ok_runs/task" 2>/dev/null)
   check "the run folder names its card" test -n "$ok_card"
   if [ -n "$ok_card" ]; then
-    eq "$(field "$ok_card" status)" review "the unit card is in review"
-    eq "$(field "$ok_card" note)" "1 files changed" "the card notes the changed file count"
+    eq "$(field "$ok_card" status)" working "the unit card stays working while it waits for its owner"
+    eq "$(field "$ok_card" attention.reason)" paused "the unit card waits for its owner: paused"
+    eq "$(field "$ok_card" attention.note)" "1 files changed" "the card notes the changed file count"
     eq "$(field "$ok_card" kind)" unit "the card is a unit card"
     case "$(field "$ok_card" worktree.path)" in */.claude/worktrees/*) ;; *) WHY="${WHY:+$WHY; }the worktree is under .claude/worktrees" ;; esac
   fi
@@ -301,31 +303,46 @@ case_delegate() {
 
 case_merge_queue() {
   begin "merge queue"
-  local repo wt branch card main_sha queue=$bkf_root/agent-skills/skills/git-merge-queue/scripts/merge_queue.py
+  local repo card_a card_b wt_a wt_b branch_a branch_b
   repo=$(mkrepo merge)
-  card=$(bkf task new --repo "$repo" --title 'merge me' --kind task)
-  bkf task worktree "$card" >/dev/null
-  wt=$(field "$card" worktree.path)
-  branch=$(field "$card" worktree.branch)
-  check "the card has a worktree and branch" test -n "$wt" -a -n "$branch"
-  bkf task start "$card" --worktree "$wt" --branch "$branch" >/dev/null
-  printf 'feature\n' >"$wt/feature.txt"
-  git -C "$wt" add feature.txt
-  git -C "$wt" -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m feature
-  main_sha=$(git -C "$repo" rev-parse main)
-  (
-    cd "$wt" && python3 "$queue" register --session merge-me --branch "$branch" --plans "" --base "$main_sha" \
-      --fast pass --full pass >"$work/mq-register.out" 2>&1
-  )
-  eq "$?" 0 "register exits 0"
-  eq "$(field "$card" status)" review "the card is in review once queued"
-  eq "$(field "$card" note)" "queued for merge" "the card notes it is queued for merge"
-  (
-    cd "$repo" && python3 "$queue" integrate --fast-check true --full-check true >"$work/mq-integrate.out" 2>&1
-  )
-  eq "$?" 0 "integrate exits 0"
-  eq "$(field "$card" status)" done "the card is done after the merge"
-  eq "$(git -C "$repo" show main:feature.txt 2>/dev/null)" feature "the branch's change is on main"
+  card_a=$(bkf task new --repo "$repo" --title 'merge a')
+  card_b=$(bkf task new --repo "$repo" --title 'merge b')
+  bkf task worktree "$card_a" >/dev/null && bkf task worktree "$card_b" >/dev/null
+  wt_a=$(field "$card_a" worktree.path); branch_a=$(field "$card_a" worktree.branch)
+  wt_b=$(field "$card_b" worktree.path); branch_b=$(field "$card_b" worktree.branch)
+  check "both cards have a worktree and a branch" test -n "$wt_a" -a -n "$branch_a" -a -n "$wt_b" -a -n "$branch_b"
+  bkf task start "$card_a" --worktree "$wt_a" --branch "$branch_a" >/dev/null
+  bkf task start "$card_b" --worktree "$wt_b" --branch "$branch_b" >/dev/null
+  printf 'a\n' >"$wt_a/feature-a.txt"
+  git -C "$wt_a" add feature-a.txt
+  git -C "$wt_a" -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m a
+  printf 'b\n' >"$wt_b/feature-b.txt"
+  git -C "$wt_b" add feature-b.txt
+  git -C "$wt_b" -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m b
+  (cd "$wt_a" && BKF_TASK=$card_a bkf merge enter >"$work/mq-a-enter.out" 2>&1)
+  eq "$?" 0 "session a enters the queue ($(head -1 "$work/mq-a-enter.out"))"
+  (cd "$wt_b" && BKF_TASK=$card_b bkf merge enter >"$work/mq-b-enter.out" 2>&1)
+  eq "$?" 0 "session b enters behind a"
+  eq "$(field "$card_a" status)" to-merge "the card of a is to-merge once queued"
+  (cd "$wt_b" && BKF_TASK=$card_b bkf merge wait --timeout 0 >/dev/null 2>&1)
+  eq "$?" 75 "b does not get the turn while a holds it"
+  (cd "$wt_a" && BKF_TASK=$card_a bkf merge wait --timeout 5 >/dev/null 2>&1)
+  eq "$?" 0 "a gets the turn at once"
+  (cd "$wt_a" && BKF_TASK=$card_a bkf merge verify >/dev/null 2>&1 && BKF_TASK=$card_a bkf merge land >"$work/mq-a-land.out" 2>&1)
+  eq "$?" 0 "a verifies and lands ($(tail -1 "$work/mq-a-land.out"))"
+  (cd "$wt_b" && BKF_TASK=$card_b bkf merge wait --timeout 5 >/dev/null 2>&1)
+  eq "$?" 0 "b gets the turn when a has landed"
+  (cd "$wt_b" && git merge -q main -m "merge main into b" && BKF_TASK=$card_b bkf merge verify >/dev/null 2>&1 \
+    && BKF_TASK=$card_b bkf merge land >"$work/mq-b-land.out" 2>&1)
+  eq "$?" 0 "b merges main, verifies and lands"
+  eq "$(git -C "$repo" show main:feature-a.txt 2>/dev/null)" a "a's change is on main"
+  eq "$(git -C "$repo" show main:feature-b.txt 2>/dev/null)" b "b's change is on main"
+  eq "$(bkf merge status --json --task "$card_b" | python3 -c 'import json,sys; print(json.load(sys.stdin)["task"]["in_queue"])')" False \
+    "b is no longer in the queue"
+  eq "$(bkf merge status --repo "$repo" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["queues"][0]["entries"]))')" 0 \
+    "the queue is empty"
+  bkf task close "$card_a" >/dev/null && bkf task close "$card_b" >/dev/null
+  check "closing the cards deletes them" bash -c '[ -z "$(bkf task list --repo "$1")" ]' _ "$repo"
   end
 }
 
@@ -352,10 +369,9 @@ case_plan() {
   unit_card=$(cat "$plan_runs/sample/01-unit/task" 2>/dev/null)
   check "the run and unit cards exist" test -n "$run_card" -a -n "$unit_card"
   if [ -n "$run_card" ] && [ -n "$unit_card" ]; then
-    eq "$(field "$run_card" status)" review "the run card is in review at the final report"
-    eq "$(field "$unit_card" status)" done "the unit card is done"
-    eq "$(field "$unit_card" parent)" "$run_card" "the unit card's parent is the run card"
-    eq "$(field "$unit_card" kind)" unit "the unit card is kind unit"
+    eq "$(field "$run_card" status)" working "the run card stays working at the final report"
+    eq "$(field "$run_card" attention.reason)" paused "the run card waits for its owner: paused"
+    check "the passed unit's card is closed" bash -c '! bkf task show "$1" >/dev/null 2>&1' _ "$unit_card"
   fi
   end
 }
@@ -423,13 +439,12 @@ else
     skip "app build" "set AGENTIC_ROOT to the Agentic checkout to run it"
   fi
 
-  suite "bkf tooling tests" "$py" -m unittest discover -s bkf/tooling/tests
+  suite "bkf tooling tests" env PYTHONPATH=bkf/tooling "$py" -m unittest discover -s bkf/tooling/tests
   suite "harness tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/harness/tests
   suite "harness inject shell test" bash agent-skills/harness/tests/test-inject.sh
   suite "agentic-work tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/skills/agentic-work/tests
   suite "agentic-work delegate shell test" bash agent-skills/skills/agentic-work/tests/test-delegate-run.sh
   suite "agentic-work plan gate shell test" bash agent-skills/skills/agentic-work/tests/test-plan-run-gate.sh
-  suite "merge queue tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/skills/git-merge-queue/tests
   suite "bkf skills check" bkf skills --check .
   suite "bkf validate" bkf validate .
 fi

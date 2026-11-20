@@ -21,8 +21,8 @@ from typing import Any, Callable, Iterator
 
 SCHEMA = 1
 KINDS = ("task", "handoff", "unit")
-STATUSES = ("todo", "working", "review", "done", "failed")
-REASONS = ("prompt", "quota", "launch-failed", "escalated", "paused")
+STATUSES = ("todo", "working", "to-merge", "failed")
+REASONS = ("prompt", "quota", "launch-failed", "escalated", "paused", "merge-failed")
 SESSION_KEYS = ("agent", "model", "effort", "reviewer", "tmux_session", "tmux_window")
 WORKTREE_KEYS = ("path", "branch", "head")
 ATTENTION_KEYS = ("reason", "since", "note")
@@ -34,6 +34,8 @@ STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 TITLE_LIMIT = 120
 # The folder of the Claude session links, one JSON file per session. Its dot name keeps list_tasks from reading it.
 SESSIONS_FOLDER = ".sessions"
+# Written once the legacy statuses (done, review) are migrated; its dot name keeps list_tasks from reading it.
+MIGRATED_MARKER = ".migrated-statuses"
 
 _ID = re.compile(r"[a-z0-9-]{1,64}")
 _STAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
@@ -168,6 +170,7 @@ def create(
     now: datetime | None = None,
 ) -> Task:
     store = Path(store)
+    _ensure_migrated(store)
     when = _utc(now)
     stamp = _stamp(when)
     with locked(store):
@@ -181,21 +184,23 @@ def create(
         text = _record_text(task, task_id)
         staging = Path(tempfile.mkdtemp(prefix=".new-", dir=store))
         try:
-            _write_atomic(staging / "task.json", text)
+            write_atomic(staging / "task.json", text)
             os.rename(staging, store / task_id)
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             raise
-        _bump(store)
+        bump(store)
     return task
 
 
 def read(store: Path, task_id: str) -> Task:
+    _ensure_migrated(Path(store))
     return _read_task(_existing(store, task_id))
 
 
 def list_tasks(store: Path) -> TaskList:
     store = Path(store)
+    _ensure_migrated(store)
     if not store.is_dir():
         return TaskList(tasks=[], unreadable=[])
     tasks: list[Task] = []
@@ -218,6 +223,7 @@ def update(
     now: datetime | None = None,
 ) -> Task:
     store = Path(store)
+    _ensure_migrated(store)
     folder = _existing(store, task_id)
     with locked(store):
         folder = _existing(store, task_id)
@@ -225,21 +231,23 @@ def update(
         change(task)
         task.updated = _stamp(now)
         text = _record_text(task, folder.name)
-        _write_atomic(folder / "task.json", text)
-        _bump(store)
+        write_atomic(folder / "task.json", text)
+        bump(store)
     return task
 
 
 def write_prompt(store: Path, task_id: str, text: str) -> None:
     store = Path(store)
+    _ensure_migrated(store)
     _existing(store, task_id)
     with locked(store):
         folder = _existing(store, task_id)
-        _write_atomic(folder / "prompt.md", text)
-        _bump(store)
+        write_atomic(folder / "prompt.md", text)
+        bump(store)
 
 
 def read_prompt(store: Path, task_id: str) -> str | None:
+    _ensure_migrated(Path(store))
     path = _existing(store, task_id) / "prompt.md"
     try:
         with open(path, encoding="utf-8", newline="") as handle:
@@ -250,11 +258,12 @@ def read_prompt(store: Path, task_id: str) -> str | None:
 
 def delete(store: Path, task_id: str) -> None:
     store = Path(store)
+    _ensure_migrated(store)
     _existing(store, task_id)
     with locked(store):
         folder = _existing(store, task_id)
         shutil.rmtree(folder)
-        _bump(store)
+        bump(store)
 
 
 # Transitions: pure functions that change a Task in place; store.update writes the result.
@@ -266,7 +275,8 @@ def start(
     worktree: dict[str, Any] | None = None,
     run_dir: str | None = None,
 ) -> None:
-    _require(task, ("todo", "review", "failed"), "working")
+    """Begin a run on the card. A working card may begin again (a rerun): that clears its attention."""
+    _require(task, ("todo", "working", "failed"), "working")
     task.status = "working"
     task.attention = None
     task.exit = None
@@ -278,40 +288,29 @@ def start(
         task.run_dir = run_dir
 
 
-def mark_ready(
-    task: Task,
-    *,
-    branch: str | None = None,
-    head: str | None = None,
-    note: str | None = None,
-) -> None:
-    _require(task, ("working", "review"), "review")
-    task.status = "review"
-    if task.worktree is None:
-        task.worktree = {"path": None, "branch": None, "head": None}
-    if branch is not None:
-        task.worktree["branch"] = branch
-    if head is not None:
-        task.worktree["head"] = head
-    if note is not None:
-        task.note = note
+def enter_merge(task: Task) -> None:
+    """The card joins the merge queue: to-merge, with no attention (the queue is its wait)."""
+    _require(task, ("todo", "working", "failed", "to-merge"), "to-merge")
+    task.status = "to-merge"
+    task.attention = None
 
 
-def resume(task: Task) -> None:
-    """Take a done card back to working, for a session that runs again (resume, compact)."""
-    _require(task, ("done",), "working")
+def merge_failed(task: Task, *, note: str, now: datetime | None) -> None:
+    """The card left the merge queue with a reason: working again, with the merge-failed attention."""
+    _require(task, ("todo", "working", "failed", "to-merge"), "working")
+    task.status = "working"
+    task.attention = {"reason": "merge-failed", "since": _stamp(now), "note": note}
+
+
+def leave_merge(task: Task) -> None:
+    """The card left the merge queue on purpose: working, with no attention."""
+    _require(task, ("todo", "working", "failed", "to-merge"), "working")
     task.status = "working"
     task.attention = None
 
 
-def mark_done(task: Task) -> None:
-    _require(task, ("working", "review"), "done")
-    task.status = "done"
-    task.attention = None
-
-
 def mark_failed(task: Task, *, exit: int | None = None, note: str | None = None) -> None:
-    _require(task, ("working", "review"), "failed")
+    _require(task, ("working", "to-merge"), "failed")
     task.status = "failed"
     task.attention = None
     if exit is not None:
@@ -323,7 +322,7 @@ def mark_failed(task: Task, *, exit: int | None = None, note: str | None = None)
 def set_attention(task: Task, reason: str, *, note: str | None = None, now: datetime | None) -> None:
     if reason not in REASONS:
         raise InvalidValue(f"unknown attention reason: {reason}")
-    _require(task, ("todo", "working", "review", "failed"), task.status)
+    _require(task, ("todo", "working", "to-merge", "failed"), task.status)
     task.attention = {"reason": reason, "since": _stamp(now), "note": note}
 
 
@@ -332,6 +331,41 @@ def clear_attention(task: Task) -> None:
 
 
 # Internal helpers.
+
+def _ensure_migrated(store: Path) -> None:
+    """Migrate the legacy statuses once: done cards are deleted, review cards become working.
+
+    The marker file records that it ran, so later reads stop here at one stat call. A store that does not
+    exist yet is left alone; the first write creates it and the next read migrates nothing.
+    """
+    store = Path(store)
+    if not store.is_dir() or (store / MIGRATED_MARKER).exists():
+        return
+    with locked(store):
+        if not store.is_dir() or (store / MIGRATED_MARKER).exists():
+            return
+        changed = False
+        for entry in sorted(store.iterdir(), key=lambda item: item.name):
+            if not is_valid_id(entry.name) or not entry.is_dir():
+                continue
+            path = entry / "task.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, UnicodeDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            if data.get("status") == "done":
+                shutil.rmtree(entry)
+                changed = True
+            elif data.get("status") == "review":
+                data["status"] = "working"
+                write_atomic(path, json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+                changed = True
+        write_atomic(store / MIGRATED_MARKER, "1\n")
+        if changed:
+            bump(store)
+
 
 def _require(task: Task, from_statuses: tuple[str, ...], to_status: str) -> None:
     if task.status not in from_statuses:
@@ -475,7 +509,7 @@ def _record_text(task: Task, folder_name: str) -> str:
     return json.dumps(task.to_json(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def write_atomic(path: Path, text: str) -> None:
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
@@ -489,8 +523,9 @@ def _write_atomic(path: Path, text: str) -> None:
         raise
 
 
-def _bump(store: Path) -> None:
-    _write_atomic(store / "generation", f"{generation(store) + 1}\n")
+def bump(store: Path) -> None:
+    """Raise the store generation by one; every write of the store calls it under the lock."""
+    write_atomic(store / "generation", f"{generation(store) + 1}\n")
 
 
 _HELD: set[str] = set()
@@ -545,5 +580,5 @@ def write_session_link(store: Path, session_id: str, link: dict[str, Any]) -> No
     with locked(store):
         folder = store / SESSIONS_FOLDER
         folder.mkdir(parents=True, exist_ok=True)
-        _write_atomic(folder / f"{session_id}.json", json.dumps(link, sort_keys=True) + "\n")
-        _bump(store)
+        write_atomic(folder / f"{session_id}.json", json.dumps(link, sort_keys=True) + "\n")
+        bump(store)

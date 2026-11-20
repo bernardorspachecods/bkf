@@ -16,7 +16,6 @@ INTERACTIVE_ENTRYPOINT = "cli"  # `claude -p` runs as sdk-cli and gets no card
 PANE_ENV = "TMUX_PANE"
 SESSION_SOURCE = "session"
 AGENT = "claude"
-ACTIVE_STATUSES = ("working", "review")
 
 
 def eligible(environ: Mapping[str, str]) -> bool:
@@ -58,7 +57,10 @@ def session_start(store: Path, session_id: Any, cwd: Any, environ: Mapping[str, 
 
 
 def session_end(store: Path, session_id: Any) -> None:
-    """Mark the session's card done when the session ends; the link stays, so a resume reuses the card."""
+    """Delete the session's card when the session ends, unless it waits in the merge queue or failed to merge.
+
+    The link stays either way: a resume that finds no card makes a new one.
+    """
     if not task_store.is_valid_session_id(session_id):
         return
     with task_store.locked(store):
@@ -66,8 +68,16 @@ def session_end(store: Path, session_id: Any) -> None:
         if link is None or not _card_exists(store, link["task"]):
             return
         card = task_store.read(store, link["task"])
-        if card.status in ACTIVE_STATUSES:
-            task_store.update(store, card.id, task_store.mark_done)
+        if _keeps_card(card):
+            return
+        task_store.delete(store, card.id)
+
+
+def _keeps_card(card: task_store.Task) -> bool:
+    """A card in the merge queue, or one that failed to merge, outlives its session: the owner still needs it."""
+    if card.status == "to-merge":
+        return True
+    return bool(card.attention) and card.attention.get("reason") == "merge-failed"
 
 
 def first_prompt(store: Path, session_id: Any, prompt: Any) -> None:
@@ -101,10 +111,8 @@ def _card_exists(store: Path, task_id: str) -> bool:
 
 
 def _refresh(store: Path, task_id: str, session: dict[str, Any]) -> None:
-    """Point a card at the session's window again, and take a done card back to working."""
+    """Point a card at the session's window again."""
     def change(card: task_store.Task) -> None:
         card.session = {**(card.session or {}), **session}
-        if card.status == "done":
-            task_store.resume(card)
 
     task_store.update(store, task_id, change)

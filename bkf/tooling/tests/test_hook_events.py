@@ -624,12 +624,9 @@ class TaskHookTest(unittest.TestCase):
 
     def make(self, kind: str = "task", status: str | None = None) -> str:
         task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
-        if status == "done":
+        if status == "to-merge":
             task_store.update(self.store, task.id, task_store.start)
-            task_store.update(self.store, task.id, task_store.mark_done)
-        elif status == "review":
-            task_store.update(self.store, task.id, task_store.start)
-            task_store.update(self.store, task.id, task_store.mark_ready)
+            task_store.update(self.store, task.id, task_store.enter_merge)
         return task.id
 
     def text(self, task_id: str | None) -> str | None:
@@ -638,16 +635,18 @@ class TaskHookTest(unittest.TestCase):
             env["BKF_TASK"] = task_id
         return task_hook.session_text(env)
 
-    def test_names_the_task_and_the_two_commands(self) -> None:
+    def test_names_the_task_and_the_merge_rule(self) -> None:
         task_id = self.make()
         text = self.text(task_id)
         self.assertIn(f"This session works on task {task_id} (task): Fix the parser.", text)
-        self.assertIn('run `bkf task ready --note "<one-line summary>"`', text)
-        self.assertIn("run `bkf task done`", text)
+        self.assertIn('When the owner moves this card to "to be merged", you will get a message: follow the '
+                      "git-merge-queue skill.", text)
+        self.assertIn("`bkf task ready` and `bkf task done` no longer exist", text)
+        self.assertIn("`bkf task close`", text)
         self.assertTrue(text.endswith("\n"))
 
-    def test_review_status_still_gets_the_text(self) -> None:
-        task_id = self.make(status="review")
+    def test_a_card_in_the_merge_queue_still_gets_the_text(self) -> None:
+        task_id = self.make(status="to-merge")
         self.assertIn(f"task {task_id} (task)", self.text(task_id))
 
     def test_handoff_kind_gets_the_text(self) -> None:
@@ -656,9 +655,6 @@ class TaskHookTest(unittest.TestCase):
 
     def test_unit_kind_stays_silent(self) -> None:
         self.assertIsNone(self.text(self.make(kind="unit")))
-
-    def test_done_task_stays_silent(self) -> None:
-        self.assertIsNone(self.text(self.make(status="done")))
 
     def test_no_variable_or_empty_variable_stays_silent(self) -> None:
         self.make()
@@ -703,12 +699,10 @@ class TaskTurnHookTest(unittest.TestCase):
 
     def make(self, kind: str = "task", status: str = "working", attention: tuple[str, str | None] | None = None) -> str:
         task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
-        if status in ("working", "review", "done", "failed"):
+        if status in ("working", "to-merge", "failed"):
             task_store.update(self.store, task.id, task_store.start)
-        if status == "review":
-            task_store.update(self.store, task.id, task_store.mark_ready)
-        elif status == "done":
-            task_store.update(self.store, task.id, task_store.mark_done)
+        if status == "to-merge":
+            task_store.update(self.store, task.id, task_store.enter_merge)
         elif status == "failed":
             task_store.update(self.store, task.id, task_store.mark_failed)
         if attention is not None:
@@ -751,8 +745,8 @@ class TaskTurnHookTest(unittest.TestCase):
             self.fire("Stop", task_id)
             self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
 
-    def test_stop_leaves_review_done_failed_and_todo_alone(self) -> None:
-        for status in ("review", "done", "failed", "todo"):
+    def test_stop_leaves_to_merge_failed_and_todo_alone(self) -> None:
+        for status in ("to-merge", "failed", "todo"):
             task_id = self.make(status=status)
             before = task_store.read(self.store, task_id).to_json()
             code, output = self.fire("Stop", task_id)
@@ -848,12 +842,10 @@ class TaskAttentionEventsTest(unittest.TestCase):
 
     def make(self, kind: str = "task", status: str = "working", attention: tuple[str, str | None] | None = None) -> str:
         task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
-        if status in ("working", "review", "done", "failed"):
+        if status in ("working", "to-merge", "failed"):
             task_store.update(self.store, task.id, task_store.start)
-        if status == "review":
-            task_store.update(self.store, task.id, task_store.mark_ready)
-        elif status == "done":
-            task_store.update(self.store, task.id, task_store.mark_done)
+        if status == "to-merge":
+            task_store.update(self.store, task.id, task_store.enter_merge)
         elif status == "failed":
             task_store.update(self.store, task.id, task_store.mark_failed)
         if attention is not None:
@@ -983,7 +975,7 @@ class TaskAttentionEventsTest(unittest.TestCase):
 
     def test_mark_events_leave_non_working_and_other_kind_cards_alone(self) -> None:
         cases = (
-            ("review", "task"), ("done", "task"), ("failed", "task"), ("working", "unit"),
+            ("to-merge", "task"), ("failed", "task"), ("working", "unit"),
         )
         for status, kind in cases:
             task_id = self.make(kind=kind, status=status)

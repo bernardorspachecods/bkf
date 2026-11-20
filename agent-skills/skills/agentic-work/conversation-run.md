@@ -11,7 +11,7 @@
 
 ## When you or the user review
 
-Run `check --gate-only`: it uses the receipt or runs the gate, and writes the diff (`patch:`), with no reviewer. After review, close the card with `scripts/plan-unit.sh close <brief> --dir <scratch> --as done|failed`. To record why it failed, pass `--note TEXT`.
+Run `check --gate-only`: it uses the receipt or runs the gate, and writes the diff (`patch:`), with no reviewer. After review, close the card with `scripts/plan-unit.sh close <brief> --dir <scratch> --as done|failed`: `done` deletes the card, `failed` leaves it failed. To record why it failed, pass `--note TEXT`.
 
 ## Launching an implementer
 
@@ -26,4 +26,4 @@ A Claude implementer is always a subagent, never launched through a shell. The l
 - **The receipt and card.** Set `DELEGATE_UNIT_DIR=<scratch>/<unit>` (the folder `begin` made) so `check` can find the card. For a brief with a gate, the launcher tells the agent to run `.plan-porteiro/ponte gate`, which runs the gate outside its sandbox and writes the receipt there.
 - The agent gets only the brief and its guide: forbid git commands that change state in the brief. Do not commit or merge unless the user says so.
 
-The run folder is `~/.delegate-runs/<repo>/<name>/` (or `$DELEGATE_RUNS_DIR`): `task` (the id of the unit's card), `last-message.md`, `diffstat.txt`, `worktree`, `base`, logs `prepare.log` and `porteiro.log`. The state is the card: `bkf task show "$(cat <run>/task)"` shows `working`, `review` (with the file count in its note), `done` (accepted), or `failed` (see `exit` or its note). A silent agent is still working.
+The run folder is `~/.delegate-runs/<repo>/<name>/` (or `$DELEGATE_RUNS_DIR`): `task` (the id of the unit's card), `last-message.md`, `diffstat.txt`, `worktree`, `base`, logs `prepare.log` and `porteiro.log`. The state is the card: `bkf task show "$(cat <run>/task)"` shows `working` with the `paused` attention and the file count in its note when the agent finished and waits for you, `failed` (see `exit` or its note), or no card once a passed unit's card is closed. A silent agent is still working.

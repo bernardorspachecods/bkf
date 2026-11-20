@@ -72,7 +72,13 @@ COMMANDS = {
     "task": (
         "bkf_task",
         "Record and read the state of agent tasks",
-        "not by hand, except 'bkf task ready' and 'bkf task done' inside a task's window",
+        "not by hand, except 'bkf task close' inside a task's window once its branch has landed",
+        "called by skills and the app",
+    ),
+    "merge": (
+        "bkf_merge",
+        "Queue a session's branch to land on the target, one at a time",
+        "called by sessions when their card is to be merged, and by the Agentic app; not by hand",
         "called by skills and the app",
     ),
     "launch": (

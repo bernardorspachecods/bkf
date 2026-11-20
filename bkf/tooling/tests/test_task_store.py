@@ -14,8 +14,8 @@ from pathlib import Path
 import task_store
 from task_store import (
     CorruptTask, InvalidId, InvalidTransition, InvalidValue, Task, TaskError, UnknownTask,
-    clear_attention, create, delete, generation, is_valid_id, list_tasks, mark_done, mark_failed,
-    mark_ready, read, read_prompt, repo_identity, set_attention, start, store_dir, update, write_prompt,
+    clear_attention, create, delete, enter_merge, generation, is_valid_id, leave_merge, list_tasks, mark_failed,
+    merge_failed, read, read_prompt, repo_identity, set_attention, start, store_dir, update, write_prompt,
 )
 
 
@@ -212,8 +212,8 @@ class TransitionTests(unittest.TestCase):
             exit=None, note=None, created="2026-11-20T14:30:05Z", updated="2026-11-20T14:30:05Z",
         )
 
-    def test_start_from_todo_review_and_failed(self) -> None:
-        for status in ("todo", "review", "failed"):
+    def test_start_from_todo_working_and_failed(self) -> None:
+        for status in ("todo", "working", "failed"):
             with self.subTest(status):
                 task = self.task(status)
                 task.exit = 2
@@ -225,28 +225,38 @@ class TransitionTests(unittest.TestCase):
                 self.assertEqual(task.worktree["path"], "/w")
                 self.assertEqual(task.run_dir, "/runs/1")
 
-    def test_mark_ready_creates_and_fills_worktree(self) -> None:
+    def test_start_again_on_a_working_card_clears_its_attention(self) -> None:
         task = self.task("working")
-        mark_ready(task, branch="agent/x", head="abc", note="Ready.")
-        self.assertEqual(task.status, "review")
-        self.assertEqual(task.worktree, {"path": None, "branch": "agent/x", "head": "abc"})
-        self.assertEqual(task.note, "Ready.")
-        mark_ready(task, head="def")
-        self.assertEqual(task.status, "review")
-        self.assertEqual(task.worktree["head"], "def")
-        self.assertEqual(task.worktree["branch"], "agent/x")
+        set_attention(task, "paused", note="report", now=NOW)
+        start(task)
+        self.assertEqual((task.status, task.attention), ("working", None))
 
-    def test_mark_done_and_mark_failed(self) -> None:
-        done = self.task("review")
-        set_attention(done, "quota", now=NOW)
-        mark_done(done)
-        self.assertEqual(done.status, "done")
-        self.assertIsNone(done.attention)
-        for status in ("working", "review"):
+    def test_enter_merge_moves_a_card_to_to_merge_and_clears_attention(self) -> None:
+        for status in ("todo", "working", "failed", "to-merge"):
+            with self.subTest(status):
+                task = self.task(status)
+                set_attention(task, "merge-failed", note="old", now=NOW)
+                enter_merge(task)
+                self.assertEqual((task.status, task.attention), ("to-merge", None))
+
+    def test_merge_failed_returns_to_working_with_the_reason(self) -> None:
+        task = self.task("to-merge")
+        merge_failed(task, note="tests break", now=NOW)
+        self.assertEqual(task.status, "working")
+        self.assertEqual(task.attention, {"reason": "merge-failed", "since": "2026-11-20T14:30:05Z", "note": "tests break"})
+
+    def test_leave_merge_returns_to_working_without_attention(self) -> None:
+        task = self.task("to-merge")
+        leave_merge(task)
+        self.assertEqual((task.status, task.attention), ("working", None))
+
+    def test_mark_failed_from_working_and_to_merge(self) -> None:
+        for status in ("working", "to-merge"):
             with self.subTest(status):
                 failed = self.task(status)
+                set_attention(failed, "quota", now=NOW)
                 mark_failed(failed, exit=1, note="boom")
-                self.assertEqual((failed.status, failed.exit, failed.note), ("failed", 1, "boom"))
+                self.assertEqual((failed.status, failed.exit, failed.note, failed.attention), ("failed", 1, "boom", None))
 
     def test_set_and_clear_attention(self) -> None:
         task = self.task("working")
@@ -254,8 +264,7 @@ class TransitionTests(unittest.TestCase):
         failed = self.task("failed")
         set_attention(failed, "launch-failed", note="boom", now=NOW)
         self.assertEqual(failed.attention["reason"], "launch-failed")
-        with self.assertRaises(InvalidTransition):
-            set_attention(self.task("done"), "quota", now=NOW)
+        set_attention(self.task("to-merge"), "merge-failed", note="late", now=NOW)
         self.assertEqual(task.attention, {"reason": "prompt", "since": "2026-11-20T14:30:05Z", "note": "Needs an answer"})
         self.assertEqual(task.status, "working")
         clear_attention(task)
@@ -268,31 +277,76 @@ class TransitionTests(unittest.TestCase):
 
     def test_allowed_and_refused_transitions(self) -> None:
         allowed = [
-            (start, "todo", {}), (start, "review", {}), (start, "failed", {}),
-            (mark_ready, "working", {}), (mark_ready, "review", {}),
-            (mark_done, "working", {}), (mark_done, "review", {}),
-            (mark_failed, "working", {}), (mark_failed, "review", {}),
+            (start, "todo", {}), (start, "working", {}), (start, "failed", {}),
+            (enter_merge, "todo", {}), (enter_merge, "working", {}), (enter_merge, "failed", {}),
+            (enter_merge, "to-merge", {}),
+            (merge_failed, "to-merge", {"note": "x", "now": NOW}), (merge_failed, "working", {"note": "x", "now": NOW}),
+            (leave_merge, "to-merge", {}), (leave_merge, "working", {}),
+            (mark_failed, "working", {}), (mark_failed, "to-merge", {}),
         ]
         for function, status, kwargs in allowed:
             with self.subTest(function.__name__, status=status):
                 function(self.task(status), **kwargs)
         refused = [
-            (start, "working"), (start, "done"),
-            (mark_ready, "todo"), (mark_ready, "done"), (mark_ready, "failed"),
-            (mark_done, "todo"), (mark_done, "done"), (mark_done, "failed"),
-            (mark_failed, "todo"), (mark_failed, "failed"), (mark_failed, "done"),
+            (start, "to-merge"), (start, "unknown"),
+            (enter_merge, "done"), (leave_merge, "done"), (merge_failed, "done", {"note": "x", "now": NOW}),
+            (mark_failed, "todo"), (mark_failed, "failed"),
         ]
-        for function, status in refused:
+        for function, status, *extra in refused:
+            kwargs = extra[0] if extra else {}
             with self.subTest(function.__name__, status=status):
                 task = self.task(status)
-                with self.assertRaises(InvalidTransition) as context:
-                    function(task)
-                self.assertEqual(context.exception.from_status, status)
+                with self.assertRaises((InvalidTransition, ValueError)) as context:
+                    function(task, **kwargs)
+                if isinstance(context.exception, InvalidTransition):
+                    self.assertEqual(context.exception.from_status, status)
                 self.assertEqual(task.status, status)
-        for status in ("done",):
+        for status in ("todo", "working", "to-merge", "failed"):
             with self.subTest("attention", status=status):
-                with self.assertRaises(InvalidTransition):
-                    set_attention(self.task(status), "quota", now=NOW)
+                set_attention(self.task(status), "quota", now=NOW)
+
+
+class LegacyStatusTests(TempStore):
+    """The one-time migration: done cards are deleted, review cards become working, and it runs once."""
+
+    def make_legacy(self, *titles: str) -> dict[str, Task]:
+        """Make cards as an old store holds them: no marker, so the first read migrates them."""
+        tasks = {title: self.make(title) for title in titles}
+        (self.store / ".migrated-statuses").unlink(missing_ok=True)
+        return tasks
+
+    def write_status(self, task_id: str, status: str) -> None:
+        path = self.store / task_id / "task.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["status"] = status
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_first_read_deletes_done_and_turns_review_into_working(self) -> None:
+        cards = self.make_legacy("done", "review", "working")
+        self.write_status(cards["done"].id, "done")
+        self.write_status(cards["review"].id, "review")
+        before = generation(self.store)
+        listing = list_tasks(self.store)
+        self.assertEqual(listing.unreadable, [])
+        self.assertEqual({task.title: task.status for task in listing.tasks}, {"review": "working", "working": "todo"})
+        self.assertFalse((self.store / cards["done"].id).exists())
+        self.assertTrue((self.store / ".migrated-statuses").exists())
+        self.assertEqual(generation(self.store), before + 1)
+
+    def test_migration_runs_once_and_later_reads_change_nothing(self) -> None:
+        cards = self.make_legacy("only")
+        list_tasks(self.store)
+        before = generation(self.store)
+        self.write_status(cards["only"].id, "review")
+        listing = list_tasks(self.store)
+        self.assertEqual(listing.unreadable, [cards["only"].id])
+        self.assertEqual(generation(self.store), before)
+
+    def test_a_write_migrates_before_it_runs(self) -> None:
+        cards = self.make_legacy("done")
+        self.write_status(cards["done"].id, "done")
+        self.make("other")
+        self.assertFalse((self.store / cards["done"].id).exists())
 
 
 class WriteTests(TempStore):
@@ -315,7 +369,7 @@ class WriteTests(TempStore):
         task = self.make()
         before = (self.store / task.id / "task.json").read_text(encoding="utf-8")
         with self.assertRaises(InvalidTransition):
-            update(self.store, task.id, mark_done)
+            update(self.store, task.id, mark_failed)
         with self.assertRaises(RuntimeError):
             update(self.store, task.id, self.raiser)
         self.assertEqual((self.store / task.id / "task.json").read_text(encoding="utf-8"), before)

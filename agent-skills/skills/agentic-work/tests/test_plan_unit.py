@@ -165,7 +165,7 @@ class PlanUnitTests(unittest.TestCase):
         self.implement("changed again\n")
         second = self.check("--review-model", "m")
         self.assertEqual(second.returncode, 0, second.stdout)
-        self.assertEqual(self.card_calls(), [["task", "done", CARD]])
+        self.assertEqual(self.card_calls(), [["task", "close", CARD]])
         self.assertEqual(len(self.reviews()), 2)
         first_args = json.loads((self.state / "args-1.json").read_text())
         second_args = json.loads((self.state / "args-2.json").read_text())
@@ -268,7 +268,7 @@ class PlanUnitTests(unittest.TestCase):
                 result = self.plan_unit(*close, *args)
                 self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.card_calls(), [
-            ["task", "done", CARD],
+            ["task", "close", CARD],
             ["task", "fail", CARD],
             ["task", "fail", CARD, "--note", "needs a decision"],
         ])

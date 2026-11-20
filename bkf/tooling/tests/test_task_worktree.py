@@ -164,7 +164,7 @@ class WorktreeTests(unittest.TestCase):
     def test_status_other_than_todo_working_or_failed_is_refused_before_git_runs(self) -> None:
         task = self.new_task()
         task_store.update(self.store, task.id, task_store.start)
-        task_store.update(self.store, task.id, task_store.mark_done)
+        task_store.update(self.store, task.id, task_store.enter_merge)
         with patch.object(task_worktree, "_git", side_effect=AssertionError("git ran")):
             with self.assertRaisesRegex(WorktreeError, "todo, working or failed"):
                 prepare(self.store, task.id)
@@ -231,7 +231,7 @@ class WorktreeTests(unittest.TestCase):
     def test_cli_refusal_is_one_line_with_exit_one(self) -> None:
         task = self.new_task()
         task_store.update(self.store, task.id, task_store.start)
-        task_store.update(self.store, task.id, task_store.mark_done)
+        task_store.update(self.store, task.id, task_store.enter_merge)
         status, output, error = self.run_task("worktree", task.id)
         self.assertEqual(status, 1)
         self.assertEqual(output, "")

@@ -125,7 +125,7 @@ def unit_ended(run, unit, state, reason):
     if task_id is None:
         return
     if state == "passed":
-        _bkf("done", task_id)
+        _bkf("close", task_id)
     elif state in ("blocked", "escalated", "takeover"):
         _bkf("attention", task_id, "--set", "escalated", "--note", state)
     else:
@@ -147,7 +147,7 @@ def run_state(run, state, reason=""):
     elif state == "crashed":
         _bkf("fail", task_id, "--note", "crashed")
     elif state == "ready":
-        _bkf("ready", task_id, "--no-git", "--note", _note("report at " + reason))
+        _bkf("attention", task_id, "--set", "paused", "--note", _note("report at " + reason))
     elif state == "resumed":
         if _status(task_id) == "failed":
             _bkf(*_start_args(run, task_id, run.checkout, run.path))
@@ -156,10 +156,10 @@ def run_state(run, state, reason=""):
 
 
 def finish_run(run):
-    """The run is kept: its card is done. Called before the run folder is removed."""
+    """The run is kept: its card is closed. Called before the run folder is removed."""
     task_id = _read_id(run.path / RUN_CARD)
     if task_id is not None:
-        _bkf("done", task_id)
+        _bkf("close", task_id)
 
 
 def _discard(run):

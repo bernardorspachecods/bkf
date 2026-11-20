@@ -2,7 +2,7 @@
 
 Read this only for `mine pr`, for squash or rebase merges in `all`, or for remote branch deletion. The rules of [SKILL.md](SKILL.md) still apply.
 
-On request (`git-worktree-cleanup mine pr`); PR replaces local merge; other `mine` steps through check stay unchanged.
+On request (`git-worktree-cleanup mine pr`); the PR replaces the queue step (`bkf merge`) of `mine`; the other `mine` steps stay unchanged.
 
 - Push with `git push -u origin <branch>` and open with `gh pr create`. Without `gh`, leave the branch and report it.
 - Never force-push, push default or rewrite history. Keep worktree and branch until PR merge; then `all` or `mine` completes cleanup.
