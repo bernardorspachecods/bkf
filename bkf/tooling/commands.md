@@ -21,6 +21,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Search the documents | [bkf search](#bkf-search) |
 | Register, reopen, close, or check researched sources | [bkf sources](#bkf-sources) |
 | Record, read, or change agent tasks | [bkf task](#bkf-task) |
+| Read the text of a task's tmux window | [bkf task output](#bkf-task) |
 | Open an agent session in tmux with its task card | [bkf launch](#bkf-launch) |
 
 ## Install
@@ -674,6 +675,7 @@ task's window runs `bkf task ready` and `bkf task done` itself.
 bkf task new --repo DIR --title T [--body-file F|-] [--source S] [--kind K] [--parent ID | --no-parent] [--json]
 bkf task list [--repo DIR] [--status S]... [--kind K] [--parent ID] [--json]
 bkf task show [ID] [--json]
+bkf task output [ID] [--lines N]
 bkf task start ID [--agent A] [--model M] [--effort E] [--reviewer R] [--tmux-session S] [--tmux-window W] [--worktree PATH] [--branch B] [--run-dir D]
 bkf task worktree ID [--base REV] [--json]
 bkf task ready [ID] [--note T] [--no-git]
@@ -777,6 +779,17 @@ never removed on a later failure.
 **Show.** Without `--json`, `key: value` lines: id, title, status, kind, repo,
 parent, worktree, branch, tmux window, attention, and note. A missing value is
 `-`.
+
+**Output.** Prints the text of the task's tmux window, so a session can see what
+another shows. The target is always the card's recorded `tmux_session` and
+`tmux_window`, never an argument. It runs `tmux capture-pane -p -S -N -t
+<session>:<window>`: the visible screen and `N` lines of history above it.
+`--lines` defaults to 200 and is at most 5000; any other value is refused. Output
+goes to standard output unchanged. A session or window name with a leading dash,
+a colon, a space or a line break is refused before tmux runs. Refused, with a
+reason on standard error, when the card has no window, when the window is closed
+(no such window, or no tmux server running), or when tmux is not installed. It
+never changes the card.
 
 **Exit status.** `0` is success. `1` is a refusal: an unknown or corrupt task,
 a transition not allowed, a dirty tree, or a missing id. A refusal prints one

@@ -15,6 +15,7 @@ from unittest.mock import patch
 import bkf_cli
 import bkf_task
 import task_store
+import task_tmux
 
 
 TOOLING = Path(__file__).resolve().parents[1]
@@ -447,6 +448,137 @@ class BkfTaskTests(unittest.TestCase):
         average_ms = sum(durations) / len(durations) * 1000
         print(f"\nbkf task list --json with 200 tasks: average {average_ms:.0f} ms over 5 runs", file=sys.stderr)
         self.assertLess(average_ms, 300)
+
+    # output
+
+    def windowed(self, session: str = "repo-ab12cd", window: str = "@41", title: str = "watched") -> str:
+        task_id = self.new(title)
+        status, _, error = self.run_task("start", task_id, f"--tmux-session={session}", f"--tmux-window={window}")
+        self.assertEqual((status, error), (0, ""))
+        return task_id
+
+    def fake_tmux(self, returncode: int = 0, stdout: str = "screen\n") -> list[list[str]]:
+        calls: list[list[str]] = []
+
+        def runner(args, stdin=None):
+            calls.append(list(args))
+            return task_tmux.Result(returncode, stdout, "" if returncode == 0 else "can't find window")
+
+        patcher = patch.object(task_tmux, "default_runner", runner)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return calls
+
+    def card_bytes(self, task_id: str) -> bytes:
+        return (self.store / task_id / "task.json").read_bytes()
+
+    def test_output_reads_the_visible_screen_and_two_hundred_history_lines_by_default(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux(stdout="line one\nline two\n")
+        status, output, error = self.run_task("output", task_id)
+        self.assertEqual((status, error), (0, ""))
+        self.assertEqual(calls, [["tmux", "capture-pane", "-p", "-S", "-200", "-t", "repo-ab12cd:@41"]])
+        self.assertEqual(output, "line one\nline two\n")
+
+    def test_output_with_lines_passes_that_history_size(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        status, output, error = self.run_task("output", task_id, "--lines", "50")
+        self.assertEqual((status, error, output), (0, "", "screen\n"))
+        self.assertEqual(calls, [["tmux", "capture-pane", "-p", "-S", "-50", "-t", "repo-ab12cd:@41"]])
+
+    def test_output_accepts_the_cap_and_refuses_more(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        status, _, error = self.run_task("output", task_id, "--lines", "5000")
+        self.assertEqual((status, error), (0, ""))
+        self.assertEqual(calls[-1][calls[-1].index("-S") + 1], "-5000")
+        self.assertRefused(*self.run_task("output", task_id, "--lines", "5001"), "at most 5000")
+        self.assertEqual(len(calls), 1)
+
+    def test_output_refuses_lines_that_are_not_positive_integers(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        for value in ("0", "-3", "abc", "1.5", ""):
+            with self.subTest(value=value):
+                self.assertRefused(*self.run_task("output", task_id, "--lines", value),
+                                   "--lines must be a positive integer")
+        self.assertEqual(calls, [])
+
+    def test_output_uses_bkf_task_when_the_id_is_omitted(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        with patch.dict(os.environ, {"BKF_TASK": task_id}):
+            status, output, error = self.run_task("output")
+        self.assertEqual((status, error, output), (0, "", "screen\n"))
+        self.assertEqual(calls[0][-1], "repo-ab12cd:@41")
+
+    def test_output_explicit_id_wins_over_bkf_task(self) -> None:
+        current = self.windowed(window="@1", title="current")
+        other = self.windowed(window="@2", title="other")
+        calls = self.fake_tmux()
+        with patch.dict(os.environ, {"BKF_TASK": current}):
+            status, _, error = self.run_task("output", other)
+        self.assertEqual((status, error), (0, ""))
+        self.assertEqual(calls[0][-1], "repo-ab12cd:@2")
+
+    def test_output_without_an_id_outside_a_task_is_refused(self) -> None:
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("output"), "no task id")
+        self.assertEqual(calls, [])
+
+    def test_output_unknown_task_is_refused(self) -> None:
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("output", "t20000101-000000-0000"), "no task")
+        self.assertEqual(calls, [])
+
+    def test_output_task_without_a_window_is_refused(self) -> None:
+        task_id = self.new("no window")
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("output", task_id), f"task {task_id} has no window")
+        self.assertEqual(calls, [])
+
+    def test_output_task_with_only_a_session_is_refused(self) -> None:
+        task_id = self.new("session only")
+        self.run_task("start", task_id, "--tmux-session=repo-ab12cd")
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("output", task_id), f"task {task_id} has no window")
+        self.assertEqual(calls, [])
+
+    def test_output_closed_window_or_no_tmux_server_is_refused(self) -> None:
+        task_id = self.windowed()
+        self.fake_tmux(returncode=1)
+        self.assertRefused(*self.run_task("output", task_id), f"the window of task {task_id} is closed")
+
+    def test_output_without_tmux_is_refused(self) -> None:
+        task_id = self.windowed()
+        self.fake_tmux(returncode=127)
+        self.assertRefused(*self.run_task("output", task_id), "tmux is not installed")
+
+    def test_output_refuses_hostile_names_before_any_process_starts(self) -> None:
+        cases = [
+            ("-x", "@41"),           # leading dash
+            ("repo", "-@41"),        # leading dash in the window
+            ("repo", "@41:0"),       # colon in the window
+            ("re\npo", "@41"),       # line break in the session
+            ("repo", "@4\n1"),       # line break in the window
+            ("re po", "@41"),        # space
+        ]
+        calls = self.fake_tmux()
+        for session, window in cases:
+            with self.subTest(session=session, window=window):
+                task_id = self.windowed(session=session, window=window, title=f"hostile {len(calls)}")
+                self.assertRefused(*self.run_task("output", task_id), "not a tmux session and window name")
+        self.assertEqual(calls, [])
+
+    def test_output_never_changes_the_card(self) -> None:
+        task_id = self.windowed()
+        before = self.card_bytes(task_id)
+        generation = task_store.generation(self.store)
+        self.fake_tmux()
+        self.run_task("output", task_id, "--lines", "10")
+        self.assertEqual(self.card_bytes(task_id), before)
+        self.assertEqual(task_store.generation(self.store), generation)
 
 
 if __name__ == "__main__":

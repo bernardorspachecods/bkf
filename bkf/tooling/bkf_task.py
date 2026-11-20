@@ -12,12 +12,15 @@ from pathlib import Path
 from typing import Any
 
 import task_store
+import task_tmux
 import task_worktree
 from task_store import KINDS, REASONS, STATUSES, InvalidTransition, Task, TaskError
 
 
 JSON_SCHEMA = 1
 TASK_ENV = "BKF_TASK"
+OUTPUT_LINES_DEFAULT = 200
+TMUX_MISSING = 127  # the status task_tmux.default_runner gives when tmux is not on PATH
 
 
 class Refusal(Exception):
@@ -87,6 +90,11 @@ def build_parser() -> argparse.ArgumentParser:
     action.add_argument("--set", dest="reason", metavar="REASON", help="one of: " + ", ".join(REASONS))
     action.add_argument("--clear", action="store_true")
     attention.add_argument("--note")
+
+    output = commands.add_parser("output", help="print the text of a task's tmux window")
+    output.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
+    output.add_argument("--lines", metavar="N", help="also read N lines of history above the screen "
+                        f"(default 200, at most {task_tmux.CAPTURE_LINES_LIMIT})")
 
     delete = commands.add_parser("delete", help="delete a task folder")
     delete.add_argument("id", metavar="ID")
@@ -231,6 +239,40 @@ def _ready(args: argparse.Namespace, store: Path) -> None:
     )
 
 
+def _output_lines(text: str | None) -> int:
+    if text is None:
+        return OUTPUT_LINES_DEFAULT
+    try:
+        value = int(text)
+    except ValueError:
+        raise Refusal("--lines must be a positive integer") from None
+    if value < 1:
+        raise Refusal("--lines must be a positive integer")
+    if value > task_tmux.CAPTURE_LINES_LIMIT:
+        raise Refusal(f"--lines must be at most {task_tmux.CAPTURE_LINES_LIMIT}")
+    return value
+
+
+def _output(args: argparse.Namespace, store: Path) -> int:
+    history = _output_lines(args.lines)
+    task_id = _task_id(args.id)
+    task = task_store.read(store, task_id)
+    session = task.session or {}
+    name, window = session.get("tmux_session"), session.get("tmux_window")
+    if not name or not window:
+        raise Refusal(f"task {task_id} has no window")
+    try:
+        result = task_tmux.capture_pane(name, window, history=history)
+    except task_tmux.TargetRefused as exc:
+        raise Refusal(str(exc)) from None
+    if result.returncode == TMUX_MISSING:
+        raise Refusal("tmux is not installed or not on PATH")
+    if result.returncode != 0:
+        raise Refusal(f"the window of task {task_id} is closed")
+    sys.stdout.write(result.stdout)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -286,6 +328,8 @@ def main(argv: list[str] | None = None) -> int:
                     store, task_id,
                     lambda task: task_store.set_attention(task, args.reason, note=args.note, now=None),
                 )
+        elif args.command == "output":
+            return _output(args, store)
         elif args.command == "delete":
             task_store.delete(store, args.id)
     except (Refusal, TaskError, OSError, UnicodeError) as exc:

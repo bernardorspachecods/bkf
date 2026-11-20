@@ -275,3 +275,32 @@ def _display(runner: Runner, environ: Mapping[str, str], pane: str, fmt: str) ->
 
 def _osascript(runner: Runner, script: str, *argv: str) -> Result:
     return runner(["osascript", "-", *argv], script)
+
+
+# A session or window name tmux may take as a target: no leading dash, no colon, no spaces or line breaks.
+TARGET_NAME = re.compile(r"[A-Za-z0-9@%_][A-Za-z0-9@%_.-]{0,127}")
+CAPTURE_LINES_LIMIT = 5000
+
+
+class TargetRefused(ValueError):
+    """A session or window name, or a history size, refused before any tmux process starts."""
+
+
+def capture_pane(
+    session: str,
+    window: str,
+    *,
+    history: int | None = None,
+    environ: Mapping[str, str] = os.environ,
+    runner: Runner | None = None,
+) -> Result:
+    """Run `tmux capture-pane -p` on session:window; with history, also read that many lines above the screen."""
+    if not TARGET_NAME.fullmatch(session) or not TARGET_NAME.fullmatch(window):
+        raise TargetRefused(f"not a tmux session and window name: {session!r} {window!r}")
+    if history is not None and not 1 <= history <= CAPTURE_LINES_LIMIT:
+        raise TargetRefused(f"history lines must be from 1 to {CAPTURE_LINES_LIMIT}")
+    args = ["capture-pane", "-p"]
+    if history is not None:
+        args += ["-S", f"-{history}"]
+    args += ["-t", f"{session}:{window}"]
+    return _tmux_status(runner or default_runner, environ, *args)
