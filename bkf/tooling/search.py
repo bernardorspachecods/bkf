@@ -142,7 +142,7 @@ def _collect_sections(
     scope: Path | None = None,
     required_tags: list[str] | None = None,
 ) -> list[Section]:
-    from bkf_common import BKFInputError, canonical_tag, parse_markdown, tracking_state
+    from bkf_common import BKFInputError, canonical_tag, is_root_nonmember, parse_markdown, tracking_state
 
     vocabularies = vocabularies or {}
     result: list[Section] = []
@@ -169,7 +169,7 @@ def _collect_sections(
                     continue
                 if any(part.startswith(".") for part in path.relative_to(bundle).parts[:-1]):
                     continue
-                if in_nested_bundle(bundle, path):
+                if in_nested_bundle(bundle, path) or is_root_nonmember(bundle, path):
                     continue
                 if scope is not None and not (path == scope or path.is_relative_to(scope)):
                     continue

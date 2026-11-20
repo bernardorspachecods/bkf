@@ -15,6 +15,17 @@ from ruamel.yaml.error import YAMLError
 MAP_NAME = "MAP.md"
 README_NAME = "readme.md"
 TAG_VOCABULARY_NAME = "tag-vocabulary.yaml"
+NOTES_NAME_RE = re.compile(r"notes(?:[2-9]|[1-9][0-9]+)?\.md")
+
+
+def is_notes_file(root: Path, path: Path) -> bool:
+    """Return whether `path` is a notes file: the user's private notes at the bundle root, never a member."""
+    return path.parent == root and NOTES_NAME_RE.fullmatch(path.name) is not None
+
+
+def is_root_nonmember(root: Path, path: Path) -> bool:
+    """Return whether `path` is a bundle-root Markdown file that the format excludes from membership."""
+    return path == root / README_NAME or is_notes_file(root, path)
 
 
 NAVIGATION_MAP_REVIEW_LINES = 350
@@ -276,9 +287,9 @@ def inventory_entries(root: Path, map_path: Path) -> list[InventoryEntry]:
         for filename in filenames:
             if Path(filename).suffix.lower() != ".md" or filename == MAP_NAME:
                 continue
-            if directory_path == root and filename == README_NAME:
-                continue
             document = directory_path / filename
+            if is_root_nonmember(root, document):
+                continue
             try:
                 if not document.resolve().is_relative_to(root):
                     raise BKFInputError("Markdown file resolves outside the bundle root")
