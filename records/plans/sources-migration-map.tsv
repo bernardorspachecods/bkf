@@ -1,0 +1,125 @@
+F01	tan-code-slop-except-mine	used	ok
+F02	ai-engineer-walden-yan	used	ok
+F03	atlassian-ensure-design-token-usage	used	ok
+F04	shopify-polaris-references	discarded:dead	claim not supported at all: the cited Stylelint Polaris page is gone (redirects to a generic page); record discarded as dead
+F05	sardesai-custom-eslint-ratcheting-notion	used	the page does not mention a frozen mode in CI (that is in teton-landis-eslint-seatbelt); the rest is supported
+F06	teton-landis-eslint-seatbelt	used	ok
+F07	craig-incrementally-adding-stylelint-rules	used	ok
+F08	berge-playwright-visual-regression-testing	used	ok
+F09	osmani-give-ai-eyes-introducing	used	ok
+F10	vaughan-browser-loop-testing-playwright	used	ok
+F11	storybook-mcp-server	used	the "10.3, with 10.4 in beta" version is not on the page
+F12	w3c-design-tokens-stable-specification	used	the page does not say tokens are JSON with an explicit type (that needs the specification itself)
+F13	ast-grep-lint-rule	used	ok
+F14	imbue-ai-ratchets	used	ok
+F15	npm-chrome-devtools-mcp	used	renamed from npmjs-chrome-devtools-mcp; headless=false default and pipe:true not on the page
+F16	pedroknigge-isolated-temp-profile-chrome	used	ok
+F16	ezveus-concurrent-sessions-lose-auth	used	ok
+F17	chromedevtools-chrome-devtools-mcp-chrome	used	part of fontes claim not supported: config discovery is not on the page; the rest is ok
+F18	npm-playwright-mcp	used	renamed from npmjs-mcp; claim pre-1.0 rests on version 0.0.86 in the appended Package metadata; the README does not say pre-1.0; author kept as npmjs (no author on the page)
+F19	claude-code-docs-automate-work-scheduled-tasks	used	ok
+F20	github-events-trigger-workflows	used	renamed from events-trigger-workflows-docs; kind corrected repo to docs
+F21	vercel-agent-investigation	used	renamed from vercel-investigation
+F22	mozilla-performance-sheriffing-firefox-source	used	kind article to docs; snapshot heading glyph U+F0C1 kept in section names so the anchors match
+F23	ippolito-hill-climbing-agent-quality	used	ok
+F24	spotify-background-agents-feedback-loops	used	renamed from engineer-background-coding-agents-predictable
+F25	mapbox-releases-pixelmatch	used	published left unknown: page shows 06 Oct without a year
+F26	playwright-release-notes	used	ok; author kept as playwright, the page names no Microsoft author
+F27	salesforce-ux-slds-linter	used	renamed from salesforce-ux-slds-linter-provides-custom; llm and no-hooks classes not in snapshot, left out
+F28	shopify-polaris-react-archived	used	renamed from shopify-polaris-react-archive-s; the row claim (migrator whole-or-nothing, comment on unmigrated code) is not on the archive page
+F28	shopify-polaris-migrator	used	renamed from githubusercontent-readme; the row claim is not in the README (a stub); source inserts POLARIS_MIGRATOR_COMMENT but the all-or-nothing part is not shown
+F29	primer-stylelint-config-plugins-spacing	used	ok; version 13.6.0 and date not on the page
+F30	atlassian-design-migrate-to-tokens	used	rename from atlassian-design-overview-migrate-tokens; kind docs
+F31	mdn-web-docs-layoutshift-apis	used	ok
+F31	web-dev-debug-layout-shifts	used	published corrected to 2021-03-11 (page shows Mar 11, 2021)
+F32	dmtrkovalenko-odiff-fast-simd-first	used	snapshot says layout, not dimensions; the dimensions part left out
+F33	anthropics-claude-code-workflows-sweep	used	ok; the job's run step is the script; the 3-day close, veto and /dedupe parts are not in the snapshot
+F33	anthropics-claude-code-auto-close-duplicates	used	renamed from anthropics-claude-code-workflows-auto (poor id); the 3-day close and human veto are in the script, not the snapshot
+F34	mcmillan-instruction-adherence-coding-agent	used	part of claim not supported: 60-68%, 45-84% and 25-500 lines absent from abstract
+F35	gloaguen-evaluating-agents-md-repository	used	ok
+F36	claude-code-docs-best-practices	used	ok
+F37	zhong-impossiblebench-measuring-llms-propensity	used	renamed from arxiv-impossiblebench-measuring-llms-propensity; author and published corrected from snapshot; the 79% figure is for Conflicting-SWEbench
+F38	metr-many-swe-bench-passing	used	ok; ratio stated for raw rates in A4
+F39	gray-stripe-minions-one-shot	used	renamed from gray-minions-stripes-one-shot (misspelled Stripe)
+F40	pesok-verifying-agentic-development-scale	used	ok
+F41	gao-agents-md-outperforms-skills	used	fontes says 'falha 56%'; page says the skill was never invoked, claim follows the page; 'um so framework' is the Next.js 16 evals only
+F42	devin-docs-creating-playbooks	used	snapshot has no Overview section, left out
+F43	verweij-dependency-cruiser	used	rename from npmjs-dependency-cruiser; author corrected to Sander Verweij; ignore-known claim not in README; version from npm registry metadata
+F43	brea-eslint-plugin-boundaries	used	rename from npmjs-eslint-plugin-boundaries; author corrected to Javier Brea; version from npm registry metadata
+F44	sng-using-linters-direct-agents	used	ok; redirected to factory.com/news/...
+F45	zhang-still-manual-automated-linter	used	author corrected from byline; part of claim not supported: sem fixtures (page has no fixtures)
+F46	zhou-llm-based-static-verification	used	ok
+F47	sverweij-dependency-cruiser-doc-rules	used	kind repo to docs
+F48	claude-code-docs-remembers-project	used	author corrected to Anthropic
+F49	anthropic-effective-harnesses-long-running	used	redirected to anthropic.com/research/...; author corrected to Justin Young (Anthropic)
+F50	anthropic-built-multi-agent-research	used	ok; redirect to research/multi-agent-research-system noted
+F51	claude-platform-docs-skill-authoring-best-practices	used	ok
+F52	openai-plans-md-multi-hour	used	rename from openai-developers-using-plans-md-multi; page says recipe is archived
+F54	uber-ureview-scalable-trustworthy-genai	used	ok
+F55	atlassian-rovodev-code-reviewer-evaluation	used	rename from arxiv-rovodev-code-reviewer-large; author and published corrected from snapshot
+F56	zhao-bugbot-now-self-improves	used	ok; author kept as Michael Zhao (fontes says Cursor)
+F57	npm-storybook	used	ok; version and date from registry metadata (README empty)
+F57	npm-storybook-addon-mcp	used	ok; registry metadata (README empty); version from metadata
+F57	npm-storybook-addon-vitest	used	ok; registry metadata (README empty)
+F57	npm-storybook-nextjs-vite	used	ok; registry metadata (README empty)
+F57	npm-vitest	used	renamed from npmjs-vitest; README snapshot does not show 5.1.1, part not supported
+F57	npm-msw-storybook-addon	used	ok; registry metadata (README empty)
+F57	npm-storybook-addon-vis	used	renamed from npmjs-storybook-addon-vis; README does not show 4.8.0, part not supported
+F57	npm-primer-mcp	used	renamed from npmjs-mcp-2 (@primer/mcp); registry metadata, no license in registry
+F57	npm-atlaskit-ads-mcp	used	renamed from npmjs-ads-mcp; README does not show 2.0.1, part not supported
+F57	npm-react-scanner	used	README does not show 1.2.0, part not supported
+F58	storybook-manifests	used	ok
+F59	storybookjs-mcp-addon	used	rename from storybookjs-mcp; archive supported; code moved to monorepo not supported
+F60	storybook-next-js-vite	used	ok; "Server Actions are not supported yet" not on the page, only planned
+F61	storybookjs-test-runner-turn-stories	used	ok (no publication date on page)
+F62	storybook-accessibility-tests	used	ok
+F63	vitest-visual-regression-testing	used	renamed from vladimir-vitest; browser mode only inferred from the vitest/browser import; author left (snapshot names no single author)
+F64	gach-storybook-mcp-react	used	part of claim not supported: 12.8%, 2.76x, 27% figures and methodology absent; qualitative claim kept
+F65	primer-react-mcp-server	used	new record for packages/mcp/src/server.ts (kind repo); supports the lint_css REQUIRED FINAL STEP claim; anchors under the section Troubleshooting for AI: because the file has lines starting with ## ; author kept as githubusercontent
+F65	primer-react-mcp-package	used	renamed from primer-react-packages-mcp-main; the row claim is not on the directory page and README; closed on package description
+F66	atlassian-design-eslint-no-html-button	used	rename from atlassian-design-eslint-plugin-usage-components; kind docs
+F67	storybook-best-practices-using-ai	used	supports practices 1 and 5; fontes row has no claim per page (por confirmar)
+F67	storybook-sharing-mcp-server	used	supports practice 1 (manifest serves the catalogue) and partly 5; no claim per page in fontes
+F67	storybook-mocking-modules	used	supports practice 2 only for sb.mock; RSC, Server Actions and MSW not on the page
+F67	storybook-vitest-addon	used	supports practice 3 (browser mode, Vitest addon) and the Next.js part of practice 2; a11y todo/error and test-runner archive date not on the page
+F67	storybook-visual-tests	used	supports practice 4 by contrast only (Chromatic cloud route, which practice 4 avoids); Playwright toHaveScreenshot not on the page
+F68	storybookjs-mcp-eval-harness	used	renamed from storybookjs-mcp-eval-main-mcp; the does-not-measure-reuse part not in snapshot, left out
+F69	vitest-announcing-4-0	used	rename from vladimir-announcing-vitest-4-0; published corrected to 2025-10-22
+F70	repobuddy-visual-testing-storybook-addon	used	renamed from repobuddy-visual-testing-storybook-visual; v4.8.0 and Vitest ^4 not on the page
+F71	atlassian-llms-txt	used	the row claim (ads-mcp separates canonical catalogue from fallback tools) is not supported by the snapshot
+F72	shadcn-mcp-server	used	ok
+F73	jsx-eslint-react-forbid-elements	used	renamed from jsx-eslint-plugin-react-docs-rules (poor id); URL confirmed on master of jsx-eslint/eslint-plugin-react; no publication date on page
+F74	kiri-measuring-coverage-react-design	used	ok; kind set to talk
+F75	sarin-design-system-adoption-tracker	used	ok
+F76	storybookjs-storybook-design-systems-agents	used	author set to JReinhold, published 2025-09-09; sem numeros not written as a claim
+F77	vercel-ensuring-instant-navigations	used	ok
+F78	vercel-next-js-preserves-ui	used	part of claim not supported: Cache Components condition for the 3-route limit absent
+F79	vercel-uselinkstatus	used	ok; page shows Last updated, not published
+F80	react-suspense	used	kind docs
+F81	primer-loading-ui-patterns	used	renamed from primer-loading; kind article to docs; skeleton-dimensions part not in snapshot, left out
+F82	tanstack-data-loading	used	ok; redirect to tanstack.com/router/latest/docs/guide/data-loading noted
+F83	npm-next	used	ok; registry metadata (README empty)
+F83	npm-react	used	ok; registry metadata (README empty)
+F83	npm-next-playwright	used	renamed from npmjs-playwright (@next/playwright); registry metadata
+F83	npm-eslint-plugin-react-hooks	used	ok; registry metadata (README empty)
+F83	npm-spin-delay	used	README does not show 2.0.1, part not supported
+F83	npm-vercel-next-browser	used	renamed from npmjs-next-browser (poor id); README does not show 0.7.1 or the stop since 2026-04 (registry last publish 2026-04-17 not in snapshot), part not supported
+F84	react-19-2	used	author corrected to React Team; published_from url left
+F85	react-usetransition	used	part not supported: nested Suspense boundary exception stated on the page is not in the claim
+F86	react-hydrateroot	used	kind article to docs; anchor under the second 'Pitfall' heading
+F87	vercel-next-js-caching	used	rename from vercel-caching
+F89	vercel-image-component	used	ok (Image part only)
+F89	vercel-font-module	used	closed on the font half (no layout shift); the row claim about next/image is not supported here, the image page is already used
+F90	web-dev-optimize-cumulative-layout-shift	used	author and published corrected (2020-05-05) from byline
+F91	web-dev-cumulative-layout-shift-cls	used	ok
+F92	google-content-visibility-css-property	used	renamed from web-dev-content-visibility-new-css
+F93	mdn-scrollbar-gutter	used	rename from mdn-web-docs-scrollbar-gutter-css-property; redirect noted
+F94	atlassian-design-skeleton-usage-components	used	kind docs
+F94	atlassian-design-spinner-usage-components	used	closed on spinner usage; the row claim (skeleton with final content dimensions) is on the skeleton page, not supported here
+F95	carbon-design-system-loading	used	part of fontes claim not supported: skeleton matching final content dimensions is not on the page; redirect noted
+F96	nielsen-response-times-3-important	used	frontmatter published 1993-01-01 is not shown by the snapshot; left unchanged
+F97	smeijer-spin-delay-smart-spinner	used	ok; 500 ms and 200 ms defaults in the README API section
+D14	openai-harness-engineering	pending	HTTP 403, no snapshot; primary text never read; left pending, no finish
+D29	npm-vercel-next-browser	used	already registered through F83
+D32	spotify-context-engineering-background-agents-2	used	renamed from engineer-background-coding-agents-context; published corrected to 2025-11-24 (in snapshot); 3 claims
+D33	nextjs-loading-js	used	renamed from vercel-loading-js; 3 claims; no published date in snapshot, left unknown
