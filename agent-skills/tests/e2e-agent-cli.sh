@@ -1,0 +1,524 @@
+#!/usr/bin/env bash
+# End-to-end check of the agent CLI: bkf task, launch and hooks, the crew, delegate and merge-queue scripts,
+# a plan run, the bkf suites, and (with AGENTIC_ROOT) the Agentic app's bkf client. No model is called and
+# nothing is written under the real home, the user's task store or the user's tmux server: the run uses a
+# sandbox home, a temporary task store and a throwaway tmux server (tmux -L <unique>), killed on exit.
+# Usage: agent-skills/tests/e2e-agent-cli.sh
+#   AGENTIC_ROOT=<Agentic checkout>  also runs the app cases (the bkf contract and the build); without it they are SKIP.
+# Prints PASS <case>, FAIL <case>: <why> or SKIP <case>: <why>, one line per case. Exit 0 only when no case fails.
+set -uo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+bkf_root=$(git -C "$here" rev-parse --show-toplevel)
+real_home=$HOME
+real_tasks=$real_home/.local/state/bkf/tasks
+failed=0
+CASE= WHY=
+
+begin() { CASE=$1; WHY=; }
+# check WHY COMMAND...: records WHY when the command fails.
+check() { local why=$1; shift; "$@" >/dev/null 2>&1 || WHY="${WHY:+$WHY; }$why"; }
+# eq GOT WANT WHY: records WHY with both values when they differ.
+eq() { [ "$1" = "$2" ] || WHY="${WHY:+$WHY; }$3 (got '$1', expected '$2')"; }
+end() {
+  if [ -z "$WHY" ]; then echo "PASS $CASE"; else echo "FAIL $CASE: $WHY"; failed=1; fi
+}
+skip() { echo "SKIP $1: $2"; }
+
+# ---- Preconditions: a case that cannot run here is SKIP with its reason.
+missing=
+command -v tmux >/dev/null || missing="tmux is not installed"
+command -v uv >/dev/null || missing="${missing:+$missing; }uv is not installed"
+py=
+[ -z "$missing" ] && py="$(uv tool dir)/bkf-tooling/bin/python3"
+if [ -n "$missing" ]; then bkf_missing=$missing; elif [ ! -x "$py" ]; then bkf_missing="the bkf tool environment is missing ($py)"; else bkf_missing=; fi
+uv_tool_dir=$(uv tool dir 2>/dev/null)
+tmux_ls_before=$(command tmux ls 2>&1)
+real_tasks_before=$(ls -A "$real_tasks" 2>/dev/null | sort)
+
+# ---- Sandbox: a home of its own, a temporary task store, a throwaway tmux server, and fake agents first on PATH.
+work=$(mktemp -d "${TMPDIR:-/tmp}/e2e-agent-cli.XXXXXX")
+work=$(cd "$work" && pwd -P)
+sock="e2e-agent-cli-$$"
+cleanup() {
+  command tmux -L "$sock" kill-server 2>/dev/null
+  if [ -n "${E2E_KEEP:-}" ]; then echo "kept sandbox: $work" >&2; else rm -rf "$work"; fi
+}
+trap cleanup EXIT
+
+export HOME=$work/home
+mkdir -p "$HOME" "$work/bin" "$work/calls" "$work/behave" "$work/repos" "$work/state"
+export UV_TOOL_DIR=$uv_tool_dir
+export E2E=$work BKF_TASKS_DIR=$work/tasks BKF_TMUX_SOCKET=$sock SHELL=/bin/sh
+export XDG_STATE_HOME=$work/xdg-state WATCH_WAITS=$work/waits
+unset TMUX TMUX_PANE TERM_PROGRAM BKF_TASK BKF_DELEGATED
+export PATH=$work/bin:$PATH
+
+if [ -z "$bkf_missing" ]; then
+  # The bkf shim runs this worktree's tooling, not the installed copy.
+  cat >"$work/bin/bkf" <<SHIM
+#!/usr/bin/env bash
+PYTHONPATH="$bkf_root/bkf/tooling" exec "$py" -m bkf_cli "\$@"
+SHIM
+  chmod +x "$work/bin/bkf"
+fi
+
+# Fake Claude: records its call under $E2E/calls, then runs the behaviour a case wrote to $E2E/behave/claude.
+cat >"$work/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+prefix=$(mktemp "$E2E/calls/claude.XXXXXX")
+printf '%s\n' "$@" >"$prefix.args"
+if [ "$#" -gt 0 ]; then printf '%s' "${!#}" >"$prefix.prompt"; fi
+{
+  printf 'pwd=%s\n' "$(pwd -P)"
+  printf 'BKF_TASK=%s\n' "${BKF_TASK-unset}"
+  printf 'BKF_DELEGATED=%s\n' "${BKF_DELEGATED-unset}"
+} >"$prefix.env"
+if [ -f "$E2E/behave/claude" ]; then bash "$E2E/behave/claude" "$prefix"; fi
+FAKE
+chmod +x "$work/bin/claude"
+
+# Fake Codex: the fake the plan tests use (it records prompts, edits the checkout as FAKE_IMPLS says, and writes verdicts).
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import plan_test_support as p; sys.stdout.write(p._FAKE_CODEX)' \
+  "$bkf_root/agent-skills/skills/agentic-work/tests" >"$work/bin/codex" 2>"$work/codex-fake.err" || true
+chmod +x "$work/bin/codex"
+
+behave() { printf '%s\n' "$2" >"$E2E/behave/$1"; }
+unbehave() { rm -f "$E2E/behave/$1"; }
+clear_calls() { rm -f "$work"/calls/*; }
+status_is() { [ "$(field "$1" status)" = "$2" ]; }
+first_call() { ls "$work"/calls/claude.*.env 2>/dev/null | head -1 | sed 's/\.env$//'; }
+has_call() { [ -n "$(first_call)" ]; }
+env_field() { sed -n "s/^$2=//p" "$1.env"; }
+json_field() { python3 -c 'import json,sys; v=json.load(open(sys.argv[1]))
+for k in sys.argv[2].split("."):
+    v = None if v is None else v.get(k)
+print("" if v is None else v)' "$1" "$2"; }
+
+# A tmux call on the throwaway server only.
+t() { command tmux -L "$sock" "$@"; }
+# wait_for SECONDS COMMAND...: true once the command succeeds, false after the time.
+wait_for() {
+  local secs=$1 i
+  shift
+  for ((i = 0; i < secs * 10; i++)); do "$@" && return 0; sleep 0.1; done
+  "$@"
+}
+
+# A git repository with one commit and a tracked seed.txt, under the sandbox.
+mkrepo() {
+  local dir=$work/repos/$1
+  mkdir -p "$dir"
+  printf 'seed\n' >"$dir/seed.txt"
+  git init -q -b main "$dir"
+  git -C "$dir" add -A
+  git -C "$dir" -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m init
+  printf '%s\n' "$dir"
+}
+
+# A bkf task id found by its title (the newest one).
+card_by_title() {
+  bkf task list --json | python3 -c 'import json,sys
+found = [t for t in json.load(sys.stdin)["tasks"] if t["title"] == sys.argv[1]]
+print(found[-1]["id"] if found else "")' "$1"
+}
+# One field of a card: <card id> <dotted key>.
+field() {
+  bkf task show "$1" --json | python3 -c 'import json,sys
+v = json.load(sys.stdin)
+for k in sys.argv[1].split("."):
+    v = None if v is None else v.get(k)
+print("" if v is None else v)' "$2"
+}
+# A new window of the main session that runs a script (text on $2, in a file of the run folder) with the
+# given VAR=value environment; the window stays after the script ends. Prints the window id.
+spawn() {
+  local name=$1 dir=$2 text=$3 file kv
+  shift 3
+  mkdir -p "$work/run"
+  file=$work/run/$name.sh
+  printf '%s\n' "$text" >"$file"
+  local -a envs=()
+  for kv in "$@"; do envs+=(-e "$kv"); done
+  t new-window -d -P -F '#{window_id}' -t main: -n "$name" -c "$dir" ${envs[@]+"${envs[@]}"} "sh '$file'; sleep 600"
+}
+# A tmux for the watcher scripts, which call plain tmux and do not read BKF_TMUX_SOCKET: this one adds -L.
+real_tmux=$(command -v tmux)
+mkdir -p "$work/tmuxshim"
+cat >"$work/tmuxshim/tmux" <<SHIM
+#!/bin/sh
+exec "$real_tmux" -L "$sock" "\$@"
+SHIM
+chmod +x "$work/tmuxshim/tmux"
+window_index() { t list-windows -t main -F '#{window_index} #{window_name}' | awk -v n="$1" '{name=substr($0, index($0, " ")+1)} name==n {print $1}'; }
+window_id_named() { t list-windows -t main -F '#{window_id} #{window_name}' | awk -v n="$1" '{name=substr($0, index($0, " ")+1)} name==n {print $1}'; }
+
+# ---- Cases.
+
+case_handoff() {
+  begin "handoff from inside tmux"
+  local repo prompt out win card prefix
+  repo=$(mkrepo handoff)
+  prompt=$work/handoff-prompt.md
+  printf 'Handoff line one.\nLine two: "quoted" text, a $ sign that stays literal.\n' >"$prompt"
+  clear_calls
+  behave claude 'while [ ! -e "$E2E/release-handoff" ]; do sleep 0.1; done
+bkf task ready --no-git --note "handoff done"'
+  out=$work/out-handoff
+  win=$(spawn caller-handoff "$repo" "bkf launch claude --dir '$repo' --prompt-file '$prompt' --title 'handoff e2e' >'$out.stdout' 2>'$out.stderr'; echo \$? >'$out.rc'")
+  wait_for 30 test -s "$out.rc"
+  eq "$(cat "$out.rc" 2>/dev/null)" 0 "bkf launch from the window exits 0"
+  card=$(card_by_title 'handoff e2e')
+  check "the card exists" test -n "$card"
+  if [ -n "$card" ]; then
+    eq "$(head -1 "$out.stdout")" "$card" "the launch prints the card id first"
+    wait_for 10 has_call
+    eq "$(field "$card" kind)" handoff "the card is a handoff"
+    eq "$(field "$card" status)" working "the card is working while the session runs"
+    eq "$(field "$card" session.tmux_window)" "$(window_id_named 'handoff e2e')" "the card names the window that runs it"
+    eq "$(window_index 'handoff e2e')" "$(( $(window_index caller-handoff) + 1 ))" "the window is placed right after the caller"
+    prefix=$(first_call)
+    eq "$(cat "$prefix.prompt" 2>/dev/null)" "$(cat "$prompt")" "the agent got the whole prompt"
+    eq "$(env_field "$prefix" BKF_TASK)" "$card" "the agent runs with BKF_TASK set to the card"
+    eq "$(env_field "$prefix" BKF_DELEGATED)" unset "a handoff session is not delegated"
+    eq "$(env_field "$prefix" pwd)" "$repo" "the agent starts in the folder it was given"
+    touch "$work/release-handoff"
+    wait_for 20 status_is "$card" review
+    eq "$(field "$card" status)" review "the card is in review after the agent ran bkf task ready"
+    eq "$(field "$card" note)" "handoff done" "the card keeps the note of ready"
+  fi
+  unbehave claude
+  end
+}
+
+case_handoff_parent() {
+  begin "handoff with parent"
+  local repo prompt parent out child
+  repo=$(mkrepo parent)
+  prompt=$work/handoff-prompt.md
+  parent=$(bkf task new --repo "$repo" --title 'parent e2e')
+  clear_calls
+  unbehave claude
+  out=$work/out-parent
+  spawn caller-parent "$repo" "bkf launch claude --dir '$repo' --prompt-file '$prompt' --title 'child e2e' >'$out.stdout' 2>'$out.stderr'; echo \$? >'$out.rc'" "BKF_TASK=$parent" >/dev/null
+  wait_for 30 test -s "$out.rc"
+  eq "$(cat "$out.rc" 2>/dev/null)" 0 "bkf launch from the window exits 0"
+  child=$(card_by_title 'child e2e')
+  check "the child card exists" test -n "$child"
+  if [ -n "$child" ]; then
+    eq "$(field "$child" parent)" "$parent" "the new card's parent is the card named by BKF_TASK"
+  fi
+  end
+}
+
+case_hook() {
+  begin "task session hook"
+  local repo task unit unknown rc1 rc2 rc3 o1 o2 o3
+  repo=$(mkrepo hook)
+  task=$(bkf task new --repo "$repo" --title 'hook task')
+  unit=$(bkf task new --repo "$repo" --title 'hook unit' --kind unit)
+  unknown=t20990101-000000-dead
+  o1=$(BKF_TASK=$task bkf hooks run task); rc1=$?
+  o2=$(BKF_TASK=$unit bkf hooks run task); rc2=$?
+  o3=$(BKF_TASK=$unknown bkf hooks run task); rc3=$?
+  eq "$rc1$rc2$rc3" 000 "the hook exits 0 for every id"
+  case "$o1" in *"This session works on task $task (task): hook task"*) ;; *) WHY="${WHY:+$WHY; }the task card gets its session text (got '$o1')" ;; esac
+  eq "$o2" "" "a unit card gets no text (its owner moves it)"
+  eq "$o3" "" "an unknown id gets no text"
+  end
+}
+
+case_app_style() {
+  begin "app-style launch from outside tmux"
+  local repo card slug session window worktree expected_session json_out prefix
+  repo=$(mkrepo app-style)
+  card=$(bkf task new --repo "$repo" --title 'App style task')
+  slug="app-style-task-${card: -4}"
+  clear_calls
+  unbehave claude
+  json_out=$work/app.json
+  env -u TMUX -u TMUX_PANE -u TERM_PROGRAM bkf launch claude --dir "$repo" --task "$card" --no-attach --json --size 120x40 \
+    >"$json_out" 2>"$work/app.err"
+  eq "$?" 0 "the launch exits 0 ($(cat "$work/app.err" | head -1))"
+  session=$(json_field "$json_out" session)
+  window=$(json_field "$json_out" window)
+  expected_session=$(python3 -c 'import hashlib, os, re, sys
+repo = sys.argv[1]
+slug = re.sub(r"[^a-z0-9]+", "-", os.path.basename(repo).lower()).strip("-")[:41].rstrip("-") or "repo"
+print(slug + "-" + hashlib.sha1(repo.encode()).hexdigest()[:6])' "$repo")
+  eq "$session" "$expected_session" "the session is <slug>-<hash6> of the repository"
+  eq "$(bkf launch --session-name --dir "$repo")" "$session" "--session-name prints the same session"
+  eq "$(t list-windows -t "=$session" 2>/dev/null | wc -l | tr -d ' ')" 1 "the session has exactly one window"
+  eq "$(json_field "$json_out" task)" "$card" "--json names the card"
+  eq "$(json_field "$json_out" worktree)" "$repo/.claude/worktrees/$slug" "the worktree is under the repository's .claude/worktrees"
+  eq "$(json_field "$json_out" branch)" "task/$slug" "the branch is task/<slug>"
+  check "the worktree exists" test -d "$repo/.claude/worktrees/$slug"
+  wait_for 10 has_call
+  prefix=$(first_call)
+  worktree=$repo/.claude/worktrees/$slug
+  eq "$(env_field "$prefix" pwd)" "$(cd "$worktree" 2>/dev/null && pwd -P)" "the agent runs in the task worktree"
+  eq "$(env_field "$prefix" BKF_TASK)" "$card" "the agent runs with BKF_TASK set to the card"
+  check "the worktree folder is excluded in the repository" bash -c \
+    'grep -qx "/.claude/worktrees/" "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir)/info/exclude"' _ "$repo"
+  eq "$(field "$card" status)" working "the card is working"
+  eq "$(field "$card" session.tmux_session)" "$session" "the card names the session"
+  eq "$(field "$card" session.tmux_window)" "$window" "the card names the window"
+  end
+}
+
+case_crew() {
+  begin "crew of two"
+  local repo crew orch_win crew_card b_card c_card orch_rc
+  repo=$(mkrepo crew)
+  crew=$work/crew-e2e
+  mkdir -p "$crew/done"
+  printf 'Sub-plan B: first part.\n' >"$crew/b.md"
+  printf 'Sub-plan C: second part.\n' >"$crew/c.md"
+  clear_calls
+  # Each coordinator writes its done file and marks its card ready; crew-c waits, so await-crew sees a partial phase first.
+  cat >"$E2E/behave/claude" <<BEHAVE
+name=\$(sed -n '/^--name\$/{n;p;q;}' "\$1.args")
+if [ "\$name" = crew-c ]; then sleep 4; fi
+printf 'done %s\n' "\$name" >"$crew/done/\${name#crew-}.md"
+bkf task ready --no-git --note "\$name done"
+BEHAVE
+  # The orchestrator's window launches both coordinators, then a window runs await-crew with a command that records each card's status.
+  orch_win=$(spawn orch-crew "$repo" "'$bkf_root/agent-skills/skills/crew/scripts/launch-coordinator.sh' b orch-1 '$repo' '$crew/b.md' >'$work/crew-b.out' 2>'$work/crew-b.err'; rb=\$?
+'$bkf_root/agent-skills/skills/crew/scripts/launch-coordinator.sh' c orch-1 '$repo' '$crew/c.md' >'$work/crew-c.out' 2>'$work/crew-c.err'; echo \"\$rb \$?\" >'$work/crew.rc'")
+  wait_for 30 test -s "$work/crew.rc"
+  eq "$(cat "$work/crew.rc" 2>/dev/null)" "0 0" "both launches exit 0"
+  crew_card=$(cat "$crew/cards/crew" 2>/dev/null)
+  b_card=$(cat "$crew/cards/b" 2>/dev/null)
+  c_card=$(cat "$crew/cards/c" 2>/dev/null)
+  check "a crew card and two coordinator cards exist" test -n "$crew_card" -a -n "$b_card" -a -n "$c_card"
+  if [ -n "$crew_card" ]; then
+    eq "$(field "$crew_card" kind)" crew "the crew card is kind crew"
+    eq "$(field "$crew_card" status)" working "the crew card is working in the orchestrator's window"
+    eq "$(field "$crew_card" session.tmux_window)" "$orch_win" "the crew card names the orchestrator's window"
+    eq "$(bkf task list --json | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin)["tasks"] if t["kind"] == "crew"))')" 1 "there is one crew card"
+  fi
+  if [ -n "$b_card" ] && [ -n "$c_card" ]; then
+    eq "$(field "$b_card" kind)" coordinator "crew-b's card is a coordinator"
+    eq "$(field "$c_card" kind)" coordinator "crew-c's card is a coordinator"
+    eq "$(field "$b_card" parent)" "$crew_card" "crew-b's card has the crew card as parent"
+    eq "$(field "$c_card" parent)" "$crew_card" "crew-c's card has the crew card as parent"
+  fi
+  cat >"$crew/snap.sh" <<'SNAP'
+#!/bin/sh
+for f in "$1"/cards/*; do
+  n=${f##*/}
+  [ "$n" = crew ] && continue
+  status=$(bkf task show "$(cat "$f")" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+  printf '%s %s\n' "$n" "$status" >>"$1/ran"
+done
+SNAP
+  spawn await-crew "$repo" "PATH=$work/tmuxshim:\$PATH AWAIT_INTERVAL=1 WATCH_INTERVAL=1 WATCH_NOTIFY=/usr/bin/true WATCH_WAITS='$work/waits' '$bkf_root/agent-skills/skills/crew/scripts/await-crew.sh' '$crew' -- sh '$crew/snap.sh' '$crew' >'$work/await.out' 2>&1; echo \$? >'$work/await.rc'" >/dev/null
+  wait_for 60 test -s "$work/await.rc"
+  eq "$(cat "$work/await.rc" 2>/dev/null)" 0 "await-crew exits 0 after running its command"
+  eq "$(cat "$crew/ran" 2>/dev/null | paste -sd, -)" "b review,c review" "the command ran once, after both coordinators were in review"
+  unbehave claude
+  end
+}
+
+case_watch() {
+  begin "watcher attention"
+  local repo card win state pid1 pid2 i
+  repo=$(mkrepo watch)
+  card=$(bkf task new --repo "$repo" --title 'watch card')
+  win=$(spawn still-win "$repo" "printf 'steady\n'; sleep 600")
+  state=$work/watch-state
+  mkdir -p "$state"
+  PATH=$work/tmuxshim:$PATH WATCH_INTERVAL=1 WATCH_STILL=2 WATCH_NOTIFY=/usr/bin/true \
+    "$bkf_root/agent-skills/skills/crew/scripts/watch-coordinators.sh" "$state" "$win=$card" >"$work/watch1.out" 2>&1
+  eq "$(cat "$work/watch1.out" | head -1)" "STILL $win" "the watcher alerts STILL for the unchanged pane"
+  eq "$(field "$card" attention.reason)" still "the card's attention is still"
+  t send-keys -t "$win" 'echo changed' Enter
+  PATH=$work/tmuxshim:$PATH WATCH_INTERVAL=1 WATCH_STILL=600 WATCH_NOTIFY=/usr/bin/true \
+    "$bkf_root/agent-skills/skills/crew/scripts/watch-coordinators.sh" "$state" "$win=$card" >"$work/watch2.out" 2>&1 &
+  pid2=$!
+  for ((i = 0; i < 150; i++)); do [ -z "$(field "$card" attention.reason)" ] && break; sleep 0.1; done
+  eq "$(field "$card" attention.reason)" "" "the first change of the pane clears the card's attention"
+  kill "$pid2" 2>/dev/null; wait "$pid2" 2>/dev/null
+  end
+}
+
+case_delegate() {
+  begin "delegate run"
+  local repo ok_runs fail_runs prompt
+  repo=$(mkrepo delegate)
+  prompt=$work/delegate-brief.md
+  printf 'Change seed.txt by appending a line.\n' >"$prompt"
+  mkdir -p "$work/state/delegate-ok" "$work/state/delegate-fail"
+  ok_runs=$work/delegate-runs/delegate/edit-ok
+  fail_runs=$work/delegate-runs/delegate/edit-fail
+  (
+    cd "$repo" && DELEGATE_RUNS_DIR=$work/delegate-runs FAKE_STATE=$work/state/delegate-ok \
+      FAKE_IMPLS='{"1":"echo change >> seed.txt"}' FAKE_REVIEW_VERDICTS='["pass"]' \
+      bash "$bkf_root/agent-skills/skills/agentic-work/scripts/delegate-run.sh" edit-ok "$prompt" >"$work/delegate-ok.out" 2>&1
+  )
+  eq "$?" 0 "delegate-run exits 0 for a passing agent"
+  local ok_card
+  ok_card=$(cat "$ok_runs/task" 2>/dev/null)
+  check "the run folder names its card" test -n "$ok_card"
+  if [ -n "$ok_card" ]; then
+    eq "$(field "$ok_card" status)" review "the unit card is in review"
+    eq "$(field "$ok_card" note)" "1 files changed" "the card notes the changed file count"
+    eq "$(field "$ok_card" kind)" unit "the card is a unit card"
+    case "$(field "$ok_card" worktree.path)" in */.claude/worktrees/*) ;; *) WHY="${WHY:+$WHY; }the worktree is under .claude/worktrees" ;; esac
+  fi
+  (
+    cd "$repo" && DELEGATE_RUNS_DIR=$work/delegate-runs FAKE_STATE=$work/state/delegate-fail \
+      FAKE_IMPLS='{"1":"exit 3"}' FAKE_REVIEW_VERDICTS='["pass"]' \
+      bash "$bkf_root/agent-skills/skills/agentic-work/scripts/delegate-run.sh" edit-fail "$prompt" >"$work/delegate-fail.out" 2>&1
+  )
+  eq "$?" 3 "delegate-run exits with the agent's status 3"
+  local fail_card
+  fail_card=$(cat "$fail_runs/task" 2>/dev/null)
+  check "the failed run folder names its card" test -n "$fail_card"
+  if [ -n "$fail_card" ]; then
+    eq "$(field "$fail_card" status)" failed "the card is failed"
+    eq "$(field "$fail_card" exit)" 3 "the card records exit 3"
+  fi
+  end
+}
+
+case_merge_queue() {
+  begin "merge queue"
+  local repo wt branch card main_sha queue=$bkf_root/agent-skills/skills/git-merge-queue/scripts/merge_queue.py
+  repo=$(mkrepo merge)
+  card=$(bkf task new --repo "$repo" --title 'merge me' --kind task)
+  bkf task worktree "$card" >/dev/null
+  wt=$(field "$card" worktree.path)
+  branch=$(field "$card" worktree.branch)
+  check "the card has a worktree and branch" test -n "$wt" -a -n "$branch"
+  bkf task start "$card" --worktree "$wt" --branch "$branch" >/dev/null
+  printf 'feature\n' >"$wt/feature.txt"
+  git -C "$wt" add feature.txt
+  git -C "$wt" -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m feature
+  main_sha=$(git -C "$repo" rev-parse main)
+  (
+    cd "$wt" && python3 "$queue" register --session merge-me --branch "$branch" --plans "" --base "$main_sha" \
+      --fast pass --full pass >"$work/mq-register.out" 2>&1
+  )
+  eq "$?" 0 "register exits 0"
+  eq "$(field "$card" status)" review "the card is in review once queued"
+  eq "$(field "$card" note)" "queued for merge" "the card notes it is queued for merge"
+  (
+    cd "$repo" && python3 "$queue" integrate --fast-check true --full-check true >"$work/mq-integrate.out" 2>&1
+  )
+  eq "$?" 0 "integrate exits 0"
+  eq "$(field "$card" status)" done "the card is done after the merge"
+  eq "$(git -C "$repo" show main:feature.txt 2>/dev/null)" feature "the branch's change is on main"
+  end
+}
+
+case_plan() {
+  begin "plan run"
+  local repo plan_dir plan_runs run_card unit_card
+  repo=$(mkrepo plan)
+  plan_dir=$work/plan
+  mkdir -p "$plan_dir" "$work/guides" "$work/state/plan"
+  printf 'Goal\n' >"$plan_dir/goal.md"
+  printf 'guide\n' >"$work/guides/agentic-work-implementation.md"
+  printf 'guide\n' >"$work/guides/agentic-work-review.md"
+  printf '## Result\nImplement it.\n' >"$plan_dir/unit.md"
+  printf 'unit.md\n' >"$plan_dir/plan.txt"
+  plan_runs=$work/plan-runs
+  (
+    cd "$repo" && PLAN_RUNS_DIR=$plan_runs PLAN_GUIDES=$work/guides FAKE_STATE=$work/state/plan \
+      FAKE_IMPLS='{}' FAKE_REVIEW_VERDICTS='["pass"]' HARNESS_BACKEND=codex \
+      bash "$bkf_root/agent-skills/skills/agentic-work/scripts/plan-run.sh" start --in-place sample \
+      "$plan_dir/goal.md" "$plan_dir/plan.txt" >"$work/plan.out" 2>"$work/plan.err"
+  )
+  eq "$?" 0 "plan-run exits 0 ($(head -1 "$work/plan.err"))"
+  run_card=$(cat "$plan_runs/sample/task" 2>/dev/null)
+  unit_card=$(cat "$plan_runs/sample/01-unit/task" 2>/dev/null)
+  check "the run and unit cards exist" test -n "$run_card" -a -n "$unit_card"
+  if [ -n "$run_card" ] && [ -n "$unit_card" ]; then
+    eq "$(field "$run_card" status)" review "the run card is in review at the final report"
+    eq "$(field "$unit_card" status)" done "the unit card is done"
+    eq "$(field "$unit_card" parent)" "$run_card" "the unit card's parent is the run card"
+    eq "$(field "$unit_card" kind)" unit "the unit card is kind unit"
+  fi
+  end
+}
+
+# A suite: its command runs in the bkf worktree; PASS when it exits 0.
+suite() {
+  local name=$1 log
+  log=$work/suite-$(echo "$name" | tr -c 'a-z0-9' '-').log
+  shift
+  if (cd "$bkf_root" && "$@") >"$log" 2>&1; then
+    echo "PASS $name"
+  else
+    echo "FAIL $name: exit $? (last line: $(tail -n 1 "$log" | tr -d '\r'))"
+    failed=1
+  fi
+}
+
+case_no_leftovers() {
+  begin "no leftovers"
+  local tmux_ls_after real_tasks_after
+  t kill-server 2>/dev/null
+  check "the throwaway tmux server is gone" bash -c '! command tmux -L "$1" ls >/dev/null 2>&1' _ "$sock"
+  tmux_ls_after=$(command tmux ls 2>&1)
+  eq "$tmux_ls_after" "$tmux_ls_before" "the user's default tmux server has no new session"
+  real_tasks_after=$(ls -A "$real_tasks" 2>/dev/null | sort)
+  eq "$real_tasks_after" "$real_tasks_before" "the real task store has nothing new"
+  end
+}
+
+# ---- Run the cases.
+
+if [ -n "$bkf_missing" ]; then
+  for c in "handoff from inside tmux" "handoff with parent" "task session hook" "app-style launch from outside tmux" \
+    "crew of two" "watcher attention" "delegate run" "merge queue" "plan run"; do
+    skip "$c" "$bkf_missing"
+  done
+  skip "bkf suites" "$bkf_missing"
+else
+  t new-session -d -s main -n boot "sleep 3600"
+  case_handoff
+  case_handoff_parent
+  case_hook
+  case_app_style
+  case_crew
+  case_watch
+  case_delegate
+  case_merge_queue
+  case_plan
+
+  if [ -n "${AGENTIC_ROOT:-}" ] && [ -d "$AGENTIC_ROOT" ]; then
+    app_log=$work/app-contract.log
+    (cd "$AGENTIC_ROOT" && AGENTIC_BKF_LIVE="$work/bin/bkf" swift run AgenticFoundationRunner >"$app_log" 2>&1)
+    contract_rc=$?
+    live_lines=$(grep -c '^[A-Z]* bkf live' "$app_log")
+    live_bad=$(grep '^[A-Z]* bkf live' "$app_log" | grep -v '^PASS ' | head -3)
+    if [ "$contract_rc" -eq 0 ] && [ "$live_lines" -gt 0 ] && [ -z "$live_bad" ]; then
+      echo "PASS app contract"
+    else
+      echo "FAIL app contract: exit $contract_rc, $live_lines bkf live lines, not passing: ${live_bad:-none} (log $app_log)"
+      failed=1
+    fi
+    app_build_log=$work/app-build.log
+    (cd "$AGENTIC_ROOT" && scripts/check.sh >"$app_build_log" 2>&1)
+    if [ $? -eq 0 ]; then echo "PASS app build"; else echo "FAIL app build: $(tail -n 1 "$app_build_log") (log $app_build_log)"; failed=1; fi
+  else
+    skip "app contract" "set AGENTIC_ROOT to the Agentic checkout to run it"
+    skip "app build" "set AGENTIC_ROOT to the Agentic checkout to run it"
+  fi
+
+  suite "bkf tooling tests" "$py" -m unittest discover -s bkf/tooling/tests
+  suite "harness tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/harness/tests
+  suite "harness inject shell test" bash agent-skills/harness/tests/test-inject.sh
+  suite "agentic-work tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/skills/agentic-work/tests
+  suite "agentic-work delegate shell test" bash agent-skills/skills/agentic-work/tests/test-delegate-run.sh
+  suite "agentic-work plan gate shell test" bash agent-skills/skills/agentic-work/tests/test-plan-run-gate.sh
+  suite "crew shell tests" bash -c 'for f in agent-skills/skills/crew/tests/test-*.sh; do bash "$f" || exit 1; done'
+  suite "merge queue tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/skills/git-merge-queue/tests
+  suite "bkf skills check" bkf skills --check .
+  suite "bkf validate" bkf validate .
+fi
+
+case_no_leftovers
+exit "$failed"

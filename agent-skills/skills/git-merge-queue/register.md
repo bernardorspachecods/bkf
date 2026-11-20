@@ -15,6 +15,8 @@ merge, no cleanup, no waiting for questions.
      way the run records them. Write no prose and no new document for the
      queue.
    - The command refuses unless both `--fast` and `--full` are `pass`.
+   - It also moves your task card to review, with the note "queued for merge", when
+     exactly one card is on your branch and it is working or in review.
 3. Tell the user the entry is registered, and stop.
 
 Do not commit to the branch afterwards: the entry goes stale and is skipped.

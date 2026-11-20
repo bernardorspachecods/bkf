@@ -26,6 +26,7 @@ class PipelineTests(unittest.TestCase):
         self.runs = self.root / "runs"
         self.definition = self.root / "workflow.py"
         self.definition.write_text(textwrap.dedent("""
+            import os
             from pathlib import Path
             from harness.engine.agentstep import run_agent_step
             from harness.gate import run_gate
@@ -82,6 +83,9 @@ class PipelineTests(unittest.TestCase):
                     def finish(ctx):
                         (ctx.run.path / "report.md").write_text("ready\\n")
                     return Step("final", "review", finish)
+                def run_state(self, ctx, state, reason=""):
+                    with open(os.environ["STATE_LOG"], "a", encoding="utf-8") as log:
+                        log.write("\\t".join((ctx.run.name, state, reason)) + "\\n")
                 def board(self, ctx):
                     return "BOARD\\n"
                 def ready_path(self, ctx):
@@ -91,7 +95,7 @@ class PipelineTests(unittest.TestCase):
 
             WORKFLOW = Work()
         """), encoding="utf-8")
-        self.env = {"HARNESS_RUNS_DIR": str(self.runs)}
+        self.env = {"HARNESS_RUNS_DIR": str(self.runs), "STATE_LOG": str(self.root / "states.log")}
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         codex = self.bin_dir / "codex"
@@ -289,6 +293,27 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("resume refused", err)
         self.assertEqual((self.runs / "refused" / "status.log").read_text(), before)
+
+    def test_run_states_reach_the_workflow(self):
+        log = self.root / "states.log"
+
+        def seen():
+            lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+            return [tuple(line.split("\t")[:2]) for line in lines]
+
+        self.call("start", "-p", "each", "states")
+        self.assertEqual(seen(), [("states", "paused")])
+        self.call("resume", "-p", "none", "states")
+        self.assertEqual(seen()[1:], [("states", "resumed"), ("states", "ready")])
+        self.call("start", "stopped", "stop")
+        self.assertEqual(seen()[-1], ("stopped", "stopped"))
+        (self.runs / "stopped" / "stop").unlink()
+        self.call("resume", "stopped")
+        self.assertEqual(seen()[-2:], [("stopped", "resumed"), ("stopped", "ready")])
+        self.call("start", "crashed", "crash")
+        self.assertEqual(seen()[-1], ("crashed", "crashed"))
+        self.assertEqual(self.call("finish", "--discard", "states")[0], 0)
+        self.assertEqual(seen()[-1], ("states", "discarded"))
 
     def test_step_stop_is_not_marked_done(self):
         self.call("start", "stopped", "stop")

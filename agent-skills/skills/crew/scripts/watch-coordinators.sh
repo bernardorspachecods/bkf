@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Watch the tmux panes of a crew's coordinators without the model, and exit when one needs attention.
-# Usage: watch-coordinators.sh <state-dir> <target>...        (target: tmux target, e.g. main:crew-sarp)
+# Usage: watch-coordinators.sh <state-dir> <target>...
+#   target: a tmux target, e.g. main:crew-sarp; or <tmux-target>=<card-id>, a target with its bkf task card.
+#   With a card, each alert also sets the card's attention (`bkf task attention <card> --set prompt|still|
+#   overdue|gone`), and the first change of the pane after an alert clears it (`--clear`). A failing bkf is
+#   printed on standard error and never stops the watcher. Without a card, nothing touches bkf.
 # Env: WATCH_INTERVAL (seconds between checks, default 60), WATCH_STILL (seconds a pane may stay
 # unchanged, default 600), WATCH_REMIND (seconds before an unchanged alert repeats, default 3600),
 # WATCH_WAITS (folder where `harness quota-wait --announce` writes the
@@ -35,6 +39,15 @@ notify() {
   return 0
 }
 
+# Sets (--set REASON) or clears (--clear) a card's attention. A failure is printed on standard error only.
+card_attention() {
+  local out
+  if ! out=$(bkf task attention "$@" 2>&1); then
+    printf 'watch-coordinators: bkf task attention %s failed: %s\n' "$*" "$out" >&2
+  fi
+  return 0
+}
+
 clean=0
 trap '(( clean )) || { echo "WATCHER-EXIT"; notify "crew watcher stopped"; }' EXIT
 
@@ -43,21 +56,31 @@ shell_re='· [0-9]+ shells?[[:space:]]*$'
 prompt_re='Do you want to|\(y/n\)|❯ ?1\. Yes|Allow this|Esc to cancel|waiting for (your )?(approval|permission)'
 
 while :; do
-  alerts=(); pending_write=()
+  alerts=(); attn=(); pending_write=()
   now=$(date +%s)
-  for t in "$@"; do
+  for spec in "$@"; do
+    t=$spec; card=
+    if [[ $spec == *=* ]]; then t=${spec%=*}; card=${spec##*=}; fi
     f="$state/${t//[^A-Za-z0-9_-]/_}"
     if ! pane=$(tmux capture-pane -p -t "$t" 2>/dev/null); then
-      alerts+=("GONE $t"); continue
+      alerts+=("GONE $t"); [[ -n $card ]] && attn+=("$card|gone"); continue
     fi
     sum=$(printf '%s' "$pane" | cksum | cut -d' ' -f1)
     psum=; since=$now; alerted_sum=; alerted_at=0
     [[ -f $f ]] && read -r psum since alerted_sum alerted_at <"$f"
     [[ $alerted_sum == - ]] && alerted_sum=
     [[ $sum == "$psum" ]] || { since=$now; }
+    # The first change of the pane after an alert clears the card's attention.
+    if [[ -n $card && -n $alerted_sum && $sum != "$alerted_sum" ]]; then
+      card_attention "$card" --clear
+      alerted_sum=
+    fi
+    # The quota-wait file is keyed by the session name, crew-<name>: for a window id, that is the window's name.
+    key=${t#*:}
+    if [[ $t == @* ]]; then key=$(tmux display-message -p -t "$t" '#{window_name}' 2>/dev/null); fi
     kind=; limit=$still; again=$remind
     if printf '%s\n' "$pane" | tail -n 15 | grep -Eq "$prompt_re"; then kind=PROMPT
-    elif [[ -r $waits/${t#*:} ]] && read -r due <"$waits/${t#*:}" && [[ $due =~ ^[0-9]+$ ]]; then
+    elif [[ -r $waits/$key ]] && read -r due <"$waits/$key" && [[ $due =~ ^[0-9]+$ ]]; then
       # A quota wait announced when it ends: silent until that time has passed by the grace.
       (( now >= due + grace && now - since >= still )) && kind=OVERDUE
     else
@@ -66,6 +89,7 @@ while :; do
     if [[ -n $kind ]]; then
       if [[ $alerted_sum != "$sum" ]] || (( now - alerted_at >= again )); then
         alerts+=("$kind $t")
+        [[ -n $card ]] && attn+=("$card|$(printf '%s' "$kind" | tr '[:upper:]' '[:lower:]')")
         alerted_sum=$sum; alerted_at=$now
       fi
     fi
@@ -74,6 +98,7 @@ while :; do
   done
   if (( ${#alerts[@]} )); then
     printf '%s\n' "${alerts[@]}"
+    for a in ${attn[@]+"${attn[@]}"}; do card_attention "${a%%|*}" --set "${a#*|}"; done
     for w in ${pending_write[@]+"${pending_write[@]}"}; do printf '%s\n' "${w#*|}" >"${w%%|*}"; done
     notify "crew: ${alerts[*]}"
     clean=1; exit 0

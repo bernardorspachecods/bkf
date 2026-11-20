@@ -59,6 +59,11 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/tooling/bkf_cl
 - [source_page.py](/tooling/source_page.py) — Fetches HTML and extracts source metadata and readable text.
 - [source_record.py](/tooling/source_record.py) — Defines source record ids, metadata, and claim validation.
 - [source_store.py](/tooling/source_store.py) — Provides the store API, catalog updates, and Git commits.
+- [bkf_launch.py](/tooling/bkf_launch.py) — Opens an interactive Claude or Codex session in tmux with its task card, worktree and prompt copy.
+- [bkf_task.py](/tooling/bkf_task.py) — Handles the task command arguments, the git check of `ready`, and the exit statuses.
+- [task_store.py](/tooling/task_store.py) — Owns the machine-wide store of agent tasks: one folder per task, atomic locked writes, and the task transitions.
+- [task_tmux.py](/tooling/task_tmux.py) — Opens a window for a task's shell command in tmux, iTerm2 or Terminal.app, grouped by repository, and names each repository's tmux session.
+- [task_worktree.py](/tooling/task_worktree.py) — Creates or reuses the git worktree of a task under the main checkout's `.claude/worktrees` and records it on the task.
 - [audit.py](/tooling/audit.py) — Builds the whole-repository report of git changes and bundle health that the `bkf:` prompt prefix returns.
 - [read_guard.py](/tooling/read_guard.py) — Denies the first whole-file read of a large Markdown document with a navigation map and returns the map's section links.
 - [log_entry.py](/tooling/log_entry.py) — Appends user ideas and feedback to the selected bundle's ideas or feedback file.

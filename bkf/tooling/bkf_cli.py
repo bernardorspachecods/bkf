@@ -11,6 +11,7 @@ HELP_GROUPS = (
     "after editing documents",
     "session start and lookup",
     "install",
+    "called by skills and the app",
 )
 
 COMMANDS = {
@@ -67,6 +68,18 @@ COMMANDS = {
         "Preview, install, or check the agent prefix-mode and orientation hooks",
         "on a new machine, or when a hook seems missing or stale",
         "install",
+    ),
+    "task": (
+        "bkf_task",
+        "Record and read the state of agent tasks",
+        "not by hand, except 'bkf task ready' and 'bkf task done' inside a task's window",
+        "called by skills and the app",
+    ),
+    "launch": (
+        "bkf_launch",
+        "Open an interactive agent session in tmux, with its task card",
+        "called by the handoff and crew skills and the Agentic app; not by hand",
+        "called by skills and the app",
     ),
 }
 

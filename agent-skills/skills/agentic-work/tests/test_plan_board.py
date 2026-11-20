@@ -328,6 +328,22 @@ class PlanBoardTests(unittest.TestCase):
         ))
         self.assertTrue(output.getvalue().startswith("Kept in "))
 
+    def test_a_unit_folder_named_task_is_kept_and_only_card_files_are_left_out(self):
+        (self.run_path / "report.md").write_text("review\n", encoding="utf-8")
+        rounds = self.run_path / "task" / "rounds" / "1"
+        rounds.mkdir(parents=True)
+        (rounds / "verdict").write_text("pass\n", encoding="utf-8")
+        (self.run_path / "task" / "task").write_text("unit-card-id\n", encoding="utf-8")
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors), patch(
+            "plan_board._repo_root", return_value=str(self.fixture.repo.resolve())
+        ), patch("plan_cards.finish_run"):
+            WORKFLOW.finish(self.ctx())
+        destination = self.fixture.repo.resolve() / "records" / "plans" / "board"
+        self.assertEqual((destination / "task" / "rounds" / "1" / "verdict").read_text(), "pass\n")
+        self.assertFalse((destination / "task" / "task").exists())
+        self.assertFalse((destination / "task").is_file())
+
     def test_finish_refuses_existing_destination(self):
         (self.run_path / "report.md").write_text("review\n", encoding="utf-8")
         destination = self.fixture.repo.resolve() / "records" / "plans" / "board"

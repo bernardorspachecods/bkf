@@ -22,6 +22,8 @@ done
 echo "$model" >"$FAKE_MODEL"
 echo started >"$FAKE_RUN_MARKER"
 if [ -n "${FAKE_PROMPT:-}" ]; then cat >"$FAKE_PROMPT"; else cat >/dev/null; fi
+bkf task show "$(cat "$FAKE_TASK_FILE")" | sed -n 's/^status: //p' >"$FAKE_STATUS_SEEN"
+if [ -n "${FAKE_EXIT:-}" ]; then exit "$FAKE_EXIT"; fi
 if [ -n "${FAKE_PREPARED:-}" ]; then
   if [ -f "$dir/prepared.txt" ]; then echo yes >"$FAKE_PREPARED"; else echo no >"$FAKE_PREPARED"; fi
 fi
@@ -38,6 +40,26 @@ fi
 echo done >"$out"
 F
 chmod +x "$work/bin/codex"
+# The `bkf` shim runs this worktree's tooling, not the installed copy, with a task store of its own.
+repo_root=$(git -C "$here" rev-parse --show-toplevel)
+bkf_python="$(uv tool dir)/bkf-tooling/bin/python3"
+cat >"$work/bin/bkf" <<SHIM
+#!/usr/bin/env bash
+PYTHONPATH="$repo_root/bkf/tooling" exec "$bkf_python" -m bkf_cli "\$@"
+SHIM
+chmod +x "$work/bin/bkf"
+export PATH="$work/bin:$PATH" BKF_TASKS_DIR="$work/tasks"
+unset BKF_TASK
+
+# One field of a run's task card: <run folder> <dotted field, such as status or worktree.path>.
+card_field() {
+  bkf task show "$(cat "$1/task")" --json | python3 -c '
+import json, sys
+value = json.load(sys.stdin)
+for key in sys.argv[1].split("."):
+    value = value[key]
+print("" if value is None else value)' "$2"
+}
 
 git -C "$work/repo" init -q
 git -C "$work/repo" config user.email t@example.com
@@ -50,13 +72,14 @@ printf '# Brief\n\nMake made.txt.\n' >"$work/brief.md"
 run() { # <name> [env assignments...]; runs the script inside the repo, with the brief in $BRIEF_FILE (default $work/brief.md)
   local name=$1; shift
   local brief=${BRIEF_FILE:-$work/brief.md}
-  rm -f "$work/$name.agent-ran" "$work/$name.prompt" "$work/$name.prepared" "$work/$name.base.seen"
+  rm -f "$work/$name.agent-ran" "$work/$name.prompt" "$work/$name.prepared" "$work/$name.base.seen" "$work/$name.status.seen"
   (cd "$work/repo" && env -u DELEGATE_IN_PLACE -u DELEGATE_RERUN -u HARNESS_BRIDGE_BASE_FILE \
     -u HARNESS_BRIDGE_LOG -u HARNESS_BRIDGE_UNIT -u DELEGATE_UNIT_DIR -u HARNESS_BRIDGE_RECEIPT_DIR \
-    -u HARNESS_BRIDGE_GATE_BRIEF PATH="$work/bin:$PATH" DELEGATE_RUNS_DIR="$work/runs" FAKE_MODEL="$work/model.txt" \
+    -u HARNESS_BRIDGE_GATE_BRIEF -u BKF_TASK PATH="$work/bin:$PATH" DELEGATE_RUNS_DIR="$work/runs" FAKE_MODEL="$work/model.txt" \
     FAKE_RUN_MARKER="$work/$name.agent-ran" FAKE_PROMPT="$work/$name.prompt" \
     FAKE_PREPARED="$work/$name.prepared" FAKE_BASE_VISIBLE="$work/runs/repo/$name/base" \
-    FAKE_BASE_SEEN="$work/$name.base.seen" \
+    FAKE_BASE_SEEN="$work/$name.base.seen" FAKE_TASK_FILE="$work/runs/repo/$name/task" \
+    FAKE_STATUS_SEEN="$work/$name.status.seen" \
     "$@" \
     bash "$script" "$name" "$brief") >"$work/out.txt" 2>"$work/err.txt"
 }
@@ -66,7 +89,11 @@ run inplace DELEGATE_IN_PLACE=1; code=$?
 runs=$work/runs/repo/inplace
 check "in place: exits 0" '[ $code -eq 0 ]'
 check "in place: the agent's file is in the checkout" '[ -f "$work/repo/made.txt" ]'
-check "in place: status is exit=0" '[ "$(cat "$runs/status")" = "exit=0" ]'
+check "in place: the card is in review" '[ "$(card_field "$runs" status)" = review ]'
+check "in place: the card is a unit with the codex session" '[ "$(card_field "$runs" kind)" = unit ] && [ "$(card_field "$runs" session.agent)" = codex ]'
+check "in place: the card's note counts the changed file" '[ "$(card_field "$runs" note)" = "1 files changed" ]'
+check "in place: the card names the checkout and the run folder" '[ "$(card_field "$runs" worktree.path)" = "$work/repo" ] && [ "$(card_field "$runs" run_dir)" = "$runs" ]'
+check "in place: the agent ran while the card was working" '[ "$(cat "$work/inplace.status.seen")" = working ]'
 check "in place: the worktree is the checkout" '[ "$(cat "$runs/worktree")" = "$work/repo" ]'
 check "in place: the base is recorded" '[ -s "$runs/base" ]'
 check "in place: the status files are kept" '[ -f "$runs/status-before.txt" ] && grep -q made.txt "$runs/status-after.txt"'
@@ -75,11 +102,13 @@ check "in place: the script prints the run folder" '[ "$(tail -1 "$work/out.txt"
 check "role: the agent's prompt points to the implementation guide" 'grep -q "role guide: .*/roles/agentic-work-implementation.md" "$work/inplace.prompt"'
 rm "$work/repo/made.txt"
 
-# A second launch with the same name is refused until DELEGATE_RERUN=1.
+# A second launch with the same name is refused until DELEGATE_RERUN=1; a card in review is not reused.
 run inplace DELEGATE_IN_PLACE=1; code=$?
 check "rerun: refused without DELEGATE_RERUN" '[ $code -ne 0 ] && grep -q DELEGATE_RERUN "$work/err.txt"'
+old_task=$(cat "$runs/task")
 run inplace DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1; code=$?
 check "rerun: allowed with DELEGATE_RERUN=1" '[ $code -eq 0 ]'
+check "rerun: a card in review is replaced by a new card" '[ "$(cat "$runs/task")" != "$old_task" ] && [ "$(card_field "$runs" status)" = review ]'
 rm -f "$work/repo/made.txt"
 
 # Worktree: the agent works in a sibling worktree on its own branch and the checkout stays clean.
@@ -87,8 +116,12 @@ run isolated; code=$?
 wt=$(cat "$work/runs/repo/isolated/worktree")
 check "worktree: exits 0" '[ $code -eq 0 ]'
 check "worktree: the agent's file is in the worktree only" '[ -f "$wt/made.txt" ] && [ ! -e "$work/repo/made.txt" ]'
-check "worktree: the branch is delegate/<name>" '[ "$(git -C "$wt" branch --show-current)" = "delegate/isolated" ]'
+# The worktree is the card's: <repo>/.claude/worktrees/<slug> on branch task/<slug>, the slug of the title and the card id.
+isolated_slug="isolated-$(cat "$work/runs/repo/isolated/task" | tail -c 5)"
+check "worktree: the path is <repo>/.claude/worktrees/<slug>" '[ "$wt" = "$work/repo/.claude/worktrees/$isolated_slug" ] && [ "$(card_field "$work/runs/repo/isolated" worktree.path)" = "$wt" ]'
+check "worktree: the branch is task/<slug>" '[ "$(git -C "$wt" branch --show-current)" = "task/$isolated_slug" ] && [ "$(card_field "$work/runs/repo/isolated" worktree.branch)" = "task/$isolated_slug" ]'
 check "worktree: the diffstat names the file" 'grep -q made.txt "$work/runs/repo/isolated/diffstat.txt"'
+check "worktree: the card is in review" '[ "$(card_field "$work/runs/repo/isolated" status)" = review ]'
 check "worktree without bridge: delegated brief has no ponte section" '! grep -q "Command bridge" "$work/runs/repo/isolated/brief.md"'
 
 # A newly created worktree is prepared from the committed declaration before the fake agent starts.
@@ -104,10 +137,13 @@ check "prepare: command ran before the agent" '[ "$(cat "$work/prepared.prepared
 check "prepare: output is recorded" 'grep -q "worktree.prepare: 1 command(s) passed" "$work/runs/repo/prepared/prepare.log"'
 check "prepare: base exists before agent launch" '[ -s "$work/runs/repo/prepared/base" ] && [ -f "$work/prepared.base.seen" ]'
 
-# A rerun reuses the prepared worktree without running preparation again.
-rm "$wt/prepared.txt"
-run prepared DELEGATE_RERUN=1; code=$?
-check "rerun: existing worktree is not prepared again" '[ $code -eq 0 ] && [ "$(cat "$work/prepared.prepared")" = no ] && [ ! -e "$wt/prepared.txt" ]'
+# A rerun of a failed card reuses its worktree without running preparation again.
+run prepared-failed FAKE_EXIT=3; code=$?
+failed_wt=$(cat "$work/runs/repo/prepared-failed/worktree")
+rm "$failed_wt/prepared.txt"
+run prepared-failed DELEGATE_RERUN=1; code=$?
+check "rerun of a failed card: the worktree is reused and not prepared again" \
+  '[ $code -eq 0 ] && [ "$(cat "$work/prepared-failed.prepared")" = no ] && [ ! -e "$failed_wt/prepared.txt" ] && [ "$(cat "$work/runs/repo/prepared-failed/worktree")" = "$failed_wt" ]'
 
 # A failing preparation marks the run and never launches an agent.
 cat >"$work/repo/.plan-run.json" <<'JSON'
@@ -116,9 +152,19 @@ JSON
 git -C "$work/repo" add .plan-run.json
 git -C "$work/repo" commit -qm 'declare failing setup'
 run prepare-fail; code=$?
-check "prepare failure: status is prepare-failed" '[ "$(cat "$work/runs/repo/prepare-fail/status")" = prepare-failed ]'
+check "prepare failure: the card is failed with note prepare-failed" '[ "$(card_field "$work/runs/repo/prepare-fail" status)" = failed ] && [ "$(card_field "$work/runs/repo/prepare-fail" note)" = prepare-failed ]'
 check "prepare failure: no agent is launched" '[ $code -ne 0 ] && [ ! -e "$work/prepare-fail.agent-ran" ]'
 check "prepare failure: reports its log and run folder" 'grep -q prepare.log "$work/err.txt" && [ "$(tail -1 "$work/out.txt")" = "$work/runs/repo/prepare-fail" ]'
+
+# A failing agent marks its card failed with the exit status; a rerun reuses that failed card.
+run failing DELEGATE_IN_PLACE=1 FAKE_EXIT=3; code=$?
+fail_task=$(cat "$work/runs/repo/failing/task")
+check "agent failure: exits with the agent's status" '[ $code -eq 3 ]'
+check "agent failure: the card is failed with the exit status" '[ "$(card_field "$work/runs/repo/failing" status)" = failed ] && [ "$(card_field "$work/runs/repo/failing" exit)" = 3 ]'
+run failing DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1; code=$?
+check "rerun of a failed card: the same card is reused" '[ $code -eq 0 ] && [ "$(cat "$work/runs/repo/failing/task")" = "$fail_task" ]'
+check "rerun of a failed card: the card is working while the agent runs" '[ "$(cat "$work/failing.status.seen")" = working ]'
+check "rerun of a failed card: the card ends in review" '[ "$(card_field "$work/runs/repo/failing" status)" = review ] && [ -z "$(card_field "$work/runs/repo/failing" exit)" ]'
 
 # The base-listed bridge is described to the agent and the run-base file is already present.
 cat >"$work/repo/.plan-run.json" <<'JSON'
@@ -154,6 +200,11 @@ BRIEF_FILE="$work/gate-brief.md" run gatedoff FAKE_PONTE_GATE="$work/gatedoff.po
 check "no unit folder: exits 0" '[ $code -eq 0 ]'
 check "no unit folder: the brief has no gate receipt section" '! grep -q "Gate receipt" "$work/runs/repo/gatedoff/brief.md"'
 check "no unit folder: no bridge is started" 'grep -qx "no bridge" "$work/gatedoff.ponte"'
+
+# A run launched from a task window (BKF_TASK set) makes its card a child of that task.
+parent=$(bkf task new --repo "$work/repo" --title parent --no-parent)
+run parented BKF_TASK="$parent"; code=$?
+check "parent: the card's parent is the task the run was launched from" '[ $code -eq 0 ] && [ "$(card_field "$work/runs/repo/parented" parent)" = "$parent" ]'
 
 git -C "$work/repo" worktree remove --force "$wt" >/dev/null 2>&1
 exit "$fail"

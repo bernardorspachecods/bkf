@@ -37,7 +37,7 @@ class HooksTest(unittest.TestCase):
             "args = sys.argv[1:]\n"
             "mode = os.environ.get('BKF_STUB_MODE', 'ok')\n"
             "if args[:2] == ['hooks', 'run']:\n"
-            "    if args[2:3] == ['rules']: raise SystemExit(0)\n"
+            "    if args[2:3] in (['rules'], ['task']): raise SystemExit(0)\n"
             "    if mode == 'sleep': time.sleep(1)\n"
             "    if mode == 'traceback': print('Traceback (most recent call last):')\n"
             "    elif mode == 'none': pass\n"
@@ -136,11 +136,12 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(hooks["PreToolUse"][1]["matcher"], "Read|Bash")
             self.assertEqual(hooks["PreToolUse"][1]["hooks"][0]["command"], f"{self.command} hooks run guard")
             self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} orient")
-            self.assertEqual(len(hooks["SessionStart"]), 4)
-            self.assertEqual(hooks["SessionStart"][3]["hooks"][0]["command"], f"{self.command} hooks run tabname")
+            self.assertEqual(len(hooks["SessionStart"]), 5)
+            self.assertEqual(hooks["SessionStart"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["Stop"][2]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["SessionStart"][1]["hooks"][0]["command"], f"{self.command} hooks run rules")
-            self.assertEqual(hooks["SessionStart"][2]["hooks"][0]["command"], f"{self.command} hooks run snapshot")
+            self.assertEqual(hooks["SessionStart"][2]["hooks"][0]["command"], f"{self.command} hooks run task")
+            self.assertEqual(hooks["SessionStart"][3]["hooks"][0]["command"], f"{self.command} hooks run snapshot")
             self.assertEqual(hooks["PostToolUse"][0]["matcher"], "Edit|Write|NotebookEdit|MultiEdit|apply_patch")
             self.assertEqual(hooks["PostToolUse"][0]["hooks"][0]["command"], f"{self.command} hooks run record")
             self.assertEqual(hooks["Stop"][0]["hooks"][0]["command"], f"{self.command} hooks run stop")
@@ -196,6 +197,33 @@ class HooksTest(unittest.TestCase):
         run("install", "--only", "rules", "--home", self.home)
         self.assertFalse((self.home / ".agent-hooks" / "rules.md").exists())
 
+    def test_install_task_registers_session_start_for_both_tools(self) -> None:
+        code, output = run("install", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("missing  claude  SessionStart", output)
+        self.assertIn("missing  codex   SessionStart", output)
+        self.assertIn("preview only", output)
+        self.assertFalse((self.home / ".claude" / "settings.json").exists())
+        code, _ = run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        for directory, name in ((".claude", "settings.json"), (".codex", "hooks.json")):
+            hooks = self.config(directory, name)["hooks"]
+            self.assertEqual(set(hooks), {"SessionStart"})
+            self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} hooks run task")
+            self.assertNotIn("matcher", hooks["SessionStart"][0])
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_hook_is_probed_with_empty_input_and_no_task(self) -> None:
+        run("install", "--write", "--only", "task", "--home", self.home)
+        with patch.dict(os.environ, {"BKF_TASK": "t20260101-000000-abcd"}):
+            code, output = run("status", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("ok       claude  SessionStart", output)
+
+    def test_task_hook_is_listed_in_the_group_choices(self) -> None:
+        self.assertIn("task", bkf_hooks.HOOK_NAMES)
+        self.assertEqual(bkf_hooks.build_parser().parse_args(["status", "--only", "task"]).only, "task")
+
     def test_status_reports_rules_registration_and_file_size(self) -> None:
         run("install", "--write", "--only", "rules", "--home", self.home)
         path = self.home / ".agent-hooks" / "rules.md"
@@ -216,7 +244,7 @@ class HooksTest(unittest.TestCase):
         config = json.loads(once)
         self.assertEqual(config["theme"], "dark")
         self.assertIn(other, config["hooks"]["SessionStart"][0]["hooks"])
-        self.assertEqual(len(config["hooks"]["SessionStart"]), 5)
+        self.assertEqual(len(config["hooks"]["SessionStart"]), 6)
         code, output = run("install", "--write", "--home", self.home)
         self.assertIn("nothing to do", output)
         self.assertEqual(settings.read_text(), once)

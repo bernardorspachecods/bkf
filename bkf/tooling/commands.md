@@ -20,6 +20,8 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Install, check, or understand the hooks | [bkf hooks](#bkf-hooks) |
 | Search the documents | [bkf search](#bkf-search) |
 | Register, reopen, close, or check researched sources | [bkf sources](#bkf-sources) |
+| Record, read, or change agent tasks | [bkf task](#bkf-task) |
+| Open an agent session in tmux with its task card | [bkf launch](#bkf-launch) |
 
 ## Install
 
@@ -50,8 +52,8 @@ machine.
 ## bkf help
 
 `bkf help` lists commands, summaries, and usage guidance grouped by situation:
-after editing documents, session start and lookup, and install.
-The `help` command appears at the end. `bkf help <command>` shows
+after editing documents, session start and lookup, install, and called by
+skills and the app. The `help` command appears at the end. `bkf help <command>` shows
 that command's options. Both exit with `0`; an unknown command or `help` target
 exits with `2`. `COMMANDS` in [bkf_cli.py](/tooling/bkf_cli.py) owns the list,
 group assignments, summaries, and `use:` lines. `HELP_GROUPS` in the same file
@@ -241,9 +243,9 @@ the [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks).
 
 ## bkf hooks
 
-`bkf hooks install [--write] [--only modes|orient|check|log|rules|guard|audit|tabname|sources] [--home PATH]` and
-`bkf hooks status [--only modes|orient|check|log|rules|guard|audit|tabname|sources] [--home PATH]`
-manage nine hook groups. Registration targets Claude Code
+`bkf hooks install [--write] [--only modes|orient|check|log|rules|task|guard|audit|tabname|sources] [--home PATH]` and
+`bkf hooks status [--only modes|orient|check|log|rules|task|guard|audit|tabname|sources] [--home PATH]`
+manage ten hook groups. Registration targets Claude Code
 (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`). The `sources`
 group targets Claude Code only. A tool whose folder is missing is skipped.
 
@@ -278,6 +280,21 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   agent it starts. The hook never fails a session and `bkf hooks install --write`
   copies `default_rules.txt` to that path only when it does not exist, and never
   overwrites or edits an existing file.
+- **task** registers a `SessionStart` hook, `bkf hooks run task`, that tells a
+  session started for a task which task it works on and the two commands that
+  move its card. It reads the task id from `BKF_TASK` and the task from the
+  [task store](#bkf-task). It prints this text, and nothing otherwise:
+
+  > This session works on task <id> (<kind>): <title>. When the work is done,
+  > reviewed and committed on its branch, run `bkf task ready --note "<one-line
+  > summary>"` so the card moves to review, then wait for the owner. After the
+  > owner merges it, run `bkf task done`. Both commands read the task id from
+  > the environment.
+
+  It prints nothing when `BKF_TASK` is unset, when the task cannot be read, when
+  its kind is `unit` or `crew` (a script or the orchestrator owns those cards)
+  or when its status is `done`. It always exits 0. The agents that the harness
+  starts never see `BKF_TASK`.
 - **check** registers a `SessionStart` hook that records a git snapshot,
   a `PostToolUse` hook that records files written by editing tool calls
   (`Edit`, `Write`, `NotebookEdit`, `MultiEdit`, `apply_patch`), and a `Stop`
@@ -644,6 +661,204 @@ expires, running `complete` again appends another reason and starts a new window
 this format for each Key claim. The command runs the full record check before
 writing either closed status. If the record has `snapshot: none`, save the text with
 `bkf sources snapshot` first.
+
+## bkf task
+
+The task store is machine-wide and holds the state of agent tasks: one folder
+per task under the state directory. `BKF_TASKS_DIR` overrides the folder;
+otherwise `$XDG_STATE_HOME/bkf/tasks`, else `~/.local/state/bkf/tasks`.
+Skills, `bkf launch`, and the Agentic app call these subcommands. An agent in a
+task's window runs `bkf task ready` and `bkf task done` itself.
+
+```sh
+bkf task new --repo DIR --title T [--body-file F|-] [--source S] [--kind K] [--parent ID | --no-parent] [--json]
+bkf task list [--repo DIR] [--status S]... [--kind K] [--parent ID] [--json]
+bkf task show [ID] [--json]
+bkf task start ID [--agent A] [--model M] [--effort E] [--reviewer R] [--tmux-session S] [--tmux-window W] [--worktree PATH] [--branch B] [--run-dir D]
+bkf task worktree ID [--base REV] [--json]
+bkf task ready [ID] [--note T] [--no-git]
+bkf task done [ID]
+bkf task fail [ID] [--exit N] [--note T]
+bkf task attention [ID] (--set REASON [--note T] | --clear)
+bkf task delete ID
+```
+
+**Layout.** Each task is `<store>/<id>/task.json`, and a task may also have
+`prompt.md`. The store holds `generation`, a counter that rises on every
+write, and `.lock`, which serializes writes. An id is `t` followed by the
+local time, a dash, and four hex digits, such as `t20261120-143005-a1b2`.
+Writes replace files atomically.
+
+**task.json.** Every file has `"schema": 1` and these keys:
+
+| Key | Holds |
+| --- | --- |
+| `id` | the folder name |
+| `kind` | `task`, `handoff`, `coordinator`, `unit`, or `crew` |
+| `parent` | the parent task's id, or null |
+| `repo` | the repository's identity: the folder holding its git common directory |
+| `title` | one line |
+| `body` | the text from `--body-file` |
+| `source` | where the task came from, or null |
+| `status` | one of the statuses below |
+| `attention` | `{reason, since, note}` when a person is needed, else null |
+| `session` | `{agent, model, effort, reviewer, tmux_session, tmux_window}`, else null |
+| `worktree` | `{path, branch, head}`, else null |
+| `run_dir` | the run folder, or null |
+| `exit` | the exit status of a failed run, or null |
+| `note` | free text, or null |
+| `created`, `updated` | UTC timestamps, `YYYY-MM-DDTHH:MM:SSZ` |
+
+**Statuses and transitions.** `todo` starts at `new`. `start` moves `todo` or
+`failed` to `working`, and clears `attention` and `exit`. `ready` moves
+`working` or `review` to `review`. `done` moves `working` or `review` to `done`.
+`fail` moves `working` to `failed`. `attention` is allowed in `todo`,
+`working`, `review`, and `failed` (a failed card is one that needs its owner);
+`--clear` is always allowed. `delete` removes the
+folder whatever its status. A transition that is not allowed is refused.
+
+The attention reasons are `prompt`, `still`, `overdue`, `gone`, `quota`,
+`launch-failed`, `escalated` and `paused`. A plan run sets `escalated` on a unit
+or run that needs its coordinator (blocked, escalated, takeover or stopped; the
+note says which) and `paused` on a run that waits for its owner at a checkpoint.
+
+**New.** Prints the id, or the task JSON with `--json`. `--repo` is turned into
+the repository identity, so linked worktrees share one. `--body-file -` reads
+standard input. `--parent` defaults to `$BKF_TASK` when that is set;
+`--no-parent` makes the task without a parent.
+
+**Start.** An option object is recorded only when at least one of its options
+is given, and its other keys stay null.
+
+**Ready.** Reads git only. In the task's worktree path when it has one,
+otherwise in the current folder. Outside a git work tree, `branch` and `head`
+stay null. Inside one, uncommitted changes refuse the command: commit them on
+the branch first. Otherwise the current branch (`rev-parse --abbrev-ref HEAD`)
+and head (`rev-parse HEAD`) are recorded. With `--no-git` it reads no git state
+at all: the task's branch and head stay as they are and a dirty tree is
+accepted. A delegate's changes are uncommitted by design, so its runs use this.
+
+**List.** Filters combine with AND, and `--status` may repeat. `--repo DIR`
+keeps tasks whose repository identity is that of `DIR`. Without `--json`, one
+line per task: id, status, kind, and title, separated by two spaces; one line
+per unreadable folder goes to standard error. With `--json`, standard output
+holds one object:
+
+```json
+{"schema": 1, "store": "<absolute store path>", "generation": 12, "tasks": [<task JSON>], "unreadable": ["<id>"]}
+```
+
+Tasks are in creation order, then id. The app reads `list --json` each time
+`generation` changes, so the command imports only the standard library.
+
+**Worktree.** Creates the git worktree of a task, or reuses it, and records it on
+the card as `worktree: {path, branch, head: null}`. The status does not change;
+the task must be `todo`, `working` or `failed`, and any other status is refused
+before git runs. A failed card's worktree is reused or created like any other. The repository is the task's `repo`, the main checkout. The path is
+`<repo>/.claude/worktrees/<slug>` and the branch is `task/<slug>`. The slug folds
+the title to Unicode NFKD without combining marks, lowercase, runs of characters
+outside `a-z0-9` as one `-`, at most 30 characters with no trailing `-`, and
+`task` when nothing is left; then `-` and the last four characters of the id.
+`--base REV` is resolved in the repository, and defaults to its `HEAD`. The
+base applies only when a new branch is made. Rules, in order:
+
+- The path exists: reused (`created: false`) only when it is a worktree of this
+  repository with the branch checked out. Otherwise refused, naming the path.
+- The branch exists without a worktree: `git worktree add <path> <branch>`.
+- Neither exists: `git worktree add -b <branch> <path> <base>`.
+- Unless `git check-ignore` already ignores `.claude/worktrees/<slug>` in the
+  main checkout, the line `/.claude/worktrees/` is appended once to
+  `<git-common-dir>/info/exclude`.
+
+Output is the path on the first line and the branch on the second, or with
+`--json` one object `{"path", "branch", "created"}`. A worktree already created is
+never removed on a later failure.
+
+**Show.** Without `--json`, `key: value` lines: id, title, status, kind, repo,
+parent, worktree, branch, tmux window, attention, and note. A missing value is
+`-`.
+
+**Exit status.** `0` is success. `1` is a refusal: an unknown or corrupt task,
+a transition not allowed, a dirty tree, or a missing id. A refusal prints one
+line on standard error starting with `bkf task: `, and nothing on standard
+output. `2` is a usage error from argument parsing.
+
+## bkf launch
+
+`bkf launch` opens an interactive Claude or Codex session for the skills and the
+Agentic app, and is the one way they start one. It composes the task store
+(`bkf task`), the task worktree and the tmux layer. It writes no prompt text: it
+receives one. Not used by hand.
+
+```sh
+bkf launch <claude|codex> --dir D [--prompt-file F|-] [--model M] [--effort E] [--reviewer R] [--name N] [--permission-mode P] [--window W] [--delegated] [--task ID | --no-task | [--title T] [--kind K] [--parent ID | --no-parent] [--body-file F]] [--worktree auto|none] [--size COLSxROWS] [--no-attach] [--json]
+bkf launch --session-name --dir D
+```
+
+**Request.** Checked before anything is written. The agent must be `claude` or
+`codex` and on `PATH`. `--name` and `--permission-mode` are claude only. `--dir`
+is a folder, and `--prompt-file` exists when it is a path. `--task` names a task
+whose status is `todo` or `failed`. `--name`, `--permission-mode` with codex, and
+the card options with `--task` or `--no-task` are usage errors, as is `--worktree
+auto` with `--no-task`.
+
+**Card.** `--task ID` launches on that card. `--no-task` makes none. Otherwise a
+new card is created: its repository is the identity of `--dir`, its kind is
+`--kind` (default `handoff`), its parent is `--parent` (default `$BKF_TASK`;
+`--no-parent` for none), its body is `--body-file`, and its title is the first
+of `--title`, `--window`, `--name`, the first non-empty line of the prompt cut to
+80 characters, or `session`.
+
+**Worktree.** `--worktree` defaults to `auto` when the card's kind is `task`, and
+to `none` otherwise and without a card. `auto` calls `bkf task worktree` through
+`task_worktree.prepare`. A repository that is not a git repository falls back to
+`none` silently. A failed card is prepared like any other card, and it is reused
+through `prepare`, which reuses it on its branch or creates it. The session works in the
+worktree, or in `--dir`.
+
+**Prompt.** With a card, the prompt is saved as the card's `prompt.md`, and the
+window reads that copy. Without a card, a path is used as an absolute path, and
+standard input is saved to a new temporary file that is kept. Without
+`--prompt-file` the session starts with no first message.
+
+**Command.** Claude: `claude [--name N] [--permission-mode P] [--model M] [--effort E] "$(cat '<prompt>')"`.
+Codex: `codex [-m M] [-c 'model_reasoning_effort="E"'] "$(cat '<prompt>')"`. Each
+value is shell-quoted. The prompt is expanded by the window's shell, because a
+typed line of tens of KB overflows the terminal.
+
+**Window.** `task_tmux.open_window`, named by `--window` (else the card's title),
+with `BKF_TASK=<id>` for a card, `BKF_TASKS_DIR` when the caller has it set, and
+`BKF_DELEGATED=1` with `--delegated`. `--size` sizes a new session. The placement
+rules are those of `task_tmux.py`: inside tmux, the window goes into the caller's
+session, grouped with the windows of the same repository (right after the caller's
+window when the working directory is in its repository, else right after the last
+window of that repository, else at the end). Outside tmux, the window goes into
+the repository's session (`repo_session_name`), created when missing, and a
+terminal attaches to it: iTerm2 gets `tmux -CC attach`, Terminal.app `tmux
+attach`. Elsewhere, or with `--no-attach`, the output says how to attach.
+`BKF_TMUX_SOCKET` makes every tmux call use a named server: the tests use it and
+never touch the user's server.
+
+**Start.** With a card, `task_store.start` records the session (agent, model,
+effort, reviewer, tmux session and window id) and the worktree, and the card
+becomes `working`.
+
+**Output.** Plain: the card id on the first line (with a card), then
+`<session>:<window id>`, then `attach with: tmux attach -t =<session>` when no
+terminal shows the session. With `--json`, one object: `{"task", "session",
+"window", "worktree", "branch", "needs_attach"}`, where `task`, `worktree`, and
+`branch` are null when absent.
+
+**Session name.** `--session-name --dir D` prints the tmux session name of the
+repository of `D` and launches nothing. The Agentic app uses it to bring the
+repository's iTerm2 window forward before a launch.
+
+**Failure.** After the card exists, a failing step (worktree, window, start)
+leaves the card in its status, sets `attention` `launch-failed` with the error as
+its note, and exits 1 with one `bkf launch: ` line on standard error. This holds
+for a failed card too. A worktree already created is kept. With no
+card, the same failure only exits 1. A refusal before the card exists also exits
+1; usage errors exit 2.
 
 ```md
 ## Key claims

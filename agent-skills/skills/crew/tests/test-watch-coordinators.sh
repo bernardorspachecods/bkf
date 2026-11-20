@@ -63,6 +63,52 @@ rm -f "$work/waits"/*
 run d main:nowindow
 check "missing window alerts GONE" 'grep -qx "GONE main:nowindow" "$work/out-d"'
 
+# Cards: a target written <tmux-target>=<card-id> sets the card's attention with each alert. The `bkf` shim runs
+# this worktree's tooling on a temporary task store.
+repo_root=$(git -C "$here" rev-parse --show-toplevel)
+bkf_python="$(uv tool dir)/bkf-tooling/bin/python3"
+printf '#!/usr/bin/env bash\nPYTHONPATH="%s/bkf/tooling" exec "%s" -m bkf_cli "$@"\n' "$repo_root" "$bkf_python" >"$work/bin/bkf"
+chmod +x "$work/bin/bkf"
+export BKF_TASKS_DIR="$work/tasks"
+new_card() { bkf task new --repo "$work" --title "$1" --kind coordinator; }
+attention_of() {
+  bkf task show "$1" --json | python3 -c 'import json, sys; a = json.load(sys.stdin)["attention"]; print("-" if a is None else a["reason"])'
+}
+c_ask=$(new_card ask); c_idle=$(new_card idle); c_gone=$(new_card gone)
+
+STILL=3600 run m main:ask="$c_ask"
+check "a PROMPT alert sets the card's attention to prompt" 'grep -qx "PROMPT main:ask" "$work/out-m" && [ "$(attention_of "$c_ask")" = prompt ]'
+tmux respawn-window -k -t main:ask 'echo changed; sleep 300'
+sleep 1
+STILL=3600 timeout 4 "$script" "$work/state-m" main:ask="$c_ask" >"$work/out-m2" 2>&1
+check "the first change of the pane after an alert clears the attention" '[ "$(attention_of "$c_ask")" = - ] && ! grep -q PROMPT "$work/out-m2"'
+
+STILL=3 run s main:idle="$c_idle"
+check "a STILL alert sets the card's attention to still" 'grep -qx "STILL main:idle" "$work/out-s" && [ "$(attention_of "$c_idle")" = still ]'
+
+echo $(( $(date +%s) - 10 )) >"$work/waits/idle"
+STILL=3 WATCH_GRACE=0 run o main:idle="$c_idle"
+check "an OVERDUE alert sets the card's attention to overdue" 'grep -qx "OVERDUE main:idle" "$work/out-o" && [ "$(attention_of "$c_idle")" = overdue ]'
+rm -f "$work/waits"/*
+
+# A window id target keys its quota wait by the window's name (crew-<name>): a future wake-up time stays silent.
+tmux new-window -t main -n crew-x 'echo idle; sleep 300'
+wid=$(tmux display-message -p -t main:crew-x '#{window_id}')
+c_x=$(new_card x)
+echo $(( $(date +%s) + 3600 )) >"$work/waits/crew-x"
+STILL=3 WATCH_GRACE=0 timeout 6 "$script" "$work/state-x" "$wid=$c_x" >"$work/out-x" 2>&1
+check "a carded window id in a quota wait stays silent and sets no attention" \
+  '! grep -Eq "^(STILL|OVERDUE)" "$work/out-x" && [ "$(attention_of "$c_x")" = - ]'
+rm -f "$work/waits"/*
+
+run n main:nowindow="$c_gone"
+check "a GONE alert sets the card's attention to gone" 'grep -qx "GONE main:nowindow" "$work/out-n" && [ "$(attention_of "$c_gone")" = gone ]'
+
+tmux new-window -t main -n ask2 'echo "Do you want to proceed? (y/n)"; sleep 300'
+run f main:ask2=tmissing
+check "a failing bkf is reported on standard error and the watcher still alerts and exits 0" \
+  'grep -qx "PROMPT main:ask2" "$work/out-f" && grep -q "bkf task attention tmissing --set prompt failed" "$work/out-f" && [ "$(cat "$work/rc-f")" = 0 ] && ! grep -q WATCHER-EXIT "$work/out-f"'
+
 rm -f "$work/state-e"/* 2>/dev/null
 WATCH_STILL=3600 "$script" "$work/state-e" main:idle >"$work/out-e" 2>&1 & pid=$!
 sleep 2; kill -TERM $pid; wait $pid 2>/dev/null

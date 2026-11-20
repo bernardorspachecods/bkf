@@ -30,6 +30,7 @@ class Hooks:
         self.review_calls = []
         self.commands = None
         self.after_implement = None
+        self.unit_events = []
 
     def implement_prompt(self, brief, round_number, resumed, previous_problems, previous_handoff,
                          last_review_problems=None):
@@ -71,6 +72,12 @@ class Hooks:
 
     def progress(self, text):
         self.progress_lines.append(text)
+
+    def unit_started(self, unit, checkout):
+        self.unit_events.append(("started", unit, checkout))
+
+    def unit_ended(self, unit, state, reason):
+        self.unit_events.append(("ended", unit, state, reason))
 
     class Around:
         def __init__(self, hooks, checkout, unit, base, brief):
@@ -239,6 +246,37 @@ class UnitLoopTests(unittest.TestCase):
         self.assertFalse((round_dir / "review-prompt.md").exists())
         self.assertIn(result.reason, (self.run.path / "status.log").read_text())
         self.assertEqual(self.hooks.progress_lines[-1], "S1 unidade 01-unit · ronda 1 · bloqueada")
+
+    def test_unit_hooks_see_a_passed_unit_start_and_end(self):
+        self.assertTrue(self.run_loop().ok)
+        self.assertEqual(self.hooks.unit_events, [
+            ("started", "01-unit", str(self.checkout)),
+            ("ended", "01-unit", "passed", ""),
+        ])
+
+    def test_unit_hooks_name_how_a_unit_ended(self):
+        os.environ["FAKE_IMPL"] = "fail"
+        self.run_loop()
+        self.assertEqual(self.hooks.unit_events[-1][:3], ("ended", "01-unit", "failed"))
+        os.environ["FAKE_IMPL"] = "change"
+        os.environ["FAKE_VERDICT"] = "escalate"
+        self.run_loop()
+        self.assertEqual(self.hooks.unit_events[-1][:3], ("ended", "01-unit", "escalated"))
+        os.environ["FAKE_VERDICT"] = "pass"
+        self.hooks.unit_events.clear()
+        os.environ["FAKE_BLOCKED"] = "cannot run here"
+        self.addCleanup(lambda: os.environ.pop("FAKE_BLOCKED", None))
+        self.run_loop()
+        self.assertEqual(self.hooks.unit_events[-1][:3], ("ended", "01-unit", "blocked"))
+
+    def test_unit_hooks_see_a_takeover_and_a_premise_stop_without_a_start(self):
+        self._make_takeover()
+        self.assertEqual(self.hooks.unit_events[-1][:3], ("ended", "01-unit", "takeover"))
+        self.hooks.unit_events.clear()
+        self.hooks.premises = ["test -f missing-file"]
+        self.run_loop()
+        self.assertEqual(self.hooks.unit_events[-1][:3], ("ended", "01-unit", "blocked"))
+        self.assertNotIn("started", [event[0] for event in self.hooks.unit_events])
 
     def test_a_false_premise_stops_before_any_implementer_is_launched(self):
         self.hooks.premises = ["test -f missing-file"]

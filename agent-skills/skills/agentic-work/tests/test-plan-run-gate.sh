@@ -98,7 +98,7 @@ new_case() { # <name> <gate-block-or-empty> <impl-script>   (BRIDGE_CONFIG: the 
 }
 run() { # <name> [env...]  -> runs start, prints nothing; the exit code is in $code
   (cd "$case_dir/repo" && env PATH="$work/bin:$PATH" PLAN_RUNS_DIR="$case_dir/runs" PLAN_GUIDES="$work/guides" "${@:2}" \
-    "$work/bin/plan-run-limited" start -p none r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/out.txt" 2>&1
+    "$work/bin/plan-run-limited" start -p none ${START_OPTS:-} r "$case_dir/plan/goal.md" "$case_dir/plan/plan.txt") >"$case_dir/out.txt" 2>&1
   code=$?
 }
 reviews() { cat "$case_dir/state/reviews" 2>/dev/null || echo 0; }
@@ -134,7 +134,7 @@ check "gate always red: no reviewer was called, even one that would say pass" '[
 
 # 5. A reviewer 'back' is still counted apart from gate failures.
 new_case backs 'true' 'echo change >>a.txt'
-FAKE_VERDICT=back run backs PLAN_MAX_ROUNDS=2
+START_OPTS="--takeover-after 0" FAKE_VERDICT=back run backs PLAN_MAX_ROUNDS=2
 check "reviewer back: stops at the review cap" '[ "$code" -ne 0 ] && [ "$(reviews)" -eq 2 ] && grep -q "round cap 2 reached" "$case_dir/runs/r/status.log"'
 
 # 6. A command that runs too long fails the gate.
@@ -409,7 +409,7 @@ check "rebase 1: still refused when the integrator's rounds are in an earlier at
 # 28. rebase-integration --paths: the scenario that happened. Integration at its round cap after the integrator edited
 # files, the owner commits plans/ and tests/ meanwhile: those leave the diff, the integrator's own edits stay.
 grp_case rbp
-run rbp FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=3
+START_OPTS="--takeover-after 0" run rbp FAKE_INT_VERDICT=back PLAN_MAX_ROUNDS=3
 rp=$case_dir/runs/r
 check "paths: the integration stopped at its round cap after two integrator rounds" '[ "$code" -ne 0 ] && grep -q "S1-integration: round cap 3 reached" $rp/status.log && [ "$(ls $rp/S1-integration/rounds/*/integrate.last-message.md | wc -l)" -eq 2 ]'
 (cd "$case_dir/repo" && mkdir -p plans tests/sub && echo p >plans/a.md && git add plans && git commit -qm plans && echo t >tests/sub/x.txt)
@@ -545,7 +545,7 @@ check "progress redfix: gate FAIL precedes round 2 implementation" '[ "$code" -e
 
 # 35. Progress: reviewer backs are reported and the round cap escalates.
 new_case progress-backs 'true' 'echo change >>a.txt'
-FAKE_VERDICT=back run progress-backs PLAN_MAX_ROUNDS=2
+START_OPTS="--takeover-after 0" FAKE_VERDICT=back run progress-backs PLAN_MAX_ROUNDS=2
 pg_back=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · devolvida' "$case_dir/out.txt" | cut -d: -f1)
 pg_escalate=$(grep -nF '[plan] S1 unidade 01-unit · ronda 2 · escalada' "$case_dir/out.txt" | cut -d: -f1)
 check "progress backs: the final back is followed by escalation" '[ "$code" -ne 0 ] && [ "$pg_back" -lt "$pg_escalate" ] && grep -qF "[plan] S1 parou" "$case_dir/out.txt"'
