@@ -281,10 +281,12 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   agent it starts. The hook never fails a session and `bkf hooks install --write`
   copies `default_rules.txt` to that path only when it does not exist, and never
   overwrites or edits an existing file.
-- **task** registers a `SessionStart` hook, a `UserPromptSubmit` hook and a
-  `Stop` hook, all `bkf hooks run task`, for Claude Code and Codex. It reads the
-  task id from `BKF_TASK` and the task from the [task store](#bkf-task). On
-  `SessionStart` it prints this text, and nothing otherwise:
+- **task** registers, for Claude Code and Codex, a `SessionStart`, a
+  `UserPromptSubmit`, a `Stop` and a `PostToolUse` hook, and a `PreToolUse` hook
+  with the matcher `AskUserQuestion`; for Claude Code also a `PermissionRequest`
+  and a `SessionEnd` hook. All run `bkf hooks run task`. With `BKF_TASK` set, it
+  reads the task from the [task store](#bkf-task). On `SessionStart` it prints
+  this text, and nothing on the other events:
 
   > This session works on task <id> (<kind>): <title>. When the work is done,
   > reviewed and committed on its branch, run `bkf task ready --note "<one-line
@@ -292,20 +294,61 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   > owner merges it, run `bkf task done`. Both commands read the task id from
   > the environment.
 
-  It prints nothing when `BKF_TASK` is unset, when the task cannot be read, when
-  its kind is `unit` (a script owns those cards) or when its status is
-  `done`. The `Stop` event marks a card that is `working`
-  and of kind `task` or `handoff` as waiting for the owner, with attention
-  reason `prompt` and the note `waiting for your reply`, when the card has no
-  attention yet; a card with any other attention, or in another status, is left
-  alone. The `UserPromptSubmit` event clears attention only when it is that same
-  `prompt` with that same note, so a person's reply resumes the card while a
-  `prompt` set by anything else stays. `Stop` and `UserPromptSubmit` print
-  nothing, since their standard output would go to the agent's context. Both
-  change the card through the store's locked helpers, as `bkf task attention`
-  does. Empty or invalid input is treated as `SessionStart`. The hook always
-  exits 0; errors are swallowed. The agents that the harness starts never see
-  `BKF_TASK`.
+  It prints nothing when the task cannot be read, when its kind is `unit`
+  (a script owns those cards) or when its status is `done`. Unknown events and unreadable input print the text as `SessionStart`
+  does. The mark events and `SessionEnd` never print, since their standard
+  output would go to the agent's context.
+
+  The hook keeps its own mark on the card: attention reason `prompt` with one of
+  three notes. It applies only to a card that is `working` and of kind `task` or
+  `handoff`; other cards are left alone.
+
+  | Event | Effect on the card |
+  | --- | --- |
+  | `Stop`, with `background_tasks` and `session_crons` both empty or absent | set `waiting for your reply` |
+  | `Stop`, with either list non-empty | clear the hook's own mark; set nothing |
+  | `PermissionRequest` | set `waiting for your approval` |
+  | `PreToolUse` with `tool_name` `AskUserQuestion` | set `waiting for your answer` |
+  | `PostToolUse` (any tool), `UserPromptSubmit` | clear the hook's own mark |
+
+  Setting replaces the hook's own mark when its note differs, and does nothing
+  to any other attention: a `prompt` with another note, or another reason. Clearing
+  touches only the hook's own mark. So a session that ends its turn to wait for
+  background work never shows as waiting, and a session that resumes clears its
+  mark at its first tool call. The hook changes the card through the store's
+  locked helpers, as `bkf task attention` does; an event that changes nothing
+  does not take the lock. Empty or invalid input is treated as
+  `SessionStart`. The hook always exits 0; errors are swallowed. The agents that
+  the harness starts never see `BKF_TASK`.
+
+  **Session cards.** With `BKF_TASK` unset, an interactive Claude session in tmux
+  (`CLAUDE_CODE_ENTRYPOINT` is `cli` and `TMUX_PANE` is set) has a card of its
+  own: kind `task`, source `session`, session agent `claude`. Any other session,
+  such as `claude -p`, one outside tmux, or one with `BKF_TASK` set, returns
+  before it reads its input, and a `BKF_TASK` session never touches the session
+  links. The session's `session_id` is its link to the card, kept in the store
+  as described under [bkf task](#bkf-task):
+
+  - `SessionStart` with no card for the `session_id`, in a git repository (the
+    input's `cwd`): creates the card, `working`. Its repository is the one that
+    holds `cwd`, its title is the tmux window's name (else the repository
+    folder's name), and its session records `tmux_session` and `tmux_window`
+    (the window id) of `TMUX_PANE`. Outside a git repository nothing is read or
+    written. A link whose card is missing is replaced by a new card.
+  - `SessionStart` with a card (`resume`, `compact`): reuses it, points its
+    session at the pane's window again, and takes a `done` card back to
+    `working`. That is the store's `resume` transition, which only a `done` card
+    takes; `bkf task start` keeps its own rules.
+  - `UserPromptSubmit`: while the card's title is still the one it was created
+    with, the first prompt with text names it: the prompt is cut to one line of
+    at most 120 characters. Later prompts never rename it, and a title someone
+    else set is kept.
+  - `SessionEnd`: a card that is `working` or `review` becomes `done`; a card in
+    any other status is left as it is. The link stays, so a resume with the same
+    id reuses the card and brings it back to `working`: one card for the whole
+    life of a session id. A link is replaced only when its card is gone.
+  - The mark events act on a session card as on a launched one. A link whose
+    card is missing does nothing on these events.
 - **check** registers a `SessionStart` hook that records a git snapshot,
   a `PostToolUse` hook that records files written by editing tool calls
   (`Edit`, `Write`, `NotebookEdit`, `MultiEdit`, `apply_patch`), and a `Stop`
@@ -697,7 +740,10 @@ bkf task delete ID
 
 **Layout.** Each task is `<store>/<id>/task.json`, and a task may also have
 `prompt.md`. The store holds `generation`, a counter that rises on every
-write, and `.lock`, which serializes writes. An id is `t` followed by the
+write, and `.lock`, which serializes writes. `<store>/.sessions/<session_id>.json`
+links a Claude session to its card: `{"task": <id>, "default_title": <title or null>}`,
+where `default_title` is kept until the first prompt names the card. The folder
+name starts with a dot, so `bkf task list` does not read it as a task. An id is `t` followed by the
 local time, a dash, and four hex digits, such as `t20261120-143005-a1b2`.
 Writes replace files atomically.
 
@@ -721,10 +767,10 @@ Writes replace files atomically.
 | `note` | free text, or null |
 | `created`, `updated` | UTC timestamps, `YYYY-MM-DDTHH:MM:SSZ` |
 
-**Statuses and transitions.** `todo` starts at `new`. `start` moves `todo` or
-`failed` to `working`, and clears `attention` and `exit`. `ready` moves
-`working` or `review` to `review`. `done` moves `working` or `review` to `done`.
-`fail` moves `working` to `failed`. `attention` is allowed in `todo`,
+**Statuses and transitions.** `todo` starts at `new`. `start` moves `todo`,
+`review`, or `failed` to `working` and clears `attention` and `exit`. `ready`
+moves `working` or `review` to `review`. `done` moves `working` or `review` to
+`done`. `fail` moves `working` or `review` to `failed`. `attention` is allowed in `todo`,
 `working`, `review`, and `failed` (a failed card is one that needs its owner);
 `--clear` is always allowed. `delete` removes the
 folder whatever its status. A transition that is not allowed is refused.

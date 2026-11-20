@@ -124,7 +124,7 @@ class HooksTest(unittest.TestCase):
             hooks = self.config(directory, name)["hooks"]
             expected_events = {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"}
             if directory == ".claude":
-                expected_events.update({"PostToolUseFailure", "SubagentStop"})
+                expected_events.update({"PostToolUseFailure", "SubagentStop", "PermissionRequest", "SessionEnd"})
             self.assertEqual(set(hooks), expected_events)
             self.assertEqual(len(hooks["UserPromptSubmit"]), 6)
             self.assertEqual(hooks["UserPromptSubmit"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
@@ -199,22 +199,30 @@ class HooksTest(unittest.TestCase):
         run("install", "--only", "rules", "--home", self.home)
         self.assertFalse((self.home / ".agent-hooks" / "rules.md").exists())
 
-    def test_install_task_registers_three_events_for_both_tools(self) -> None:
+    TASK_EVENTS = {
+        "claude": ("SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "PreToolUse", "PermissionRequest", "SessionEnd"),
+        "codex": ("SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "PreToolUse"),
+    }
+
+    def test_install_task_registers_its_events_for_both_tools(self) -> None:
         code, output = run("install", "--only", "task", "--home", self.home)
         self.assertEqual(code, 0)
-        for tool in ("claude", "codex"):
-            for event in ("SessionStart", "UserPromptSubmit", "Stop"):
+        for tool, events in self.TASK_EVENTS.items():
+            for event in events:
                 self.assertIn(f"missing  {tool:<7} {event}", output)
         self.assertIn("preview only", output)
         self.assertFalse((self.home / ".claude" / "settings.json").exists())
         code, _ = run("install", "--write", "--only", "task", "--home", self.home)
         self.assertEqual(code, 0)
-        for directory, name in ((".claude", "settings.json"), (".codex", "hooks.json")):
+        for directory, name, tool in ((".claude", "settings.json", "claude"), (".codex", "hooks.json", "codex")):
             hooks = self.config(directory, name)["hooks"]
-            self.assertEqual(set(hooks), {"SessionStart", "UserPromptSubmit", "Stop"})
-            for event in ("SessionStart", "UserPromptSubmit", "Stop"):
+            self.assertEqual(set(hooks), set(self.TASK_EVENTS[tool]))
+            for event in self.TASK_EVENTS[tool]:
                 self.assertEqual(hooks[event][0]["hooks"][0]["command"], f"{self.command} hooks run task")
-                self.assertNotIn("matcher", hooks[event][0])
+                if event == "PreToolUse":
+                    self.assertEqual(hooks[event][0]["matcher"], "AskUserQuestion")
+                else:
+                    self.assertNotIn("matcher", hooks[event][0])
         self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
 
     def test_task_hook_status_reports_the_new_events_as_missing_then_ok(self) -> None:
@@ -222,11 +230,20 @@ class HooksTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("missing  claude  UserPromptSubmit", output)
         self.assertIn("missing  codex   Stop", output)
+        self.assertIn("missing  claude  PermissionRequest", output)
+        self.assertIn("missing  claude  PreToolUse", output)
+        self.assertIn("missing  codex   PostToolUse", output)
         run("install", "--write", "--only", "task", "--home", self.home)
         code, output = run("status", "--only", "task", "--home", self.home)
         self.assertEqual(code, 0)
         self.assertIn("ok       claude  UserPromptSubmit", output)
         self.assertIn("ok       codex   Stop", output)
+        self.assertIn("ok       claude  PermissionRequest", output)
+        self.assertIn("ok       codex   PostToolUse", output)
+
+    def test_task_hook_is_not_registered_for_codex_permission_requests(self) -> None:
+        run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertNotIn("PermissionRequest", self.config(".codex", "hooks.json")["hooks"])
 
     def test_task_install_keeps_other_hooks_on_the_same_events(self) -> None:
         settings = self.home / ".claude" / "settings.json"

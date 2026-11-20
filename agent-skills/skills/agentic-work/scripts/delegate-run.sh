@@ -3,8 +3,8 @@
 # Usage: [DELEGATE_IN_PLACE=1] delegate-run.sh <name> <brief-file> [base-ref] [model] [effort]
 # DELEGATE_IN_PLACE=1 runs in the main checkout instead of a new worktree.
 # The run's state is its task card (bkf task): the run folder names it in `task`; `bkf task show "$(cat <run>/task)"` shows it.
-# DELEGATE_RERUN=1 allows reusing a run folder that already has a task card; a failed card is reused.
-# DELEGATE_UNIT_DIR=<unit folder> lets the agent's `ponte gate` write the gate receipt there (see harness.receipt).
+# DELEGATE_RERUN=1 reuses the run's card unless it is done or missing.
+# DELEGATE_UNIT_DIR=<unit folder> records the card id and lets `ponte gate` write the receipt there.
 # New worktrees run the repository's committed .plan-run.json setup; its bridge can run allowed pnpm scripts.
 # Codex only: a Claude implementer is a subagent (git tag agentic-work-claude-launcher has the launcher with a Claude backend).
 # Without a model and effort: gpt-6-luna and high.
@@ -44,17 +44,44 @@ cat >>"$runs/brief.md" <<ROLE
 Open and follow the role guide: $roles/agentic-work-implementation.md (read-only). It says how to work inside the brief and what to verify before you hand over.
 ROLE
 
-# The run's card: a rerun reuses the previous card when it failed, otherwise the run gets a new card.
 task_id=
 if [ -s "$runs/task" ]; then
-  previous=$(cat "$runs/task")
-  previous_status=$(bkf task show "$previous" --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' 2>/dev/null || true)
-  [ "$previous_status" != failed ] || task_id=$previous
+  task_id=$(cat "$runs/task") || progress "warning: could not read the task card id"
+fi
+if [ -n "$task_id" ]; then
+  if previous_card=$(bkf task show "$task_id" --json 2>&1); then
+    if ! previous_status=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<<"$previous_card" 2>/dev/null); then
+      progress "warning: could not read the status of task card $task_id"
+    elif [ "$previous_status" = done ]; then
+      task_id=
+    fi
+  elif [ "$previous_card" = "bkf task: no task $task_id" ]; then
+    task_id=
+  else
+    progress "warning: could not show task card $task_id: $previous_card"
+  fi
 fi
 if [ -z "$task_id" ]; then
-  task_id=$(bkf task new --repo "$repo" --title "$name" --kind unit --body-file "$brief")
+  if ! task_id=$(bkf task new --repo "$repo" --title "$name" --kind unit --body-file "$brief"); then
+    progress "warning: could not create the task card"
+    task_id=
+  fi
 fi
-echo "$task_id" >"$runs/task"
+if [ -n "$task_id" ]; then
+  printf '%s\n' "$task_id" >"$runs/task" || progress "warning: could not save the run's task card id"
+  if [ -n "${DELEGATE_UNIT_DIR:-}" ]; then
+    { mkdir -p "$DELEGATE_UNIT_DIR" && printf '%s\n' "$task_id" >"$DELEGATE_UNIT_DIR/task"; } \
+      || progress "warning: could not save the unit's task card id"
+  fi
+elif [ -n "${DELEGATE_UNIT_DIR:-}" ]; then
+  rm -f "$DELEGATE_UNIT_DIR/task" || progress "warning: could not clear the unit's previous task card id"
+fi
+
+start_card() {
+  [ -n "$task_id" ] || return 0
+  bkf task start "$task_id" --run-dir "$runs" --agent codex --model "$model" --effort "$effort" "$@" >/dev/null \
+    || progress "warning: could not start the task card"
+}
 
 if [ -n "${DELEGATE_IN_PLACE:-}" ]; then
   # Run in the main checkout; snapshot its current state (tracked files) as the diff base.
@@ -63,13 +90,18 @@ if [ -n "${DELEGATE_IN_PLACE:-}" ]; then
   base=${base:-$(git -C "$repo" rev-parse HEAD)}
   echo "$base" >"$runs/base"
   git -C "$repo" status --short >"$runs/status-before.txt"
-  bkf task start "$task_id" --worktree "$worktree" --run-dir "$runs" --agent codex --model "$model" --effort "$effort" >/dev/null
+  start_card --worktree "$worktree"
 else
-  # The card's worktree comes from bkf task: created on a new branch, or reused on a rerun of a failed card.
+  # The card's worktree comes from bkf task and is reused on relaunch.
   echo "$base" >"$runs/base"
-  bkf task start "$task_id" --run-dir "$runs" --agent codex --model "$model" --effort "$effort" >/dev/null
+  start_card
+  if [ -z "$task_id" ]; then
+    printf 'Error: the delegate worktree needs a task card.\n' >&2
+    printf '%s\n' "$runs"
+    exit 1
+  fi
   if ! prepared=$(bkf task worktree "$task_id" --base "$base" --json); then
-    bkf task fail "$task_id" --note worktree-failed >/dev/null || true
+    bkf task fail "$task_id" --note worktree-failed >/dev/null || progress "warning: could not mark the task card failed"
     printf 'Error: the delegate worktree could not be made; see the card %s\n' "$task_id" >&2
     printf '%s\n' "$runs"
     exit 1
@@ -77,7 +109,7 @@ else
   worktree=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["path"])' <<<"$prepared")
   created=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["created"])' <<<"$prepared")
   if [ "$created" = True ] && ! harness prepare --run "$runs" --repo "$repo" --tree "$worktree" >"$runs/prepare.log" 2>&1; then
-    bkf task fail "$task_id" --note prepare-failed >/dev/null || true
+    bkf task fail "$task_id" --note prepare-failed >/dev/null || progress "warning: could not mark the task card failed"
     printf 'Error: preparing the delegate worktree failed; see %s/prepare.log\n' "$runs" >&2
     printf '%s\n' "$runs"
     exit 1
@@ -159,10 +191,14 @@ if [ "$code" -eq 0 ]; then
     changed=$(git -C "$worktree" diff --name-only -z "$base" | tr -cd '\000' | wc -c | tr -d '[:space:]') || changed=0
   fi
   # The delegate's changes stay uncommitted, so the card is marked ready without git state.
-  bkf task ready "$task_id" --no-git --note "$changed files changed" >/dev/null || progress "could not mark the task card ready"
+  if [ -n "$task_id" ]; then
+    bkf task ready "$task_id" --no-git --note "$changed files changed" >/dev/null || progress "warning: could not mark the task card ready"
+  fi
   progress "concluído · $changed ficheiros"
 else
-  bkf task fail "$task_id" --exit "$code" >/dev/null || progress "could not mark the task card failed"
+  if [ -n "$task_id" ]; then
+    bkf task fail "$task_id" --exit "$code" >/dev/null || progress "warning: could not mark the task card failed"
+  fi
   progress "falhou · exit=$code"
 fi
 

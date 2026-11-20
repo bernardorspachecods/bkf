@@ -19,6 +19,13 @@ dir="" out="" model=""
 while [ "$#" -gt 0 ]; do
   case "$1" in -C) dir=$2; shift 2 ;; -o) out=$2; shift 2 ;; -m) model=$2; shift 2 ;; -c|-s) shift 2 ;; *) shift ;; esac
 done
+if [ -n "${FAKE_REVIEW_VERDICT:-}" ]; then
+  cat >/dev/null
+  printf '%s\n' '## What I checked' '' '- patch' '- brief' '- result' '' \
+    '## Problems' '' 'Fix the change.' '' "VERDICT: $FAKE_REVIEW_VERDICT" >"$out"
+  printf '%s\n' '{"type":"thread.started","thread_id":"test-review"}' '{"type":"turn.completed","usage":{"input_tokens":1}}'
+  exit 0
+fi
 echo "$model" >"$FAKE_MODEL"
 echo started >"$FAKE_RUN_MARKER"
 if [ -n "${FAKE_PROMPT:-}" ]; then cat >"$FAKE_PROMPT"; else cat >/dev/null; fi
@@ -84,8 +91,16 @@ run() { # <name> [env assignments...]; runs the script inside the repo, with the
     bash "$script" "$name" "$brief") >"$work/out.txt" 2>"$work/err.txt"
 }
 
+plan_unit() (
+  command=$1; shift
+  cd "$work/repo" && PLAN_GUIDES="$here/../roles" bash "$here/../scripts/plan-unit.sh" \
+    "$command" "$work/brief.md" --dir "$work/units" "$@"
+)
+
 # In place: the agent works in the checkout; the run folder holds the status, the base and the diff base to read.
-run inplace DELEGATE_IN_PLACE=1; code=$?
+plan_unit begin >"$work/begin.log" 2>&1 || { cat "$work/begin.log"; exit 1; }
+unit_dir="$work/units/brief"
+run inplace DELEGATE_IN_PLACE=1 DELEGATE_UNIT_DIR="$unit_dir"; code=$?
 runs=$work/runs/repo/inplace
 check "in place: exits 0" '[ $code -eq 0 ]'
 check "in place: the agent's file is in the checkout" '[ -f "$work/repo/made.txt" ]'
@@ -100,15 +115,29 @@ check "in place: the status files are kept" '[ -f "$runs/status-before.txt" ] &&
 check "in place: the default Codex model is used" '[ "$(cat "$work/model.txt")" = "gpt-6-luna" ]'
 check "in place: the script prints the run folder" '[ "$(tail -1 "$work/out.txt")" = "$runs" ]'
 check "role: the agent's prompt points to the implementation guide" 'grep -q "role guide: .*/roles/agentic-work-implementation.md" "$work/inplace.prompt"'
+check "unit folder: holds the same card id even without a gate" 'cmp -s "$runs/task" "$unit_dir/task"'
 rm "$work/repo/made.txt"
 
-# A second launch with the same name is refused until DELEGATE_RERUN=1; a card in review is not reused.
+# A second launch with the same name is refused until DELEGATE_RERUN=1.
 run inplace DELEGATE_IN_PLACE=1; code=$?
 check "rerun: refused without DELEGATE_RERUN" '[ $code -ne 0 ] && grep -q DELEGATE_RERUN "$work/err.txt"'
 old_task=$(cat "$runs/task")
+for round in 2 3; do
+  FAKE_REVIEW_VERDICT=back plan_unit check --review-model test >"$work/review.log" 2>&1; code=$?
+  check "back before round $round: the card stays in review" '[ $code -eq 1 ] && [ "$(card_field "$runs" status)" = review ]'
+  run inplace DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1 DELEGATE_UNIT_DIR="$unit_dir"; code=$?
+  check "round $round: a card in review is reused" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" = "$old_task" ] && [ "$(card_field "$runs" status)" = review ]'
+  check "round $round: the card is working while the agent runs" '[ "$(cat "$work/inplace.status.seen")" = working ]'
+done
+FAKE_REVIEW_VERDICT=pass plan_unit check --review-model test >"$work/review.log" 2>&1; code=$?
+check "back, back, pass: only one card exists and it is done" '[ $code -eq 0 ] && [ "$(bkf task list --kind unit)" = "$old_task  done  unit  inplace" ]'
+run inplace DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1 DELEGATE_UNIT_DIR="$unit_dir"; code=$?
+check "rerun: a done card is replaced" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" != "$old_task" ] && [ "$(card_field "$runs" status)" = review ]'
+check "unit folder: points to the replacement card" 'cmp -s "$runs/task" "$unit_dir/task"'
+removed_task=$(cat "$runs/task")
+bkf task delete "$removed_task"
 run inplace DELEGATE_IN_PLACE=1 DELEGATE_RERUN=1; code=$?
-check "rerun: allowed with DELEGATE_RERUN=1" '[ $code -eq 0 ]'
-check "rerun: a card in review is replaced by a new card" '[ "$(cat "$runs/task")" != "$old_task" ] && [ "$(card_field "$runs" status)" = review ]'
+check "rerun: a deleted card is replaced" '[ $code -eq 0 ] && [ "$(cat "$runs/task")" != "$removed_task" ] && [ "$(card_field "$runs" status)" = review ]'
 rm -f "$work/repo/made.txt"
 
 # Worktree: the agent works in a sibling worktree on its own branch and the checkout stays clean.

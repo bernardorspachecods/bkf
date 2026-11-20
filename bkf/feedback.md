@@ -8,6 +8,18 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
+## 2026-11-20: The U3 gate could not pass its real-tmux tests in this…
+
+> The U3 gate could not pass its real-tmux tests in this sandbox. The implementer confirmed with an isolated socket in /private/tmp that tmux reports Operation not permitted. See the [BKF launch command](/tooling/commands.md#bkf-launch).
+
+Noticed by the U3 implementer (agentic-work unit), working in bkf/bkf/tooling.
+
+## 2026-11-20: The PreToolUse hook refused a read-only Bash syntax check of…
+
+> The PreToolUse hook refused a read-only Bash syntax check of the delegate launcher as if it launched an agent. Observed by the U3 implementer. The command targeted the delegate-run.sh launcher. See the [BKF hook reference](/tooling/commands.md#bkf-hooks).
+
+Noticed by the U3 implementer (agentic-work unit), working in bkf/bkf/tooling.
+
 ## 2026-11-20 — the tooling test command tests the main checkout from a worktree
 
 Link: [tooling map](/tooling/MAP.md) (the test command). Noticed by me. The

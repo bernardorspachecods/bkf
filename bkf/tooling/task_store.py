@@ -31,10 +31,14 @@ FIELDS = (
     "worktree", "run_dir", "exit", "note", "created", "updated",
 )
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+TITLE_LIMIT = 120
+# The folder of the Claude session links, one JSON file per session. Its dot name keeps list_tasks from reading it.
+SESSIONS_FOLDER = ".sessions"
 
 _ID = re.compile(r"[a-z0-9-]{1,64}")
 _STAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 _GENERATION = re.compile(r"[0-9]+")
+_SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 _BREAK = re.compile(r"[\r\n\v\f\x1c-\x1e\x85  ]")
 
 
@@ -124,16 +128,20 @@ def is_valid_id(text: Any) -> bool:
 
 def repo_identity(path: str | os.PathLike[str]) -> str:
     """Return the folder holding the git common dir, so linked worktrees share one identity."""
-    resolved = Path(path).resolve()
+    return git_repo(path) or str(Path(path).resolve())
+
+
+def git_repo(path: str | os.PathLike[str]) -> str | None:
+    """Return the repository identity of a directory inside git, or None outside a repository."""
     try:
         result = subprocess.run(
-            ["git", "-C", str(resolved), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            ["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir"],
             capture_output=True, text=True, check=False,
         )
-    except OSError:
-        return str(resolved)
+    except (OSError, ValueError):
+        return None
     if result.returncode != 0 or not result.stdout.strip():
-        return str(resolved)
+        return None
     return str(Path(result.stdout.strip()).resolve().parent)
 
 
@@ -162,7 +170,7 @@ def create(
     store = Path(store)
     when = _utc(now)
     stamp = _stamp(when)
-    with _locked(store):
+    with locked(store):
         task_id = _fresh_id(store, when)
         task = Task(
             id=task_id, kind=kind, parent=parent, repo=repo,
@@ -211,7 +219,7 @@ def update(
 ) -> Task:
     store = Path(store)
     folder = _existing(store, task_id)
-    with _locked(store):
+    with locked(store):
         folder = _existing(store, task_id)
         task = _read_task(folder)
         change(task)
@@ -225,7 +233,7 @@ def update(
 def write_prompt(store: Path, task_id: str, text: str) -> None:
     store = Path(store)
     _existing(store, task_id)
-    with _locked(store):
+    with locked(store):
         folder = _existing(store, task_id)
         _write_atomic(folder / "prompt.md", text)
         _bump(store)
@@ -243,7 +251,7 @@ def read_prompt(store: Path, task_id: str) -> str | None:
 def delete(store: Path, task_id: str) -> None:
     store = Path(store)
     _existing(store, task_id)
-    with _locked(store):
+    with locked(store):
         folder = _existing(store, task_id)
         shutil.rmtree(folder)
         _bump(store)
@@ -258,7 +266,7 @@ def start(
     worktree: dict[str, Any] | None = None,
     run_dir: str | None = None,
 ) -> None:
-    _require(task, ("todo", "failed"), "working")
+    _require(task, ("todo", "review", "failed"), "working")
     task.status = "working"
     task.attention = None
     task.exit = None
@@ -289,6 +297,13 @@ def mark_ready(
         task.note = note
 
 
+def resume(task: Task) -> None:
+    """Take a done card back to working, for a session that runs again (resume, compact)."""
+    _require(task, ("done",), "working")
+    task.status = "working"
+    task.attention = None
+
+
 def mark_done(task: Task) -> None:
     _require(task, ("working", "review"), "done")
     task.status = "done"
@@ -296,7 +311,7 @@ def mark_done(task: Task) -> None:
 
 
 def mark_failed(task: Task, *, exit: int | None = None, note: str | None = None) -> None:
-    _require(task, ("working",), "failed")
+    _require(task, ("working", "review"), "failed")
     task.status = "failed"
     task.attention = None
     if exit is not None:
@@ -331,6 +346,12 @@ def _object(value: Any, keys: tuple[str, ...]) -> dict[str, Any]:
 
 def _normalize_title(title: str) -> str:
     return " ".join(str(title).splitlines()).strip()
+
+
+def title_from_text(text: str) -> str | None:
+    """Return a card title from free text: one line, at most TITLE_LIMIT characters; None when nothing is left."""
+    title = _normalize_title(text)[:TITLE_LIMIT].rstrip()
+    return title or None
 
 
 def _problem(data: dict[str, Any], folder: str | None) -> str | None:
@@ -472,13 +493,57 @@ def _bump(store: Path) -> None:
     _write_atomic(store / "generation", f"{generation(store) + 1}\n")
 
 
+_HELD: set[str] = set()
+
+
 @contextmanager
-def _locked(store: Path) -> Iterator[None]:
+def locked(store: Path) -> Iterator[None]:
+    """Hold the store's write lock. Re-entrant in one process, so a caller may hold it around several writes."""
+    store = Path(store)
+    key = str(store.resolve())
+    if key in _HELD:
+        yield
+        return
     store.mkdir(parents=True, exist_ok=True)
     fd = os.open(store / ".lock", os.O_RDWR | os.O_CREAT, 0o644)
     try:
         flock(fd, LOCK_EX)
-        yield
+        _HELD.add(key)
+        try:
+            yield
+        finally:
+            _HELD.discard(key)
+            flock(fd, LOCK_UN)
     finally:
-        flock(fd, LOCK_UN)
         os.close(fd)
+
+
+# Session links: which card a Claude session writes to. One JSON file per session id, written under the lock.
+
+def is_valid_session_id(text: Any) -> bool:
+    return isinstance(text, str) and _SESSION.fullmatch(text) is not None
+
+
+def session_link(store: Path, session_id: str) -> dict[str, Any] | None:
+    """Return {"task": id, "default_title": title or None} for a session, or None when it has no valid link."""
+    if not is_valid_session_id(session_id):
+        return None
+    try:
+        with open(Path(store) / SESSIONS_FOLDER / f"{session_id}.json", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not is_valid_id(data.get("task")) or not _opt_str(data.get("default_title")):
+        return None
+    return {"task": data["task"], "default_title": data.get("default_title")}
+
+
+def write_session_link(store: Path, session_id: str, link: dict[str, Any]) -> None:
+    store = Path(store)
+    if not is_valid_session_id(session_id):
+        raise InvalidValue(f"not a valid session id: {session_id!r}")
+    with locked(store):
+        folder = store / SESSIONS_FOLDER
+        folder.mkdir(parents=True, exist_ok=True)
+        _write_atomic(folder / f"{session_id}.json", json.dumps(link, sort_keys=True) + "\n")
+        _bump(store)

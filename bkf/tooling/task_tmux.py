@@ -238,6 +238,24 @@ def repo_key(path: str) -> str:
     return _repo_key(path, default_runner)
 
 
+class PaneWindow(NamedTuple):
+    session: str
+    window_id: str
+    window_name: str
+
+
+def pane_window(pane: str, environ: Mapping[str, str] = os.environ, runner: Runner | None = None) -> PaneWindow | None:
+    """Return the session, window id and window name of a tmux pane, or None when tmux cannot tell."""
+    try:
+        text = _display(runner or default_runner, environ, pane, "#{session_name}\t#{window_id}\t#{window_name}")
+    except TmuxError:
+        return None
+    parts = text.split("\t")
+    if len(parts) != 3 or not WINDOW_ID.fullmatch(parts[1]):
+        return None
+    return PaneWindow(*parts)
+
+
 def repo_session_name(repo: str) -> str:
     """The tmux session of a repository: its folder name as a slug, then the first 6 hex characters of the SHA-1 of its path."""
     folder = Path(repo).name

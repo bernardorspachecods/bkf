@@ -212,8 +212,8 @@ class TransitionTests(unittest.TestCase):
             exit=None, note=None, created="2026-11-20T14:30:05Z", updated="2026-11-20T14:30:05Z",
         )
 
-    def test_start_from_todo_and_failed(self) -> None:
-        for status in ("todo", "failed"):
+    def test_start_from_todo_review_and_failed(self) -> None:
+        for status in ("todo", "review", "failed"):
             with self.subTest(status):
                 task = self.task(status)
                 task.exit = 2
@@ -242,9 +242,11 @@ class TransitionTests(unittest.TestCase):
         mark_done(done)
         self.assertEqual(done.status, "done")
         self.assertIsNone(done.attention)
-        failed = self.task("working")
-        mark_failed(failed, exit=1, note="boom")
-        self.assertEqual((failed.status, failed.exit, failed.note), ("failed", 1, "boom"))
+        for status in ("working", "review"):
+            with self.subTest(status):
+                failed = self.task(status)
+                mark_failed(failed, exit=1, note="boom")
+                self.assertEqual((failed.status, failed.exit, failed.note), ("failed", 1, "boom"))
 
     def test_set_and_clear_attention(self) -> None:
         task = self.task("working")
@@ -266,19 +268,19 @@ class TransitionTests(unittest.TestCase):
 
     def test_allowed_and_refused_transitions(self) -> None:
         allowed = [
-            (start, "todo", {}), (start, "failed", {}),
+            (start, "todo", {}), (start, "review", {}), (start, "failed", {}),
             (mark_ready, "working", {}), (mark_ready, "review", {}),
             (mark_done, "working", {}), (mark_done, "review", {}),
-            (mark_failed, "working", {}),
+            (mark_failed, "working", {}), (mark_failed, "review", {}),
         ]
         for function, status, kwargs in allowed:
             with self.subTest(function.__name__, status=status):
                 function(self.task(status), **kwargs)
         refused = [
-            (start, "working"), (start, "review"), (start, "done"),
+            (start, "working"), (start, "done"),
             (mark_ready, "todo"), (mark_ready, "done"), (mark_ready, "failed"),
             (mark_done, "todo"), (mark_done, "done"), (mark_done, "failed"),
-            (mark_failed, "todo"), (mark_failed, "review"), (mark_failed, "done"),
+            (mark_failed, "todo"), (mark_failed, "failed"), (mark_failed, "done"),
         ]
         for function, status in refused:
             with self.subTest(function.__name__, status=status):
