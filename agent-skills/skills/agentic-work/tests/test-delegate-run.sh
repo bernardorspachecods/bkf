@@ -224,6 +224,16 @@ check "receipt: the bridge is on without a bridge in .plan-run.json" '! grep -q 
 check "receipt: ponte gate wrote the receipt in the unit folder" '[ -f "$work/unit/receipt/receipt.json" ] && grep -q "\"red\": 0" "$work/unit/receipt/receipt.json"'
 check "receipt: ponte gate printed the gate report to the agent" 'grep -q "test -f made.txt" "$work/gated.ponte"'
 
+# Launched through a symlinked skills folder (as ~/.claude/skills is), the script still finds the harness: the gate receipt is enabled.
+mkdir -p "$work/linked" "$work/linked-unit"
+ln -sfn "$here/../.." "$work/linked/skills"
+script=$work/linked/skills/agentic-work/scripts/delegate-run.sh
+BRIEF_FILE="$work/gate-brief.md" run linked DELEGATE_UNIT_DIR="$work/linked-unit" FAKE_PONTE_GATE="$work/linked.ponte"; code=$?
+script=$here/../scripts/delegate-run.sh
+check "symlink: exits 0" '[ $code -eq 0 ]'
+check "symlink: the brief names the gate receipt section" 'grep -q "^## Gate receipt" "$work/runs/repo/linked/brief.md"'
+check "symlink: ponte gate wrote the receipt in the unit folder" '[ -f "$work/linked-unit/receipt/receipt.json" ]'
+
 # Without DELEGATE_UNIT_DIR the brief has no receipt section, no bridge runs and nothing is written.
 BRIEF_FILE="$work/gate-brief.md" run gatedoff FAKE_PONTE_GATE="$work/gatedoff.ponte"; code=$?
 check "no unit folder: exits 0" '[ $code -eq 0 ]'

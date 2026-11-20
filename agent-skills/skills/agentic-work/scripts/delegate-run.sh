@@ -10,7 +10,7 @@
 # Without a model and effort: gpt-6-luna and high.
 set -euo pipefail
 
-here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck source=/dev/null
 . "$here/../../../harness/scripts/lib.sh"
 
