@@ -34,6 +34,7 @@ class BkfTaskTests(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
         os.environ.pop("BKF_TASK", None)
+        os.environ.pop("BKF_TMUX_SOCKET", None)
 
     def run_task(self, *arguments: str, stdin: str = "") -> tuple[int, str, str]:
         stdout = io.StringIO()
@@ -479,6 +480,14 @@ class BkfTaskTests(unittest.TestCase):
         self.assertEqual((status, error), (0, ""))
         self.assertEqual(calls, [["tmux", "capture-pane", "-p", "-S", "-200", "-t", "repo-ab12cd:@41"]])
         self.assertEqual(output, "line one\nline two\n")
+
+    def test_output_uses_the_tmux_socket_of_the_environment(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        with patch.dict(os.environ, {"BKF_TMUX_SOCKET": "throwaway"}):
+            status, _, error = self.run_task("output", task_id, "--lines", "50")
+        self.assertEqual((status, error), (0, ""))
+        self.assertEqual(calls, [["tmux", "-L", "throwaway", "capture-pane", "-p", "-S", "-50", "-t", "repo-ab12cd:@41"]])
 
     def test_output_with_lines_passes_that_history_size(self) -> None:
         task_id = self.windowed()

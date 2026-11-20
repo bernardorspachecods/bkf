@@ -33,7 +33,8 @@ py=
 [ -z "$missing" ] && py="$(uv tool dir)/bkf-tooling/bin/python3"
 if [ -n "$missing" ]; then bkf_missing=$missing; elif [ ! -x "$py" ]; then bkf_missing="the bkf tool environment is missing ($py)"; else bkf_missing=; fi
 uv_tool_dir=$(uv tool dir 2>/dev/null)
-tmux_ls_before=$(command tmux ls 2>&1)
+# Session names only: windows and the attached flag change whenever the user works in their own tmux.
+tmux_ls_before=$(command tmux ls -F '#{session_name}' 2>&1 | sort)
 real_tasks_before=$(ls -A "$real_tasks" 2>/dev/null | sort)
 
 # ---- Sandbox: a home of its own, a temporary task store, a throwaway tmux server, and fake agents first on PATH.
@@ -461,7 +462,7 @@ case_no_leftovers() {
   local tmux_ls_after real_tasks_after
   t kill-server 2>/dev/null
   check "the throwaway tmux server is gone" bash -c '! command tmux -L "$1" ls >/dev/null 2>&1' _ "$sock"
-  tmux_ls_after=$(command tmux ls 2>&1)
+  tmux_ls_after=$(command tmux ls -F '#{session_name}' 2>&1 | sort)
   eq "$tmux_ls_after" "$tmux_ls_before" "the user's default tmux server has no new session"
   real_tasks_after=$(ls -A "$real_tasks" 2>/dev/null | sort)
   eq "$real_tasks_after" "$real_tasks_before" "the real task store has nothing new"
