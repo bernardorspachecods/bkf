@@ -678,7 +678,7 @@ class TaskHookTest(unittest.TestCase):
         (self.store / task_id / "task.json").write_text("[]", encoding="utf-8")
         output = io.StringIO()
         with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
-            code = task_hook.run()
+            code = task_hook.run(environ=None, stream=io.StringIO(""))
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), "")
 
@@ -686,6 +686,154 @@ class TaskHookTest(unittest.TestCase):
         task_id = self.make()
         output = io.StringIO()
         with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
-            code = task_hook.run()
+            code = task_hook.run(environ=None, stream=io.StringIO(""))
         self.assertEqual(code, 0)
         self.assertEqual(output.getvalue(), task_hook.session_text({**self.env, "BKF_TASK": task_id}))
+
+
+class TaskTurnHookTest(unittest.TestCase):
+    """The task hook on Stop and UserPromptSubmit: the card waits for the owner, and resumes when they reply."""
+
+    NOTE = "waiting for your reply"
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Path(self.tmp.name) / "tasks"
+        self.env = {"BKF_TASKS_DIR": str(self.store), "HOME": self.tmp.name}
+
+    def make(self, kind: str = "task", status: str = "working", attention: tuple[str, str | None] | None = None) -> str:
+        task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
+        if status in ("working", "review", "done", "failed"):
+            task_store.update(self.store, task.id, task_store.start)
+        if status == "review":
+            task_store.update(self.store, task.id, task_store.mark_ready)
+        elif status == "done":
+            task_store.update(self.store, task.id, task_store.mark_done)
+        elif status == "failed":
+            task_store.update(self.store, task.id, task_store.mark_failed)
+        if attention is not None:
+            reason, note = attention
+            task_store.update(self.store, task.id, lambda t: task_store.set_attention(t, reason, note=note, now=None))
+        return task.id
+
+    def fire(self, event: str, task_id: str | None, raw: str | None = None) -> tuple[int, str]:
+        env = dict(self.env)
+        if task_id is not None:
+            env["BKF_TASK"] = task_id
+        text = raw if raw is not None else json.dumps({"hook_event_name": event, "session_id": "s"})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = task_hook.run(environ=env, stream=io.StringIO(text))
+        return code, output.getvalue()
+
+    def attention(self, task_id: str) -> dict | None:
+        return task_store.read(self.store, task_id).attention
+
+    def test_stop_on_working_task_sets_prompt_attention_with_the_note(self) -> None:
+        task_id = self.make()
+        code, output = self.fire("Stop", task_id)
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "")
+        attention = self.attention(task_id)
+        self.assertEqual(attention["reason"], "prompt")
+        self.assertEqual(attention["note"], self.NOTE)
+        self.assertRegex(attention["since"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_stop_on_working_handoff_sets_the_attention(self) -> None:
+        task_id = self.make(kind="handoff")
+        self.fire("Stop", task_id)
+        self.assertEqual(self.attention(task_id)["note"], self.NOTE)
+
+    def test_stop_keeps_any_existing_attention(self) -> None:
+        for attention in (("prompt", "crew says hi"), ("still", None), ("escalated", "look")):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("Stop", task_id)
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_stop_leaves_review_done_failed_and_todo_alone(self) -> None:
+        for status in ("review", "done", "failed", "todo"):
+            task_id = self.make(status=status)
+            before = task_store.read(self.store, task_id).to_json()
+            code, output = self.fire("Stop", task_id)
+            self.assertEqual((code, output), (0, ""))
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, status)
+
+    def test_stop_leaves_unit_crew_and_coordinator_cards_alone(self) -> None:
+        for kind in ("unit", "crew", "coordinator"):
+            task_id = self.make(kind=kind)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("Stop", task_id)
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, kind)
+
+    def test_user_prompt_clears_only_the_waiting_mark(self) -> None:
+        task_id = self.make(attention=("prompt", self.NOTE))
+        code, output = self.fire("UserPromptSubmit", task_id)
+        self.assertEqual((code, output), (0, ""))
+        self.assertIsNone(self.attention(task_id))
+        self.assertEqual(task_store.read(self.store, task_id).status, "working")
+
+    def test_user_prompt_keeps_prompt_with_another_note(self) -> None:
+        task_id = self.make(attention=("prompt", "crew says hi"))
+        before = task_store.read(self.store, task_id).to_json()
+        self.fire("UserPromptSubmit", task_id)
+        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_user_prompt_keeps_other_reasons_and_no_attention(self) -> None:
+        for attention in (("still", self.NOTE), ("overdue", None), None):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            code, output = self.fire("UserPromptSubmit", task_id)
+            self.assertEqual((code, output), (0, ""))
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_stop_then_prompt_round_trip(self) -> None:
+        task_id = self.make()
+        self.fire("Stop", task_id)
+        self.assertIsNotNone(self.attention(task_id))
+        self.fire("UserPromptSubmit", task_id)
+        self.assertIsNone(self.attention(task_id))
+
+    def test_stop_and_prompt_print_nothing_even_for_a_text_card(self) -> None:
+        task_id = self.make()
+        for event in ("Stop", "UserPromptSubmit"):
+            self.assertEqual(self.fire(event, task_id), (0, ""))
+
+    def test_session_start_text_is_unchanged(self) -> None:
+        task_id = self.make()
+        expected = task_hook.session_text({**self.env, "BKF_TASK": task_id})
+        code, output = self.fire("SessionStart", task_id)
+        self.assertEqual((code, output), (0, expected))
+        self.assertIsNone(self.attention(task_id))
+
+    def test_empty_or_invalid_input_behaves_as_session_start(self) -> None:
+        task_id = self.make()
+        expected = task_hook.session_text({**self.env, "BKF_TASK": task_id})
+        for raw in ("", "not json", "[1, 2]", json.dumps({"no": "event"})):
+            self.assertEqual(self.fire("", task_id, raw=raw), (0, expected), raw)
+        self.assertIsNone(self.attention(task_id))
+
+    def test_unknown_or_missing_task_is_silent_and_exits_zero(self) -> None:
+        for task_id in (None, "", "t20990101-000000-ffff", "../escape"):
+            for event in ("Stop", "UserPromptSubmit", "SessionStart"):
+                self.assertEqual(self.fire(event, task_id), (0, ""), (event, task_id))
+        self.assertEqual(task_store.list_tasks(self.store).tasks, [])
+
+    def test_corrupt_card_is_swallowed_on_stop(self) -> None:
+        task_id = self.make()
+        (self.store / task_id / "task.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual(self.fire("Stop", task_id), (0, ""))
+        self.assertEqual(self.fire("UserPromptSubmit", task_id), (0, ""))
+
+    def test_stop_goes_through_the_store_lock_and_bumps_the_generation(self) -> None:
+        task_id = self.make()
+        before = task_store.generation(self.store)
+        self.fire("Stop", task_id)
+        self.assertEqual(task_store.generation(self.store), before + 1)
+        self.fire("Stop", task_id)
+        self.assertEqual(task_store.generation(self.store), before + 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

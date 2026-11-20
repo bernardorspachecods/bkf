@@ -96,6 +96,9 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
     tabname = f"{bkf_command(home)} hooks run tabname"
     tabname_owner = re.compile(r"(^|/)bkf hooks run tabname$")
     wanted += [Registration("tabname", event, None, tabname, tabname_owner) for event in ("SessionStart", "UserPromptSubmit", "Stop")]
+    task = f"{bkf_command(home)} hooks run task"
+    task_owner = re.compile(r"(^|/)bkf hooks run task$")
+    wanted += [Registration("task", event, None, task, task_owner) for event in ("UserPromptSubmit", "Stop")]
     sources = f"{bkf_command(home)} hooks run sources"
     sources_owner = re.compile(r"(^|/)bkf hooks run sources$")
     for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SubagentStop"):

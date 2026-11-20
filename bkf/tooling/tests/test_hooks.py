@@ -126,8 +126,9 @@ class HooksTest(unittest.TestCase):
             if directory == ".claude":
                 expected_events.update({"PostToolUseFailure", "SubagentStop"})
             self.assertEqual(set(hooks), expected_events)
-            self.assertEqual(len(hooks["UserPromptSubmit"]), 5)
+            self.assertEqual(len(hooks["UserPromptSubmit"]), 6)
             self.assertEqual(hooks["UserPromptSubmit"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
+            self.assertEqual(hooks["UserPromptSubmit"][5]["hooks"][0]["command"], f"{self.command} hooks run task")
             self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], "python3 " + str((self.home / ".agent-hooks" / "mode.py").resolve()))
             self.assertEqual(hooks["UserPromptSubmit"][1]["hooks"][0]["command"], f"{self.command} hooks run log")
             self.assertEqual(hooks["UserPromptSubmit"][2]["hooks"][0]["command"], f"{self.command} hooks run audit")
@@ -139,6 +140,7 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(len(hooks["SessionStart"]), 5)
             self.assertEqual(hooks["SessionStart"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["Stop"][2]["hooks"][0]["command"], f"{self.command} hooks run tabname")
+            self.assertEqual(hooks["Stop"][3]["hooks"][0]["command"], f"{self.command} hooks run task")
             self.assertEqual(hooks["SessionStart"][1]["hooks"][0]["command"], f"{self.command} hooks run rules")
             self.assertEqual(hooks["SessionStart"][2]["hooks"][0]["command"], f"{self.command} hooks run task")
             self.assertEqual(hooks["SessionStart"][3]["hooks"][0]["command"], f"{self.command} hooks run snapshot")
@@ -197,21 +199,43 @@ class HooksTest(unittest.TestCase):
         run("install", "--only", "rules", "--home", self.home)
         self.assertFalse((self.home / ".agent-hooks" / "rules.md").exists())
 
-    def test_install_task_registers_session_start_for_both_tools(self) -> None:
+    def test_install_task_registers_three_events_for_both_tools(self) -> None:
         code, output = run("install", "--only", "task", "--home", self.home)
         self.assertEqual(code, 0)
-        self.assertIn("missing  claude  SessionStart", output)
-        self.assertIn("missing  codex   SessionStart", output)
+        for tool in ("claude", "codex"):
+            for event in ("SessionStart", "UserPromptSubmit", "Stop"):
+                self.assertIn(f"missing  {tool:<7} {event}", output)
         self.assertIn("preview only", output)
         self.assertFalse((self.home / ".claude" / "settings.json").exists())
         code, _ = run("install", "--write", "--only", "task", "--home", self.home)
         self.assertEqual(code, 0)
         for directory, name in ((".claude", "settings.json"), (".codex", "hooks.json")):
             hooks = self.config(directory, name)["hooks"]
-            self.assertEqual(set(hooks), {"SessionStart"})
-            self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} hooks run task")
-            self.assertNotIn("matcher", hooks["SessionStart"][0])
+            self.assertEqual(set(hooks), {"SessionStart", "UserPromptSubmit", "Stop"})
+            for event in ("SessionStart", "UserPromptSubmit", "Stop"):
+                self.assertEqual(hooks[event][0]["hooks"][0]["command"], f"{self.command} hooks run task")
+                self.assertNotIn("matcher", hooks[event][0])
         self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_hook_status_reports_the_new_events_as_missing_then_ok(self) -> None:
+        code, output = run("status", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 1)
+        self.assertIn("missing  claude  UserPromptSubmit", output)
+        self.assertIn("missing  codex   Stop", output)
+        run("install", "--write", "--only", "task", "--home", self.home)
+        code, output = run("status", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("ok       claude  UserPromptSubmit", output)
+        self.assertIn("ok       codex   Stop", output)
+
+    def test_task_install_keeps_other_hooks_on_the_same_events(self) -> None:
+        settings = self.home / ".claude" / "settings.json"
+        other = {"type": "command", "command": "echo mine"}
+        settings.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [other]}]}}))
+        run("install", "--write", "--only", "task", "--home", self.home)
+        stop = self.config(".claude", "settings.json")["hooks"]["Stop"]
+        self.assertEqual(stop[0]["hooks"], [other])
+        self.assertEqual(stop[1]["hooks"][0]["command"], f"{self.command} hooks run task")
 
     def test_task_hook_is_probed_with_empty_input_and_no_task(self) -> None:
         run("install", "--write", "--only", "task", "--home", self.home)

@@ -281,10 +281,10 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   agent it starts. The hook never fails a session and `bkf hooks install --write`
   copies `default_rules.txt` to that path only when it does not exist, and never
   overwrites or edits an existing file.
-- **task** registers a `SessionStart` hook, `bkf hooks run task`, that tells a
-  session started for a task which task it works on and the two commands that
-  move its card. It reads the task id from `BKF_TASK` and the task from the
-  [task store](#bkf-task). It prints this text, and nothing otherwise:
+- **task** registers a `SessionStart` hook, a `UserPromptSubmit` hook and a
+  `Stop` hook, all `bkf hooks run task`, for Claude Code and Codex. It reads the
+  task id from `BKF_TASK` and the task from the [task store](#bkf-task). On
+  `SessionStart` it prints this text, and nothing otherwise:
 
   > This session works on task <id> (<kind>): <title>. When the work is done,
   > reviewed and committed on its branch, run `bkf task ready --note "<one-line
@@ -294,8 +294,18 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
 
   It prints nothing when `BKF_TASK` is unset, when the task cannot be read, when
   its kind is `unit` or `crew` (a script or the orchestrator owns those cards)
-  or when its status is `done`. It always exits 0. The agents that the harness
-  starts never see `BKF_TASK`.
+  or when its status is `done`. The `Stop` event marks a card that is `working`
+  and of kind `task` or `handoff` as waiting for the owner, with attention
+  reason `prompt` and the note `waiting for your reply`, when the card has no
+  attention yet; a card with any other attention, or in another status, is left
+  alone. The `UserPromptSubmit` event clears attention only when it is that same
+  `prompt` with that same note, so a person's reply resumes the card while a
+  `prompt` set by the crew watcher stays. `Stop` and `UserPromptSubmit` print
+  nothing, since their standard output would go to the agent's context. Both
+  change the card through the store's locked helpers, as `bkf task attention`
+  does. Empty or invalid input is treated as `SessionStart`. The hook always
+  exits 0; errors are swallowed. The agents that the harness starts never see
+  `BKF_TASK`.
 - **check** registers a `SessionStart` hook that records a git snapshot,
   a `PostToolUse` hook that records files written by editing tool calls
   (`Edit`, `Write`, `NotebookEdit`, `MultiEdit`, `apply_patch`), and a `Stop`
