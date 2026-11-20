@@ -99,6 +99,10 @@ in the [specification](/format/format-specification.md#6-conformance) and the
 - A bundle with a `tag-vocabulary.yaml` gets `TAG_VOCABULARY_INVALID` for an
   unusable file and `TAG_UNKNOWN` for each tag that is not a canonical tag
   ([frontmatter profiles](/format/frontmatter-profiles.md#tag-vocabulary)).
+- A [notes file](/format/format-specification.md#35-notes-files) with a `bkf`
+  field is `NOTES_TRACKED`, and a link to one from a document or a map is
+  `NOTES_LINKED`; both are errors. The validator reads only a notes file's
+  frontmatter, and frontmatter it cannot parse is not a finding.
 - `REPO_LIBRARY_ENTRY_UNLINKED` warns when no enclosing-bundle document outside
   `repo-library/` links to a Markdown entry.
 
@@ -529,9 +533,10 @@ bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
 The index is rebuilt in memory for each call.
 
 The index includes tracked BKF documents and every `AGENTS.md`. It excludes
-`MAP.md`, feedback and ideas profiles, untracked files, and files inside hidden
-folders. Membership and document metadata follow the
-[tracking rules](/format/format-specification.md#32-tracking) and
+`MAP.md`, feedback and ideas profiles, untracked files, the bundle-root
+`readme.md` and notes files, and files inside hidden folders. Membership and
+document metadata follow the
+[membership rules](/format/format-specification.md#12-discovery-membership-and-composition) and
 [frontmatter profiles](/format/frontmatter-profiles.md).
 
 Tags are indexed for every section of a document, so a query word that is a

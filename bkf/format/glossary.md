@@ -83,7 +83,7 @@ See the [format specification](/format/format-specification.md#31-map-files-and-
 
 ## Member
 
-A Markdown file within a bundle, except the optional root `readme.md`. A member is tracked or untracked.
+A Markdown file within a bundle, except the optional root `readme.md` and the root notes files. A member is tracked or untracked.
 
 See the [format specification](/format/format-specification.md#12-discovery-membership-and-composition).
 
@@ -104,6 +104,12 @@ See [the layers](/manual/what-is-bkf.md#the-layers); `agent-skills/modules/MAP.m
 A folder inside a bundle whose `MAP.md` declares `bkf_version` is a separate bundle with its own root, members, and conformance, assessed by selecting that folder.
 
 See the [format specification](/format/format-specification.md#33-nested-bundles).
+
+## Notes file
+
+A bundle-root `notes.md` or `notes<N>.md` holding the user's private notes; it is not a member, and agents do not read it unless the user asks.
+
+See the [format specification](/format/format-specification.md#35-notes-files).
 
 ## Owner
 
