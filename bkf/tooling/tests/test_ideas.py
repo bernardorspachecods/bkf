@@ -76,8 +76,8 @@ class IdeasTests(unittest.TestCase):
         self.assertIn("ERROR IDEAS_PROFILE ideas.md", result.stdout)
 
     def test_ideas_profile_is_reserved_for_the_root_ideas_file(self) -> None:
-        result = self.run_bundle({"notes.md": ideas_text(body="x\n")})
-        self.assertIn("ERROR IDEAS_PROFILE notes.md", result.stdout)
+        result = self.run_bundle({"other.md": ideas_text(body="x\n")})
+        self.assertIn("ERROR IDEAS_PROFILE other.md", result.stdout)
         nested = self.run_bundle({"area/ideas.md": ideas_text(body="x\n")})
         self.assertIn("ERROR IDEAS_LOCATION area/ideas.md", nested.stdout)
 
