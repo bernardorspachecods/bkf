@@ -96,6 +96,15 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("--lines", metavar="N", help="also read N lines of history above the screen "
                         f"(default 200, at most {task_tmux.CAPTURE_LINES_LIMIT})")
 
+    send = commands.add_parser("send", help="type a message into a task's tmux window, as the user would")
+    send.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
+    message = send.add_mutually_exclusive_group(required=True)
+    message.add_argument("--text", metavar="T", help="the message: each line is typed, with Enter between lines")
+    message.add_argument("--message-file", dest="message_file", metavar="F|-",
+                         help="read the message from F, or from standard input with -")
+    send.add_argument("--no-enter", dest="no_enter", action="store_true",
+                      help="type the message without the Enter that submits its last line")
+
     delete = commands.add_parser("delete", help="delete a task folder")
     delete.add_argument("id", metavar="ID")
     return parser
@@ -273,6 +282,25 @@ def _output(args: argparse.Namespace, store: Path) -> int:
     return 0
 
 
+def _send(args: argparse.Namespace, store: Path) -> int:
+    text = args.text if args.text is not None else _body(args.message_file)
+    task_id = _task_id(args.id)
+    task = task_store.read(store, task_id)
+    session = task.session or {}
+    name, window = session.get("tmux_session"), session.get("tmux_window")
+    if not name or not window:
+        raise Refusal(f"task {task_id} has no window")
+    try:
+        result = task_tmux.send_keys(name, window, text, enter=not args.no_enter)
+    except task_tmux.TargetRefused as exc:
+        raise Refusal(str(exc)) from None
+    if result.returncode == TMUX_MISSING:
+        raise Refusal("tmux is not installed or not on PATH")
+    if result.returncode != 0:
+        raise Refusal(f"the window of task {task_id} is closed")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -330,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
         elif args.command == "output":
             return _output(args, store)
+        elif args.command == "send":
+            return _send(args, store)
         elif args.command == "delete":
             task_store.delete(store, args.id)
     except (Refusal, TaskError, OSError, UnicodeError) as exc:

@@ -22,6 +22,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Register, reopen, close, or check researched sources | [bkf sources](#bkf-sources) |
 | Record, read, or change agent tasks | [bkf task](#bkf-task) |
 | Read the text of a task's tmux window | [bkf task output](#bkf-task) |
+| Send text to a task's tmux window | [bkf task send](#bkf-task) |
 | Open an agent session in tmux with its task card | [bkf launch](#bkf-launch) |
 
 ## Install
@@ -729,6 +730,7 @@ bkf task new --repo DIR --title T [--body-file F|-] [--source S] [--kind K] [--p
 bkf task list [--repo DIR] [--status S]... [--kind K] [--parent ID] [--json]
 bkf task show [ID] [--json]
 bkf task output [ID] [--lines N]
+bkf task send [ID] (--text T | --message-file F|-) [--no-enter]
 bkf task start ID [--agent A] [--model M] [--effort E] [--reviewer R] [--tmux-session S] [--tmux-window W] [--worktree PATH] [--branch B] [--run-dir D]
 bkf task worktree ID [--base REV] [--json]
 bkf task ready [ID] [--note T] [--no-git]
@@ -846,6 +848,18 @@ a colon, a space or a line break is refused before tmux runs. Refused, with a
 reason on standard error, when the card has no window, when the window is closed
 (no such window, or no tmux server running), or when tmux is not installed. It
 never changes the card.
+
+**Send.** Types a message into the task's tmux window as if the user had typed
+it, so one agent can answer a prompt in another agent's window. The target is
+the card's recorded `tmux_session` and `tmux_window`, never an argument, and the
+refusals are those of `output`. Exactly one of `--text T` and `--message-file F|-`
+is required; `-` reads standard input. Each line is typed as literal characters,
+with an Enter key between lines, and one more Enter follows the last line unless
+`--no-enter` is given. Nothing runs a shell: the characters arrive as typed, and
+a message that starts with a dash needs the `--text=-...` form. A message is
+refused when it is empty, longer than 10000 characters, or holds a control
+character other than tab or line feed. Standard output stays empty on success,
+and the command never changes the card.
 
 **Exit status.** `0` is success. `1` is a refusal: an unknown or corrupt task,
 a transition not allowed, a dirty tree, or a missing id. A refusal prints one

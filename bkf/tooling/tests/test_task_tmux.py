@@ -439,6 +439,88 @@ class RepositoryNameTests(unittest.TestCase):
         self.assertEqual(task_tmux._repo_key("/work/plain", FakeTmux()), plain)
 
 
+class SendKeysTests(unittest.TestCase):
+    """send_keys: the exact send-keys calls, with a runner that records them and answers with self.answer."""
+
+    def setUp(self):
+        self.calls: list[list[str]] = []
+        self.answer = Result(0, "", "")
+
+    def runner(self, args, stdin=None):
+        self.calls.append(list(args))
+        return self.answer
+
+    def send(self, text, **options):
+        return task_tmux.send_keys("repo-ab12cd", "@41", text, runner=self.runner, environ={}, **options)
+
+    def test_literal_text_then_enter_with_a_leading_dash_is_safe(self):
+        self.send("-rf --help; $(id)")
+        self.assertEqual(self.calls, [
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "-rf --help; $(id)"],
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "Enter"],
+        ])
+
+    def test_no_enter_sends_only_the_text(self):
+        self.send("draft", enter=False)
+        self.assertEqual(self.calls, [["tmux", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "draft"]])
+
+    def test_multi_line_text_goes_line_by_line_with_enter_between_and_after(self):
+        self.send("first\nsecond\n")
+        self.assertEqual(self.calls, [
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "first"],
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "Enter"],
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "second"],
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "Enter"],
+        ])
+
+    def test_multi_line_text_without_a_final_line_feed_ends_with_the_last_line(self):
+        self.send("one\ntwo", enter=False)
+        self.assertEqual([call[-1] for call in self.calls], ["one", "Enter", "two"])
+
+    def test_a_blank_line_is_an_enter_and_windows_line_endings_are_lines(self):
+        self.send("a\r\n\r\nb")
+        self.assertEqual([call[-1] for call in self.calls], ["a", "Enter", "Enter", "b", "Enter"])
+
+    def test_a_message_of_one_line_feed_is_one_enter(self):
+        self.send("\n")
+        self.assertEqual(self.calls, [["tmux", "send-keys", "-t", "repo-ab12cd:@41", "Enter"]])
+
+    def test_the_socket_of_the_environment_is_used(self):
+        task_tmux.send_keys("repo-ab12cd", "@41", "x", runner=self.runner, environ={"BKF_TMUX_SOCKET": "sock-x"})
+        self.assertEqual(self.calls[0][:3], ["tmux", "-L", "sock-x"])
+
+    def test_the_text_limit_is_inclusive(self):
+        self.send("x" * task_tmux.SEND_TEXT_LIMIT, enter=False)
+        self.assertEqual(len(self.calls), 1)
+        with self.assertRaises(task_tmux.TargetRefused):
+            self.send("x" * (task_tmux.SEND_TEXT_LIMIT + 1))
+        self.assertEqual(len(self.calls), 1)
+
+    def test_empty_text_and_control_characters_are_refused_before_tmux_runs(self):
+        for text in ("", "a\x1bb", "a\rb", "a\x00b", "a\x7fb"):
+            with self.subTest(text=text):
+                with self.assertRaises(task_tmux.TargetRefused):
+                    self.send(text)
+        self.assertEqual(self.calls, [])
+
+    def test_bad_targets_are_refused_before_tmux_runs(self):
+        for session, window in (("-x", "@41"), ("repo", "-@41"), ("repo", "@41:0"), ("re po", "@41"), ("re\npo", "@41")):
+            with self.subTest(session=session, window=window):
+                with self.assertRaises(task_tmux.TargetRefused):
+                    task_tmux.send_keys(session, window, "x", runner=self.runner, environ={})
+        self.assertEqual(self.calls, [])
+
+    def test_the_first_failing_call_stops_the_typing_and_is_returned(self):
+        self.answer = Result(1, "", "can't find window")
+        self.assertEqual(self.send("one\ntwo"), Result(1, "", "can't find window"))
+        self.assertEqual(len(self.calls), 1)
+
+    def test_a_missing_tmux_is_returned_with_status_127(self):
+        self.answer = Result(127, "", "tmux is not installed or not on PATH")
+        self.assertEqual(self.send("x").returncode, 127)
+        self.assertEqual(len(self.calls), 1)
+
+
 @unittest.skipUnless(shutil.which("tmux"), "tmux is not on PATH")
 class RealTmuxTests(unittest.TestCase):
     def setUp(self):
@@ -583,6 +665,66 @@ class RealTmuxTests(unittest.TestCase):
         self.assertEqual(self.placement(self.plain1, self.plain2,
                                         [("p1", self.plain1), ("p2", self.plain2), ("p3", self.plain1)]),
                          "caller,p1,p2,new,p3")
+
+    def typing_window(self, marker: str) -> None:
+        """A window whose program is `cat` writing what it reads into marker: each line typed shows up there."""
+        self.tmux("new-session", "-d", "-s", "chat", "-n", "w", f'cat > "{marker}"')
+
+    def read_until(self, path: str, expected: str) -> str:
+        """Poll until the file holds expected, then return its text; a file that never does returns what it holds."""
+        text = ""
+        for _ in range(100):
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as handle:
+                    text = handle.read()
+                if text == expected:
+                    break
+            time.sleep(0.05)
+        return text
+
+    def test_send_keys_types_a_line_that_starts_with_a_dash_and_submits_it(self):
+        marker = os.path.join(self.tmp.name, "typed")
+        self.typing_window(marker)
+        result = task_tmux.send_keys("chat", "w", "-rf --help", environ=self.environ)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.read_until(marker, "-rf --help\n"), "-rf --help\n")
+
+    def test_send_keys_text_arrives_as_characters_and_no_shell_runs_it(self):
+        marker = os.path.join(self.tmp.name, "typed")
+        evil = os.path.join(self.tmp.name, "evil")
+        self.typing_window(marker)
+        text = f"$(touch {evil}); echo `touch {evil}`"
+        task_tmux.send_keys("chat", "w", text, environ=self.environ)
+        self.assertEqual(self.read_until(marker, text + "\n"), text + "\n")
+        self.assertFalse(os.path.exists(evil))
+
+    def test_send_keys_multi_line_text_arrives_as_separate_lines(self):
+        marker = os.path.join(self.tmp.name, "typed")
+        self.typing_window(marker)
+        task_tmux.send_keys("chat", "w", "one\ntwo\n", environ=self.environ)
+        self.assertEqual(self.read_until(marker, "one\ntwo\n"), "one\ntwo\n")
+
+    def test_send_keys_without_enter_leaves_the_line_unsubmitted_until_an_enter_follows(self):
+        marker = os.path.join(self.tmp.name, "typed")
+        self.typing_window(marker)
+        task_tmux.send_keys("chat", "w", "draft", enter=False, environ=self.environ)
+        for _ in range(100):
+            if "draft" in task_tmux.capture_pane("chat", "w", environ=self.environ).stdout:
+                break
+            time.sleep(0.05)
+        self.assertIn("draft", task_tmux.capture_pane("chat", "w", environ=self.environ).stdout)
+        time.sleep(0.3)
+        self.assertTrue(not os.path.exists(marker) or os.path.getsize(marker) == 0)
+        task_tmux.send_keys("chat", "w", "\n", environ=self.environ)
+        self.assertEqual(self.read_until(marker, "draft\n"), "draft\n")
+
+    def test_send_keys_to_a_missing_window_returns_the_tmux_failure(self):
+        self.tmux("new-session", "-d", "-s", "chat", "-n", "w", "sleep 600")
+        result = task_tmux.send_keys("chat", "gone", "x", environ=self.environ)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("can't find window", result.stderr)
+        result = task_tmux.send_keys("nosession", "w", "x", environ=self.environ)
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

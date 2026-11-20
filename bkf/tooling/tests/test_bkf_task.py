@@ -589,6 +589,115 @@ class BkfTaskTests(unittest.TestCase):
         self.assertEqual(self.card_bytes(task_id), before)
         self.assertEqual(task_store.generation(self.store), generation)
 
+    # send
+
+    def test_send_types_the_text_and_then_enter_and_prints_nothing(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        self.assertEqual(self.run_task("send", task_id, "--text", "hello"), (0, "", ""))
+        self.assertEqual(calls, [
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "hello"],
+            ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "Enter"],
+        ])
+
+    def test_send_text_starting_with_a_dash_is_typed_as_text(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        status, output, error = self.run_task("send", task_id, "--text=-rf --help")
+        self.assertEqual((status, output, error), (0, "", ""))
+        self.assertEqual(calls[0], ["tmux", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "-rf --help"])
+
+    def test_send_no_enter_types_the_text_only(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        self.assertEqual(self.run_task("send", task_id, "--text", "draft", "--no-enter"), (0, "", ""))
+        self.assertEqual(calls, [["tmux", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "draft"]])
+
+    def test_send_multi_line_message_from_a_file_and_from_standard_input(self) -> None:
+        task_id = self.windowed()
+        message = self.root / "message.txt"
+        message.write_text("one\ntwo\n", encoding="utf-8")
+        calls = self.fake_tmux()
+        self.assertEqual(self.run_task("send", task_id, "--message-file", str(message)), (0, "", ""))
+        self.assertEqual([call[-1] for call in calls], ["one", "Enter", "two", "Enter"])
+        calls.clear()
+        self.assertEqual(self.run_task("send", task_id, "--message-file", "-", stdin="from stdin"), (0, "", ""))
+        self.assertEqual([call[-1] for call in calls], ["from stdin", "Enter"])
+
+    def test_send_uses_bkf_task_when_the_id_is_omitted_and_the_socket_of_the_environment(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        with patch.dict(os.environ, {"BKF_TASK": task_id, "BKF_TMUX_SOCKET": "throwaway"}):
+            status, _, error = self.run_task("send", "--text", "hi", "--no-enter")
+        self.assertEqual((status, error), (0, ""))
+        self.assertEqual(calls, [["tmux", "-L", "throwaway", "send-keys", "-t", "repo-ab12cd:@41", "-l", "--", "hi"]])
+
+    def test_send_needs_exactly_one_of_text_and_message_file(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        self.assertEqual(self.run_task("send", task_id)[0], 2)
+        self.assertEqual(self.run_task("send", task_id, "--text", "a", "--message-file", "-")[0], 2)
+        self.assertEqual(calls, [])
+
+    def test_send_missing_message_file_is_refused(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("send", task_id, "--message-file", str(self.root / "missing.txt")),
+                           "missing.txt")
+        self.assertEqual(calls, [])
+
+    def test_send_empty_or_too_long_text_is_refused(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("send", task_id, "--text", ""), "the message is empty")
+        self.assertRefused(*self.run_task("send", task_id, "--text", "x" * 10001), "longer than 10000 characters")
+        self.assertEqual(calls, [])
+
+    def test_send_control_characters_are_refused(self) -> None:
+        task_id = self.windowed()
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("send", task_id, "--text", "\x1b[A"), "control character")
+        self.assertEqual(calls, [])
+
+    def test_send_hostile_window_names_are_refused_before_any_process_starts(self) -> None:
+        calls = self.fake_tmux()
+        for session, window in (("-x", "@41"), ("repo", "@41:0"), ("re po", "@41"), ("re\npo", "@41")):
+            with self.subTest(session=session, window=window):
+                task_id = self.windowed(session=session, window=window, title=f"hostile {len(calls)}")
+                self.assertRefused(*self.run_task("send", task_id, "--text", "x"), "not a tmux session and window name")
+        self.assertEqual(calls, [])
+
+    def test_send_task_without_a_window_is_refused(self) -> None:
+        task_id = self.new("no window")
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("send", task_id, "--text", "x"), f"task {task_id} has no window")
+        self.assertEqual(calls, [])
+
+    def test_send_closed_window_or_no_tmux_server_is_refused(self) -> None:
+        task_id = self.windowed()
+        self.fake_tmux(returncode=1)
+        self.assertRefused(*self.run_task("send", task_id, "--text", "x"), f"the window of task {task_id} is closed")
+
+    def test_send_without_tmux_is_refused(self) -> None:
+        task_id = self.windowed()
+        self.fake_tmux(returncode=127)
+        self.assertRefused(*self.run_task("send", task_id, "--text", "x"), "tmux is not installed")
+
+    def test_send_without_an_id_outside_a_task_or_for_an_unknown_task_is_refused(self) -> None:
+        calls = self.fake_tmux()
+        self.assertRefused(*self.run_task("send", "--text", "x"), "no task id")
+        self.assertRefused(*self.run_task("send", "t20000101-000000-0000", "--text", "x"), "no task")
+        self.assertEqual(calls, [])
+
+    def test_send_never_changes_the_card(self) -> None:
+        task_id = self.windowed()
+        before = self.card_bytes(task_id)
+        generation = task_store.generation(self.store)
+        self.fake_tmux()
+        self.run_task("send", task_id, "--text", "hello")
+        self.assertEqual(self.card_bytes(task_id), before)
+        self.assertEqual(task_store.generation(self.store), generation)
+
 
 if __name__ == "__main__":
     unittest.main()

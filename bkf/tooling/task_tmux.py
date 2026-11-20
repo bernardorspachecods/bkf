@@ -376,3 +376,51 @@ def capture_pane(
         args += ["-S", f"-{history}"]
     args += ["-t", f"{session}:{window}"]
     return _tmux_status(runner or default_runner, environ, *args)
+
+
+SEND_TEXT_LIMIT = 10000
+CONTROL_CHARACTER = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # every control character but tab and line feed
+
+
+def send_keys(
+    session: str,
+    window: str,
+    text: str,
+    *,
+    enter: bool = True,
+    environ: Mapping[str, str] = os.environ,
+    runner: Runner | None = None,
+) -> Result:
+    """Type text into session:window as if the user typed it, without a shell.
+
+    Each line goes in as literal characters, with an Enter key between lines; with enter, one more Enter
+    follows the last line. Every line is checked before tmux runs. The first failing tmux call stops the
+    typing and its result is returned; otherwise the result of the last call is returned.
+    """
+    if not TARGET_NAME.fullmatch(session) or not TARGET_NAME.fullmatch(window):
+        raise TargetRefused(f"not a tmux session and window name: {session!r} {window!r}")
+    if not text:
+        raise TargetRefused("the message is empty")
+    if len(text) > SEND_TEXT_LIMIT:
+        raise TargetRefused(f"the message is longer than {SEND_TEXT_LIMIT} characters")
+    message = text.replace("\r\n", "\n")
+    if CONTROL_CHARACTER.search(message):
+        raise TargetRefused("the message holds a control character other than tab or line feed")
+    if message.endswith("\n"):
+        message = message[:-1]  # the final line feed is the Enter that submits the last line
+    steps: list[list[str]] = []
+    for index, line in enumerate(message.split("\n")):
+        if index:
+            steps.append(["Enter"])
+        if line:
+            steps.append(["-l", "--", line])
+    if enter:
+        steps.append(["Enter"])
+    target = f"{session}:{window}"
+    run = runner or default_runner
+    result = Result(0, "", "")
+    for step in steps:
+        result = _tmux_status(run, environ, "send-keys", "-t", target, *step)
+        if result.returncode != 0:
+            return result
+    return result
