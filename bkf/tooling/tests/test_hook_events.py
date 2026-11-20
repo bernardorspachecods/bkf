@@ -833,6 +833,7 @@ class TaskAttentionEventsTest(unittest.TestCase):
     REPLY = "waiting for your reply"
     APPROVAL = "waiting for your approval"
     ANSWER = "waiting for your answer"
+    ERROR = "stopped on an error"
 
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -936,11 +937,52 @@ class TaskAttentionEventsTest(unittest.TestCase):
         self.assertEqual(self.fire("PreToolUse", task_id, tool_name="AskUserQuestion"), (0, ""))
         self.assertEqual(self.note(task_id), self.ANSWER)
 
-    def test_other_pre_tool_use_leaves_the_card_alone(self) -> None:
-        task_id = self.make(attention=("prompt", self.REPLY))
-        before = task_store.read(self.store, task_id).to_json()
-        self.assertEqual(self.fire("PreToolUse", task_id, tool_name="Bash"), (0, ""))
-        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+    def test_other_pre_tool_use_clears_the_reply_mark_when_the_tool_starts(self) -> None:
+        for note in (self.REPLY, self.APPROVAL, self.ANSWER, self.ERROR):
+            task_id = self.make(attention=("prompt", note))
+            self.assertEqual(self.fire("PreToolUse", task_id, tool_name="Bash"), (0, ""))
+            self.assertIsNone(self.attention(task_id), note)
+
+    def test_other_pre_tool_use_keeps_foreign_attention(self) -> None:
+        for attention in (("prompt", "crew says hi"), ("quota", self.REPLY)):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("PreToolUse", task_id, tool_name="Bash")
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, attention)
+
+    def test_long_tool_after_a_reply_is_not_shown_as_waiting(self) -> None:
+        task_id = self.make()
+        self.fire("Stop", task_id)
+        self.fire("PreToolUse", task_id, tool_name="Bash")
+        self.assertIsNone(self.attention(task_id))
+
+    def test_stop_failure_sets_the_error_mark(self) -> None:
+        task_id = self.make()
+        self.assertEqual(self.fire("StopFailure", task_id, error="rate_limit"), (0, ""))
+        self.assertEqual(self.note(task_id), self.ERROR)
+        self.assertEqual(self.attention(task_id)["reason"], "prompt")
+
+    def test_stop_failure_replaces_the_hooks_other_marks(self) -> None:
+        for note in (self.REPLY, self.APPROVAL, self.ANSWER):
+            task_id = self.make(attention=("prompt", note))
+            self.fire("StopFailure", task_id, error="server_error")
+            self.assertEqual(self.note(task_id), self.ERROR, note)
+
+    def test_stop_failure_leaves_foreign_attention_alone(self) -> None:
+        for attention in (("prompt", "crew says hi"), ("quota", self.REPLY), ("escalated", None)):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("StopFailure", task_id, error="server_error")
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, attention)
+
+    def test_stop_failure_clears_on_the_next_prompt_or_tool_call(self) -> None:
+        task_id = self.make()
+        self.fire("StopFailure", task_id, error="server_error")
+        self.fire("PreToolUse", task_id, tool_name="Read")
+        self.assertIsNone(self.attention(task_id))
+        self.fire("StopFailure", task_id, error="server_error")
+        self.fire("UserPromptSubmit", task_id)
+        self.assertIsNone(self.attention(task_id))
 
     def test_post_tool_use_clears_the_hooks_own_mark_of_any_note(self) -> None:
         for note in (self.REPLY, self.APPROVAL, self.ANSWER):
@@ -981,7 +1023,7 @@ class TaskAttentionEventsTest(unittest.TestCase):
             task_id = self.make(kind=kind, status=status)
             before = task_store.read(self.store, task_id).to_json()
             events = (
-                ("Stop", {}), ("PermissionRequest", {"tool_name": "Bash"}),
+                ("Stop", {}), ("StopFailure", {}), ("PermissionRequest", {"tool_name": "Bash"}),
                 ("PreToolUse", {"tool_name": "AskUserQuestion"}), ("PostToolUse", {"tool_name": "Read"}),
                 ("UserPromptSubmit", {}),
             )

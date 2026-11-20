@@ -99,8 +99,9 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
     task = f"{bkf_command(home)} hooks run task"
     task_owner = re.compile(r"(^|/)bkf hooks run task$")
     wanted += [Registration("task", event, None, task, task_owner) for event in ("UserPromptSubmit", "Stop", "PostToolUse")]
-    wanted.append(Registration("task", "PreToolUse", "AskUserQuestion", task, task_owner))
+    wanted.append(Registration("task", "PreToolUse", None, task, task_owner))
     wanted.append(Registration("task", "PermissionRequest", None, task, task_owner, claude_only=True))
+    wanted.append(Registration("task", "StopFailure", None, task, task_owner, claude_only=True))
     wanted.append(Registration("task", "SessionEnd", None, task, task_owner, claude_only=True))
     sources = f"{bkf_command(home)} hooks run sources"
     sources_owner = re.compile(r"(^|/)bkf hooks run sources$")
@@ -122,28 +123,54 @@ def load_config(path: Path) -> dict:
     return config
 
 
-def find_hook(config: dict, registration: Registration) -> dict | None:
-    """Return the existing hook entry that this registration owns, if any."""
+def find_group(config: dict, registration: Registration) -> tuple[dict, dict] | None:
+    """Return the (group, entry) pair of the existing hook that this registration owns, if any."""
     for group in config.get("hooks", {}).get(registration.event, []):
         for entry in group.get("hooks", []):
             if entry.get("type") == "command" and registration.owns.search(entry.get("command", "")):
-                return entry
+                return group, entry
     return None
 
 
+def find_hook(config: dict, registration: Registration) -> dict | None:
+    """Return the existing hook entry that this registration owns, if any."""
+    found = find_group(config, registration)
+    return found[1] if found else None
+
+
 def state_of(config: dict, registration: Registration) -> str:
-    entry = find_hook(config, registration)
-    if entry is None:
+    found = find_group(config, registration)
+    if found is None:
         return "missing"
-    return "ok" if entry["command"] == registration.command else "differs"
+    group, entry = found
+    same = entry["command"] == registration.command and group.get("matcher") == registration.matcher
+    return "ok" if same else "differs"
 
 
 def apply_registration(config: dict, registration: Registration) -> None:
-    entry = find_hook(config, registration)
-    if entry is not None:
+    found = find_group(config, registration)
+    if found is not None:
+        # An install with an old matcher is updated, not duplicated. A group shared with other hooks keeps its matcher:
+        # the entry moves to a group of its own, so the other hooks still match what they matched.
+        group, entry = found
         entry["command"] = registration.command
+        if group.get("matcher") == registration.matcher:
+            return
+        if len(group["hooks"]) == 1:
+            if registration.matcher is None:
+                group.pop("matcher", None)
+            else:
+                group["matcher"] = registration.matcher
+            return
+        group["hooks"].remove(entry)
+        _append_group(config, registration, entry)
         return
-    group: dict = {"hooks": [{"type": "command", "command": registration.command, "timeout": registration.timeout}]}
+    entry = {"type": "command", "command": registration.command, "timeout": registration.timeout}
+    _append_group(config, registration, entry)
+
+
+def _append_group(config: dict, registration: Registration, entry: dict) -> None:
+    group: dict = {"hooks": [entry]}
     if registration.matcher is not None:
         group = {"matcher": registration.matcher, **group}
     config.setdefault("hooks", {}).setdefault(registration.event, []).append(group)

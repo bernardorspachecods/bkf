@@ -284,9 +284,9 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   copies `default_rules.txt` to that path only when it does not exist, and never
   overwrites or edits an existing file.
 - **task** registers, for Claude Code and Codex, a `SessionStart`, a
-  `UserPromptSubmit`, a `Stop` and a `PostToolUse` hook, and a `PreToolUse` hook
-  with the matcher `AskUserQuestion`; for Claude Code also a `PermissionRequest`
-  and a `SessionEnd` hook. All run `bkf hooks run task`. With `BKF_TASK` set, it
+  `UserPromptSubmit`, a `Stop`, a `PostToolUse` and a `PreToolUse` hook (all
+  tools); for Claude Code also a `PermissionRequest`, a `StopFailure` and a
+  `SessionEnd` hook. All run `bkf hooks run task`. With `BKF_TASK` set, it
   reads the task from the [task store](#bkf-task). On `SessionStart` it prints
   this text, and nothing on the other events:
 
@@ -305,7 +305,7 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   [bkf merge](#bkf-merge)). Nothing else changes with those events.
 
   The hook keeps its own mark on the card: attention reason `prompt` with one of
-  three notes. It applies only to a card that is `working` and of kind `task` or
+  four notes. It applies only to a card that is `working` and of kind `task` or
   `handoff`; other cards are left alone.
 
   | Event | Effect on the card |
@@ -314,16 +314,19 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   | `Stop`, with either list non-empty | clear the hook's own mark; set nothing |
   | `PermissionRequest` | set `waiting for your approval` |
   | `PreToolUse` with `tool_name` `AskUserQuestion` | set `waiting for your answer` |
-  | `PostToolUse` (any tool), `UserPromptSubmit` | clear the hook's own mark |
+  | `PreToolUse` with any other tool, `PostToolUse` (any tool), `UserPromptSubmit` | clear the hook's own mark |
+  | `StopFailure` (the turn ended on an API error) | set `stopped on an error` |
 
   Setting replaces the hook's own mark when its note differs, and does nothing
   to any other attention: a `prompt` with another note, or another reason. Clearing
   touches only the hook's own mark. So a session that ends its turn to wait for
   background work never shows as waiting, and a session that resumes clears its
-  mark at its first tool call. The hook changes the card through the store's
+  mark when its first tool call starts. The hook changes the card through the store's
   locked helpers, as `bkf task attention` does; an event that changes nothing
   does not take the lock. Empty or invalid input is treated as
-  `SessionStart`. The hook always exits 0; errors are swallowed. The agents that
+  `SessionStart`. With `BKF_HOOK_DEBUG_FILE` set, the hook also appends each raw
+  input to that file as one line, to read a real payload; nothing sets it by
+  default. The hook always exits 0; errors are swallowed. The agents that
   the harness starts never see `BKF_TASK`.
 
   **Session cards.** With `BKF_TASK` unset, an interactive Claude session in tmux
@@ -343,9 +346,10 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   - `SessionStart` with a card (`resume`, `compact`): reuses it and points its
     session at the pane's window again.
   - `UserPromptSubmit`: while the card's title is still the one it was created
-    with, the first prompt with text names it: the prompt is cut to one line of
-    at most 120 characters. Later prompts never rename it, and a title someone
-    else set is kept.
+    with, the first prompt with text names it: its first line that has words,
+    without leading `#` marks, with runs of spaces collapsed, and cut to 80
+    characters ending in `…`. The window name gives the title the same way.
+    Later prompts never rename it, and a title someone else set is kept.
   - `SessionEnd`: the card is deleted, unless it is `to-merge` or has the
     `merge-failed` attention: those wait for the owner (the merge queue, or the
     failed merge), so they stay. The link stays either way; a resume whose card
@@ -959,15 +963,23 @@ session); see the take-out rule below.
 
 **Take-out.** When the entry is gone while a session is in the merge flow (its
 `wait` exits 2, or its `verify` or `land` exits 5 with "not in the merge queue"),
-the session treats it as the owner's take-out: it stops the merge flow, does not
-run `land` and does not re-enter the queue on its own, and goes on with its
-work or waits for the owner. Recovery also removes an entry (see below); the
-output says "do not re-enter on your own" for every such case, so the session
-treats recovery the same way. A session re-enters on its own only after its own
-`bkf merge fail`: the card then has `merge-failed` with the reason the session
-wrote, and the session fixes the branch first. Otherwise it re-enters only when
-the owner asks again. The re-entry after `land --continue` is the session's
-planned step, not a take-out.
+the output names the cause from the task's last queue event:
+
+- A `left` event (the owner's take-out, or the session's own `leave`): the
+  session stops the merge flow, does not run `land` and does not re-enter the
+  queue on its own, and goes on with its work or waits for the owner. It
+  re-enters on its own only after its own `bkf merge fail`: the card then has
+  `merge-failed` with the reason the session wrote, and the session fixes the
+  branch first. Otherwise it re-enters only when the owner asks again.
+- A `landed` event: the branch already landed, so there is nothing to land and
+  the session does not enter again.
+- A recovery event (`lock-recovered`, `dropped-dormant`, `failed`; see below),
+  or no event: the queue removed the entry, not the owner. The output gives the
+  reason and says the session may run `bkf merge enter` again, which joins the
+  back of the queue.
+
+The re-entry after `land --continue` is the session's planned step, not a
+take-out.
 
 **Recovery.** Every mutating command, and every poll of `wait`, first settles
 the queue under the lock; `status` only reports what recovery would do.
@@ -996,7 +1008,7 @@ Each recovery is an event in the queue: `lock-recovered`, `dropped-dormant`,
 | --- | --- |
 | `0` | Done: entered, your turn, verified, landed (an interim land included), failed or left. |
 | `1` | Refused, with the reason on standard error: no task, a dirty work tree, no branch, the target branch, a land in progress. |
-| `2` | `wait`: the entry left the queue (a take-out or a recovery). The output says why and that the session does not re-enter on its own; see the take-out rule. |
+| `2` | `wait`: the entry left the queue (a take-out, a land or a recovery). The output says why and whether the session may re-enter on its own; see the take-out rule. |
 | `3` | `land`: not verified, the branch changed since verify, the target moved (recorded as `main-moved`), or the branch does not contain the target. The entry keeps the turn. |
 | `4` | `land`: the target's checkout has uncommitted changes, or the fast-forward was refused. The entry keeps the turn. |
 | `5` | Not your turn, or the task is not in the queue (`verify`, `land`, `fail`): a take-out or recovery, so the session stops the merge flow as the take-out rule says. |

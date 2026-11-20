@@ -76,18 +76,25 @@ types the owner's message into your window: "The owner took this task out of
 "to be merged": stop the merge flow, do not run bkf merge land or re-enter the
 queue, and go on with what you were doing or wait for instructions."
 
-The same applies when `bkf merge wait` exits 2, or when `bkf merge verify` or
-`bkf merge land` exits 5 with "not in the merge queue", whatever the message
-says about the cause, and when you run `bkf merge leave` yourself. In every
-case:
+When `bkf merge wait` exits 2, or `bkf merge verify` or `bkf merge land` exits
+5 with "not in the merge queue", the message says why the entry is gone. Act on
+it:
 
-- Stop the merge flow. Do not run `bkf merge land`.
-- Do not run `bkf merge enter` on your own. Re-enter only when the owner asks
-  again, or after your own `bkf merge fail` (step 6), once you have fixed the
-  branch. The re-entry before the next land of an interim land is planned, not
-  a take-out, so it is not covered by this rule.
-- Go on with your work, or tell the owner what you were doing and wait for
+- "the owner took the task out", or you ran `bkf merge leave` yourself: this is
+  a take-out. Stop the merge flow, do not run `bkf merge land`, and do not run
+  `bkf merge enter` on your own. Re-enter only when the owner asks again, or
+  after your own `bkf merge fail` (step 6), once you have fixed the branch. Go
+  on with your work, or tell the owner what you were doing and wait for
   instructions.
+- "its branch already landed": there is nothing left to land. Do not enter
+  again; go to step 5's cleanup.
+- "the queue removed it, not the owner": recovery dropped the entry (a lost
+  lease or window, an unpolled wait, a land that died). The reason is in the
+  message and on your card. If you still want to land, run `bkf merge enter`
+  again; it joins the back of the queue.
+
+The re-entry before the next land of an interim land is planned, not a
+take-out, so it is not covered by this rule.
 
 ## Rules
 
@@ -96,8 +103,8 @@ case:
 - Your turn is kept while you make `bkf merge` calls or tool calls. It is lost
   after an hour with neither, when your card or tmux window is gone, or when
   your entry sat unpolled for three minutes. Recovery writes the reason on your
-  card, and the next `bkf merge wait` reports it. Treat that as a take-out too:
-  see [Take-out](#take-out).
+  card, and the next `bkf merge wait` reports it; you may re-enter: see
+  [Take-out](#take-out).
 
 Not yet run with two real sessions in one repository; the first time, use two
 and check `bkf merge status` after each step.

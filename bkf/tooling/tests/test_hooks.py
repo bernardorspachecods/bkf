@@ -124,7 +124,7 @@ class HooksTest(unittest.TestCase):
             hooks = self.config(directory, name)["hooks"]
             expected_events = {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"}
             if directory == ".claude":
-                expected_events.update({"PostToolUseFailure", "SubagentStop", "PermissionRequest", "SessionEnd"})
+                expected_events.update({"PostToolUseFailure", "SubagentStop", "PermissionRequest", "StopFailure", "SessionEnd"})
             self.assertEqual(set(hooks), expected_events)
             self.assertEqual(len(hooks["UserPromptSubmit"]), 6)
             self.assertEqual(hooks["UserPromptSubmit"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
@@ -200,7 +200,10 @@ class HooksTest(unittest.TestCase):
         self.assertFalse((self.home / ".agent-hooks" / "rules.md").exists())
 
     TASK_EVENTS = {
-        "claude": ("SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "PreToolUse", "PermissionRequest", "SessionEnd"),
+        "claude": (
+            "SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "PreToolUse", "PermissionRequest", "StopFailure",
+            "SessionEnd",
+        ),
         "codex": ("SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "PreToolUse"),
     }
 
@@ -219,11 +222,42 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(set(hooks), set(self.TASK_EVENTS[tool]))
             for event in self.TASK_EVENTS[tool]:
                 self.assertEqual(hooks[event][0]["hooks"][0]["command"], f"{self.command} hooks run task")
-                if event == "PreToolUse":
-                    self.assertEqual(hooks[event][0]["matcher"], "AskUserQuestion")
-                else:
-                    self.assertNotIn("matcher", hooks[event][0])
+                self.assertNotIn("matcher", hooks[event][0])
         self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_install_replaces_the_old_ask_user_question_matcher(self) -> None:
+        settings = self.home / ".claude" / "settings.json"
+        old = {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": f"{self.command} hooks run task"}]}
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({"hooks": {"PreToolUse": [old]}}))
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 1)
+        code, _ = run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        pre = self.config(".claude", "settings.json")["hooks"]["PreToolUse"]
+        self.assertEqual(len(pre), 1)
+        self.assertNotIn("matcher", pre[0])
+        self.assertEqual(pre[0]["hooks"][0]["command"], f"{self.command} hooks run task")
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_install_leaves_a_shared_group_matcher_to_the_other_hooks(self) -> None:
+        settings = self.home / ".claude" / "settings.json"
+        mine = {"type": "command", "command": "/usr/local/bin/my-question-hook"}
+        shared = {"matcher": "AskUserQuestion", "hooks": [mine, {"type": "command", "command": f"{self.command} hooks run task"}]}
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({"hooks": {"PreToolUse": [shared]}}))
+        code, _ = run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        pre = self.config(".claude", "settings.json")["hooks"]["PreToolUse"]
+        self.assertEqual(pre[0], {"matcher": "AskUserQuestion", "hooks": [mine]})
+        self.assertEqual(len(pre), 2)
+        self.assertNotIn("matcher", pre[1])
+        self.assertEqual(pre[1]["hooks"][0]["command"], f"{self.command} hooks run task")
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_stop_failure_is_registered_for_claude_only(self) -> None:
+        run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertIn("StopFailure", self.config(".claude", "settings.json")["hooks"])
+        self.assertNotIn("StopFailure", self.config(".codex", "hooks.json")["hooks"])
 
     def test_task_hook_status_reports_the_new_events_as_missing_then_ok(self) -> None:
         code, output = run("status", "--only", "task", "--home", self.home)

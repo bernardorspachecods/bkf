@@ -27,11 +27,12 @@ MARK_REASON = "prompt"
 REPLY_NOTE = "waiting for your reply"
 APPROVAL_NOTE = "waiting for your approval"
 ANSWER_NOTE = "waiting for your answer"
-OWN_NOTES = (REPLY_NOTE, APPROVAL_NOTE, ANSWER_NOTE)
+ERROR_NOTE = "stopped on an error"
+OWN_NOTES = (REPLY_NOTE, APPROVAL_NOTE, ANSWER_NOTE, ERROR_NOTE)
 # Claude Code's tool for asking the owner a question.
 QUESTION_TOOL = "AskUserQuestion"
 # Events that set or clear the hook's own mark; each prints nothing.
-MARK_EVENTS = ("Stop", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "PostToolUse")
+MARK_EVENTS = ("Stop", "StopFailure", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "PostToolUse")
 # Events that show the session is alive: a session that holds the merge turn renews its lease on them.
 LEASE_EVENTS = ("PostToolUse", "Stop")
 # Claude Code's end of a session: the card of an interactive session is done then. Prints nothing.
@@ -73,10 +74,15 @@ def _plan(task: task_store.Task, event: str, data: Mapping[str, Any]) -> Plan | 
         if any(data.get(key) for key in IN_FLIGHT_KEYS):
             return ("clear", None)
         return ("set", REPLY_NOTE)
+    if event == "StopFailure":
+        return ("set", ERROR_NOTE)
     if event == "PermissionRequest":
         return ("set", APPROVAL_NOTE)
     if event == "PreToolUse":
-        return ("set", ANSWER_NOTE) if data.get("tool_name") == QUESTION_TOOL else None
+        # Any tool call means the session works again, as iTerm2's Claude Code status hook treats it.
+        if data.get("tool_name") == QUESTION_TOOL:
+            return ("set", ANSWER_NOTE)
+        return ("clear", None)
     if event in ("PostToolUse", "UserPromptSubmit"):
         return ("clear", None)
     return None
@@ -160,10 +166,10 @@ def _record_raw(path: str, text: str) -> None:
 def run(environ: Mapping[str, str] | None = None, stream: TextIO | None = None) -> int:
     """Handle the hook event on standard input. Always exits 0 and never raises.
 
-    With BKF_TASK, the mark events (Stop, UserPromptSubmit, PermissionRequest, PreToolUse, PostToolUse) set
-    or clear the hook's own mark and print nothing, and PostToolUse and Stop also renew the lease of a merge
-    turn the task holds; any other event but SessionEnd, or unreadable input, prints the session-start text,
-    as SessionStart does. Without BKF_TASK, an interactive Claude session
+    With BKF_TASK, the mark events (Stop, StopFailure, UserPromptSubmit, PermissionRequest, PreToolUse,
+    PostToolUse) set or clear the hook's own mark and print nothing, and PostToolUse and Stop also renew the lease
+    of a merge turn the task holds; any other event but SessionEnd, or unreadable input, prints the session-start
+    text, as SessionStart does. Without BKF_TASK, an interactive Claude session
     in tmux keeps its session card (task_session); every other session returns before reading its input.
     """
     env = os.environ if environ is None else environ
