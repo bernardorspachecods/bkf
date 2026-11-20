@@ -18,8 +18,9 @@ the commands need no id. `bkf merge status` shows the queue and never changes it
 2. `bkf merge wait` blocks until your turn:
    - exit 0: your turn; go on.
    - exit 75: still waiting after nine minutes; run it again.
-   - exit 2: your entry left the queue. The owner took it out, or the queue
-     dropped it. Stop the merge flow: see [Take-out](#take-out).
+   - exit 2: your entry left the queue. The owner took it out, it already
+     landed, or the queue dropped it; the message says which. See
+     [Take-out](#take-out).
 3. On your turn, run `git merge <target>` into your branch. Make a merge commit:
    do not rebase, squash, reset or stash. Resolve a conflict yourself when both
    sides make the right result clear; read the plans and the diffs. When the
