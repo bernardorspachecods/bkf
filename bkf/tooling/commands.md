@@ -778,13 +778,14 @@ it ran. The merge queue's files live under `<store>/.merge/` (see
 
 **Statuses and transitions.** `todo` starts at `new`. The statuses are `todo`,
 `working`, `to-merge` (in the merge queue; see [bkf merge](#bkf-merge)), and
-`failed`. `start` moves `todo`, `working` or `failed` to `working` and clears
-`attention` and `exit`; a `working` card that starts again is a rerun, and the
-start clears its attention. `bkf merge enter` moves `todo`, `working`, `failed`
+`failed`. `start` moves `todo`, `working`, `failed` or `to-merge` to `working` and
+clears `attention` and `exit`; a `working` card that starts again is a rerun, and
+the start clears its attention. `bkf merge enter` moves `todo`, `working`, `failed`
 or `to-merge` to `to-merge` and clears `attention`. The merge queue moves a card
 to `working` with the `merge-failed` attention when it leaves the queue with a
 reason (`bkf merge fail`, or recovery), and to `working` without attention when
-the session leaves it. `fail` moves `working` or `to-merge` to `failed`.
+the session or the owner takes it out, or when an interim land (`bkf merge land
+--continue`) finishes. `fail` moves `working` or `to-merge` to `failed`.
 `attention` is allowed in `todo`, `working`, `to-merge`, and `failed` (a failed
 card is one that needs its owner); `--clear` is always allowed. `close` and
 `delete` remove the folder whatever its status. A transition that is not
@@ -804,7 +805,10 @@ standard input. `--parent` defaults to `$BKF_TASK` when that is set;
 
 **Start.** An option object is recorded only when at least one of its options
 is given, and its other keys stay null. A `working` card may start again (a
-rerun); the store refuses a start from `to-merge`.
+rerun). A `to-merge` card may start too, but only as a safety net for a card a
+session left in `to-merge` after a plain land: `bkf task start` refuses it while
+it still holds an entry in the merge queue, and the card then stays `to-merge`.
+The transition table allows the move; the queue check is in `bkf task start`.
 
 **Close.** Deletes the card, whatever its status: a session runs it after its
 branch has landed, and a plan run's passed unit is closed the same way. It
@@ -893,7 +897,7 @@ raises the store generation, which the app watches.
 bkf merge enter [--task ID] [--worktree PATH] [--target BRANCH]
 bkf merge wait [--task ID] [--timeout S] [--worktree PATH] [--target BRANCH]
 bkf merge verify [--task ID] [--target BRANCH]
-bkf merge land [--task ID] [--target BRANCH]
+bkf merge land [--continue] [--task ID] [--target BRANCH]
 bkf merge fail --reason TEXT [--task ID] [--target BRANCH]
 bkf merge leave [--task ID] [--target BRANCH]
 bkf merge status [--repo DIR] [--task ID] [--json]
@@ -928,10 +932,42 @@ writes phase `landing` to disk, then fast-forwards the target only: `git merge
 when no worktree has the target checked out. On success the entry is removed,
 and the card stays `to-merge` until the session runs `bkf task close`.
 
+**Interim land.** `land --continue` lands the same way, with the same checks and
+the same fast-forward, for a session that keeps working on its branch after the
+land. Afterwards the entry is removed, the next entry takes the turn, and the
+card moves to `working` without attention, so the session can go on; the
+event is `landed` with a reason that starts `interim:`. The output names no
+cleanup and says what to do next: the session may keep working on the branch,
+and before its next land it runs `bkf merge enter` again. Each land needs its
+own `verify`, and the checks the repository names must pass on that result. The
+ancestry check is unchanged: after an interim land the target is an ancestor of
+the branch, so while the target has not moved, a land after new commits is a
+fast-forward of what was verified. Once another session has landed, the target
+has moved and is not an ancestor of the branch's new commits, so `land` refuses
+with exit 3 until the branch merges the target again and is verified again. The
+last land of a branch is the plain `land`, which keeps the card in `to-merge`
+and points to cleanup. Between two lands the card is `working`, so a session
+that ends in that gap loses its card at `SessionEnd` like any working card; the
+branch stays, and a resumed session gets a new card.
+
 **Fail and leave.** `fail --reason TEXT` removes the entry, moves the card to
 `working` with the attention `merge-failed` and the reason as its note, and
 gives the turn to the next entry. `leave` removes the entry and moves the card
-to `working` without attention. Neither runs during a land.
+to `working` without attention. Neither runs during a land. A take-out by the
+owner is a `leave` (the app runs it and types the owner's message into the
+session); see the take-out rule below.
+
+**Take-out.** When the entry is gone while a session is in the merge flow (its
+`wait` exits 2, or its `verify` or `land` exits 5 with "not in the merge queue"),
+the session treats it as the owner's take-out: it stops the merge flow, does not
+run `land` and does not re-enter the queue on its own, and goes on with its
+work or waits for the owner. Recovery also removes an entry (see below); the
+output says "do not re-enter on your own" for every such case, so the session
+treats recovery the same way. A session re-enters on its own only after its own
+`bkf merge fail`: the card then has `merge-failed` with the reason the session
+wrote, and the session fixes the branch first. Otherwise it re-enters only when
+the owner asks again. The re-entry after `land --continue` is the session's
+planned step, not a take-out.
 
 **Recovery.** Every mutating command, and every poll of `wait`, first settles
 the queue under the lock; `status` only reports what recovery would do.
@@ -958,12 +994,12 @@ Each recovery is an event in the queue: `lock-recovered`, `dropped-dormant`,
 
 | Exit | Meaning |
 | --- | --- |
-| `0` | Done: entered, your turn, verified, landed, failed or left. |
+| `0` | Done: entered, your turn, verified, landed (an interim land included), failed or left. |
 | `1` | Refused, with the reason on standard error: no task, a dirty work tree, no branch, the target branch, a land in progress. |
-| `2` | `wait`: the entry left the queue. The output says why; enter again after fixing it. |
+| `2` | `wait`: the entry left the queue (a take-out or a recovery). The output says why and that the session does not re-enter on its own; see the take-out rule. |
 | `3` | `land`: not verified, the branch changed since verify, the target moved (recorded as `main-moved`), or the branch does not contain the target. The entry keeps the turn. |
 | `4` | `land`: the target's checkout has uncommitted changes, or the fast-forward was refused. The entry keeps the turn. |
-| `5` | Not your turn, or the task is not in the queue. |
+| `5` | Not your turn, or the task is not in the queue (`verify`, `land`, `fail`): a take-out or recovery, so the session stops the merge flow as the take-out rule says. |
 | `75` | `wait`: the timeout passed (default 540 seconds, `--timeout S`); run it again. |
 
 **Status.** Read-only: it never changes the queue. The one-time store migration

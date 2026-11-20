@@ -153,6 +153,12 @@ def find(queue: dict[str, Any], task: str) -> int | None:
     return None
 
 
+def queued(store: Path, repo: str, task: str) -> bool:
+    """True when the task holds an entry in its repository's queue; a queue that does not exist holds none."""
+    queue = load(queue_path(store, repo))
+    return queue is not None and find(queue, task) is not None
+
+
 def log(queue: dict[str, Any], now: datetime, task: str, event: str, reason: str | None = None) -> None:
     queue["events"].append({"at": stamp(now), "task": task, "event": event, "reason": reason})
     del queue["events"][:-EVENTS_LIMIT]

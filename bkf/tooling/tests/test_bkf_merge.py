@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bkf_merge
+import bkf_task
 import merge_store
 import task_hook
 import task_store
@@ -455,6 +456,183 @@ class CommandShapeTests(MergeFixture):
         self.assertEqual(self.merge("land", task=a)[0], 0)
         self.assertEqual(merge_store.queue_paths(self.store), [self.queue_file()])
         self.assertRegex(self.queue_file().parent.name, r"^[A-Za-z0-9-]+-[0-9a-f]{8}$")
+
+
+class InterimLandTests(MergeFixture):
+    """`land --continue` lands a batch and keeps the session's branch; the final land is the plain one."""
+
+    def land_first(self, task: str, worktree: Path) -> None:
+        self.commit(worktree, "first.txt", "first")
+        self.assertEqual(self.merge("enter", task=task)[0], 0)
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=task)[0], 0)
+        self.assertEqual(self.merge("verify", task=task)[0], 0)
+
+    def test_land_continue_puts_the_card_back_to_working_and_the_next_session_gets_the_turn(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        b, wb = self.session("beta", "task/beta")
+        self.commit(wa, "alpha.txt", "alpha")
+        self.commit(wb, "beta.txt", "beta")
+        self.assertEqual(self.merge("enter", task=a)[0], 0)
+        self.assertEqual(self.merge("enter", task=b)[0], 0)
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=a)[0], 0)
+        self.assertEqual(self.merge("verify", task=a)[0], 0)
+
+        code, out, err = self.merge("land", "--continue", task=a)
+
+        self.assertEqual((code, err), (0, ""), out)
+        self.assertIn("(interim)", out)
+        self.assertEqual((self.card(a).status, self.card(a).attention), ("working", None))
+        self.assertEqual(self.states(), [(b, "turn")], "a's entry is gone and b gets the turn")
+        landed = [event for event in self.queue()["events"] if event["event"] == "landed"]
+        self.assertEqual((landed[-1]["task"], landed[-1]["reason"][:8]), (a, "interim:"))
+        self.assertEqual(self.git(self.repo, "show", "main:alpha.txt"), "alpha")
+
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=b)[0], 0)
+        self.git(wb, "merge", "-q", "main", "-m", "merge main into beta")
+        self.assertEqual(self.merge("verify", task=b)[0], 0)
+        self.assertEqual(self.merge("land", task=b)[0], 0)
+        self.assertEqual(self.git(self.repo, "show", "main:beta.txt"), "beta")
+        self.assertEqual(self.card(b).status, "to-merge", "b's final land keeps the plain card rule")
+
+    def test_the_interim_message_has_no_cleanup_instruction_and_says_how_to_go_on(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        self.land_first(a, wa)
+        code, out, err = self.merge("land", "--continue", task=a)
+        self.assertEqual((code, err), (0, ""), out)
+        for cleanup in ("git-worktree-cleanup", "bkf task close", "remove your worktree"):
+            self.assertNotIn(cleanup, out)
+        self.assertIn("may keep working on the same branch", out)
+        self.assertIn("run bkf merge enter again", out)
+        self.assertIn("without --continue", out)
+
+    def test_plain_land_is_unchanged_and_leaves_the_card_in_to_merge_with_the_cleanup_message(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        self.land_first(a, wa)
+        code, out, err = self.merge("land", task=a)
+        self.assertEqual((code, err), (0, ""), out)
+        self.assertIn("Landed task/alpha on main. Next: remove your worktree and branch "
+                      "(git-worktree-cleanup), then bkf task close.", out)
+        self.assertEqual((self.card(a).status, self.card(a).attention), ("to-merge", None))
+        landed = [event for event in self.queue()["events"] if event["event"] == "landed"]
+        self.assertEqual(landed[-1]["reason"], f"task/alpha at {self.git(wa, 'rev-parse', 'HEAD')[:12]}")
+
+    def test_enter_again_after_an_interim_land_and_a_second_land_with_the_target_merged_again(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        b, wb = self.session("beta", "task/beta")
+        self.land_first(a, wa)
+        self.assertEqual(self.merge("land", "--continue", task=a)[0], 0)
+        self.commit(wb, "beta.txt", "beta")  # another session lands in between, so the target moves
+        self.merge("enter", task=b)
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=b)[0], 0)
+        self.git(wb, "merge", "-q", "main", "-m", "merge main into beta")
+        self.assertEqual(self.merge("verify", task=b)[0], 0)
+        self.assertEqual(self.merge("land", task=b)[0], 0)
+        self.assertEqual(self.card(a).status, "working")
+
+        self.commit(wa, "second.txt", "second")
+        self.assertEqual(self.merge("enter", task=a)[0], 0, "re-entry from a working card")
+        self.assertEqual(self.card(a).status, "to-merge")
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=a)[0], 0)
+        self.git(wa, "merge", "-q", "main", "-m", "merge main into alpha again")
+        self.assertEqual(self.merge("verify", task=a)[0], 0)
+        code, out, err = self.merge("land", task=a)
+        self.assertEqual((code, err), (0, ""), out)
+        self.assertIn("Next: remove your worktree", out)
+        self.assertEqual(self.git(self.repo, "show", "main:second.txt"), "second")
+        self.assertEqual(self.git(self.repo, "show", "main:beta.txt"), "beta")
+
+    def test_a_second_land_without_merging_a_moved_target_is_refused_with_exit_three(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        b, wb = self.session("beta", "task/beta")
+        self.land_first(a, wa)
+        self.assertEqual(self.merge("land", "--continue", task=a)[0], 0)
+        self.commit(wb, "beta.txt", "beta")
+        self.merge("enter", task=b)
+        self.commit(wa, "second.txt", "second")
+        self.merge("enter", task=a)
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=b)[0], 0)
+        self.git(wb, "merge", "-q", "main", "-m", "merge main into beta")
+        self.assertEqual(self.merge("verify", task=b)[0], 0)
+        self.assertEqual(self.merge("land", task=b)[0], 0)
+
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=a)[0], 0)
+        self.assertEqual(self.merge("verify", task=a)[0], 0)
+        code, _, err = self.merge("land", task=a)
+        self.assertEqual(code, 3)
+        self.assertIn("does not contain main", err)
+        self.assertEqual(self.states(), [(a, "turn")], "the entry keeps the turn")
+
+    def test_when_the_target_has_not_moved_the_branch_already_contains_it_and_lands_as_it_is(self) -> None:
+        """Documents the ancestry rule: the target is an ancestor of the branch, so a land after new commits
+        is a plain fast-forward of what was verified. The target is not merged again only because it did not move."""
+        a, wa = self.session("alpha", "task/alpha")
+        self.land_first(a, wa)
+        self.assertEqual(self.merge("land", "--continue", task=a)[0], 0)
+        self.commit(wa, "second.txt", "second")
+        self.merge("enter", task=a)
+        self.assertEqual(self.merge("wait", "--timeout", "0", task=a)[0], 0)
+        self.assertEqual(self.merge("verify", task=a)[0], 0)
+        self.assertEqual(self.merge("land", task=a)[0], 0)
+        self.assertEqual(self.git(self.repo, "show", "main:second.txt"), "second")
+
+
+class TakeOutTests(MergeFixture):
+    """A take-out (bkf merge leave by the owner, typed into the session) stops the merge flow for good."""
+
+    def test_a_waiter_whose_entry_is_taken_out_gets_exit_two_and_no_instruction_to_re_enter(self) -> None:
+        a, _ = self.session("alpha", "task/alpha")
+        b, _ = self.session("beta", "task/beta")
+        self.merge("enter", task=a)
+        self.merge("enter", task=b)
+
+        def take_out(_seconds: float) -> None:
+            self.assertEqual(self.merge("leave", task=b)[0], 0)
+
+        with patch.object(bkf_merge.time, "sleep", side_effect=take_out):
+            code, _, err = self.merge("wait", "--timeout", "30", task=b)
+
+        self.assertEqual(code, 2)
+        self.assertIn("it was taken out of the queue", err)
+        self.assertIn("Do not re-enter on your own", err)
+        self.assertNotIn("run bkf merge enter", err)
+        self.assertEqual((self.card(b).status, self.card(b).attention), ("working", None))
+
+    def test_verify_and_land_after_a_take_out_are_refused_with_exit_five_and_no_re_enter_instruction(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        self.commit(wa, "alpha.txt", "alpha")
+        self.merge("enter", task=a)
+        self.assertEqual(self.merge("leave", task=a)[0], 0)
+        for command in ("verify", "land"):
+            with self.subTest(command):
+                code, _, err = self.merge(command, task=a)
+                self.assertEqual(code, 5)
+                self.assertIn("not in the merge queue", err)
+                self.assertIn("do not re-enter on your own", err)
+                self.assertNotIn("run bkf merge enter", err)
+
+    def test_a_to_merge_card_outside_the_queue_may_start_and_one_inside_it_may_not(self) -> None:
+        a, wa = self.session("alpha", "task/alpha")
+        self.commit(wa, "alpha.txt", "alpha")
+        self.merge("enter", task=a)
+        environ = {**self.env, "BKF_TASKS_DIR": str(self.store)}
+        with patch.dict(os.environ, environ, clear=False):
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+                code = bkf_task.main(["start", a])
+        self.assertEqual(code, 1)
+        self.assertIn("is in the merge queue", stderr.getvalue())
+        self.assertEqual(self.card(a).status, "to-merge")
+
+        self.assertEqual(self.merge("leave", task=a)[0], 0)
+        self.assertEqual(self.card(a).status, "working")
+        self.merge("enter", task=a)
+        self.edit_queue(lambda queue: queue["entries"].clear())  # a card left in to-merge with no entry
+        self.assertEqual(self.card(a).status, "to-merge")
+        with patch.dict(os.environ, environ, clear=False):
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                code = bkf_task.main(["start", a])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.card(a).status, "working")
 
 
 if __name__ == "__main__":

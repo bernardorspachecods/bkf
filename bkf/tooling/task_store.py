@@ -275,8 +275,12 @@ def start(
     worktree: dict[str, Any] | None = None,
     run_dir: str | None = None,
 ) -> None:
-    """Begin a run on the card. A working card may begin again (a rerun): that clears its attention."""
-    _require(task, ("todo", "working", "failed"), "working")
+    """Begin a run on the card. A working card may begin again (a rerun): that clears its attention.
+
+    A to-merge card may begin too, as a safety net for a card that a session left in to-merge after landing.
+    The command refuses it while the card still holds an entry in the merge queue (bkf_task does that check).
+    """
+    _require(task, ("todo", "working", "failed", "to-merge"), "working")
     task.status = "working"
     task.attention = None
     task.exit = None

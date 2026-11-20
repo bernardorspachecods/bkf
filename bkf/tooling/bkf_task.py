@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import merge_store
 import task_store
 import task_tmux
 import task_worktree
+from merge_store import MergeError
 from task_store import KINDS, REASONS, STATUSES, Task, TaskError
 
 
@@ -121,6 +123,19 @@ def _body(path: str | None) -> str:
 
 def _transition_result(store: Path, task_id: str, change: Any) -> Task:
     return task_store.update(store, task_id, change)
+
+
+def _start(args: argparse.Namespace, store: Path) -> None:
+    """Start a card. A to-merge card starts only when it has no entry in the merge queue any more."""
+    session, worktree = _session(args), _worktree(args)
+    with task_store.locked(store):
+        card = task_store.read(store, args.id)
+        if card.status == "to-merge" and merge_store.queued(store, card.repo, card.id):
+            raise Refusal(f"task {card.id} is in the merge queue: it can start only after it leaves the queue")
+        _transition_result(
+            store, args.id,
+            lambda task: task_store.start(task, session=session, worktree=worktree, run_dir=args.run_dir),
+        )
 
 
 def _session(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -272,11 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print("\n".join(_show_lines(task)))
         elif args.command == "start":
-            session, worktree = _session(args), _worktree(args)
-            _transition_result(
-                store, args.id,
-                lambda task: task_store.start(task, session=session, worktree=worktree, run_dir=args.run_dir),
-            )
+            _start(args, store)
         elif args.command == "worktree":
             prepared = task_worktree.prepare(store, args.id, base=args.base)
             if args.json:
@@ -308,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
             return _send(args, store)
         elif args.command == "delete":
             task_store.delete(store, args.id)
-    except (Refusal, TaskError, OSError, UnicodeError) as exc:
+    except (Refusal, TaskError, MergeError, OSError, UnicodeError) as exc:
         print(f"bkf task: {exc}", file=sys.stderr)
         return 1
     return 0

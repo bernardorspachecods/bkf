@@ -120,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
     task_options(verify)
     land = commands.add_parser("land", help="fast-forward the target to the verified branch")
     task_options(land)
+    land.add_argument("--continue", dest="interim", action="store_true",
+                      help="an interim land: the card goes back to working and the session keeps its branch")
     fail = commands.add_parser("fail", help="give up the turn: the card gets the reason and leaves the queue")
     task_options(fail)
     fail.add_argument("--reason", required=True, metavar="TEXT")
@@ -181,6 +183,14 @@ def _update_card(store: Path, task: str, change: Callable[[Task], Any]) -> None:
     task_store.update(store, task, change)
 
 
+def _leave_queue_card(store: Path, task: str) -> None:
+    """Move the card out of to-merge after an interim land. A card that is already gone has nothing to move."""
+    try:
+        _update_card(store, task, task_store.leave_merge)
+    except TaskError:
+        pass
+
+
 def _apply_recovery(store: Path, found: merge_store.Recovery) -> None:
     if found.note is None:
         return
@@ -216,7 +226,8 @@ def _turn_entry(queue: dict[str, Any], task: str) -> dict[str, Any]:
     if head is not None and head["task"] == task:
         return head
     if merge_store.find(queue, task) is None:
-        raise Stop(EXIT_NOT_TURN, f"task {task} is not in the merge queue: run bkf merge enter")
+        raise Stop(EXIT_NOT_TURN, f"task {task} is not in the merge queue: the owner took it out or the queue "
+                                  "dropped it; stop the merge flow and do not re-enter on your own")
     raise Stop(EXIT_NOT_TURN, f"not your turn: {head['task']} holds the turn, your entry waits")
 
 
@@ -269,8 +280,9 @@ def cmd_wait(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) 
         if index is None:
             if joined:
                 reason = _last_reason(queue, ctx.task)
-                raise Stop(EXIT_ENTRY_GONE, f"your entry left the merge queue: {reason}. "
-                                            "Fix what the reason says, then run bkf merge enter")
+                raise Stop(EXIT_ENTRY_GONE, f"your entry left the merge queue: {reason}. Stop the merge flow: "
+                                            "the owner took the task out, or the queue dropped it. Do not "
+                                            "re-enter on your own; tell the owner and wait for instructions")
             if place is None:
                 place = _work_place(ctx.card, args.worktree)
             _join(ctx, queue, now, *place)
@@ -299,8 +311,12 @@ def cmd_wait(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) 
 
 def _last_reason(queue: dict[str, Any], task: str) -> str:
     for event in reversed(queue["events"]):
-        if event["task"] == task and event["reason"]:
+        if event["task"] != task:
+            continue
+        if event["reason"]:
             return event["reason"]
+        if event["event"] == "left":
+            return "it was taken out of the queue"
     return "the queue dropped it"
 
 
@@ -326,6 +342,7 @@ def cmd_verify(args: argparse.Namespace, store: Path, environ: Mapping[str, str]
 
 def cmd_land(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) -> int:
     ctx = _context(args, store, environ)
+    interim = bool(args.interim)
 
     def action(queue: dict[str, Any], now: datetime) -> int:
         entry = _turn_entry(queue, ctx.task)
@@ -356,10 +373,18 @@ def cmd_land(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) 
             entry["phase"] = "testing"
             raise Stop(EXIT_MAIN_REFUSED, f"{ctx.target} did not move: {refusal}")
         merge_store.remove(queue, ctx.task)
-        merge_store.log(queue, now, ctx.task, "landed", f"{entry['branch']} at {head[:12]}")
+        landed = f"{entry['branch']} at {head[:12]}"
+        merge_store.log(queue, now, ctx.task, "landed", f"interim: {landed}" if interim else landed)
         merge_store.promote(queue, now, ctx.lease)
-        print(f"Landed {entry['branch']} on {ctx.target}. Next: remove your worktree and branch "
-              f"(git-worktree-cleanup), then bkf task close.")
+        if interim:
+            _leave_queue_card(ctx.store, ctx.task)
+            print(f"Landed {entry['branch']} on {ctx.target} (interim). The card is working again and the entry "
+                  "left the queue. The session may keep working on the same branch; before its next land, run "
+                  f"bkf merge enter again, then bkf merge wait. On its turn, merge {ctx.target} into the branch, run "
+                  "the checks, then bkf merge verify and bkf merge land (without --continue for the last land).")
+        else:
+            print(f"Landed {entry['branch']} on {ctx.target}. Next: remove your worktree and branch "
+                  f"(git-worktree-cleanup), then bkf task close.")
         return EXIT_OK
 
     return _mutate(ctx, action) or EXIT_OK
@@ -399,10 +424,7 @@ def cmd_leave(args: argparse.Namespace, store: Path, environ: Mapping[str, str])
         merge_store.remove(queue, ctx.task)
         merge_store.log(queue, now, ctx.task, "left")
         merge_store.promote(queue, now, ctx.lease)
-        try:
-            _update_card(ctx.store, ctx.task, task_store.leave_merge)
-        except TaskError:
-            pass
+        _leave_queue_card(ctx.store, ctx.task)
         print(f"Left the merge queue for {ctx.target}.")
         return EXIT_OK
 

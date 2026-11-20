@@ -231,6 +231,13 @@ class TransitionTests(unittest.TestCase):
         start(task)
         self.assertEqual((task.status, task.attention), ("working", None))
 
+    def test_start_from_to_merge_moves_the_card_to_working_without_attention(self) -> None:
+        """The safety net for a card left in to-merge after a land: only the store's transition, no queue check."""
+        task = self.task("to-merge")
+        set_attention(task, "merge-failed", note="old", now=NOW)
+        start(task)
+        self.assertEqual((task.status, task.attention), ("working", None))
+
     def test_enter_merge_moves_a_card_to_to_merge_and_clears_attention(self) -> None:
         for status in ("todo", "working", "failed", "to-merge"):
             with self.subTest(status):
@@ -277,7 +284,7 @@ class TransitionTests(unittest.TestCase):
 
     def test_allowed_and_refused_transitions(self) -> None:
         allowed = [
-            (start, "todo", {}), (start, "working", {}), (start, "failed", {}),
+            (start, "todo", {}), (start, "working", {}), (start, "failed", {}), (start, "to-merge", {}),
             (enter_merge, "todo", {}), (enter_merge, "working", {}), (enter_merge, "failed", {}),
             (enter_merge, "to-merge", {}),
             (merge_failed, "to-merge", {"note": "x", "now": NOW}), (merge_failed, "working", {"note": "x", "now": NOW}),
@@ -288,7 +295,7 @@ class TransitionTests(unittest.TestCase):
             with self.subTest(function.__name__, status=status):
                 function(self.task(status), **kwargs)
         refused = [
-            (start, "to-merge"), (start, "unknown"),
+            (start, "unknown"), (start, "done"),
             (enter_merge, "done"), (leave_merge, "done"), (merge_failed, "done", {"note": "x", "now": NOW}),
             (mark_failed, "todo"), (mark_failed, "failed"),
         ]
