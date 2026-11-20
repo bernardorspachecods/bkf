@@ -53,6 +53,25 @@ class FakeWindows:
         return Window(session="fake-session", window_id="@7", needs_attach=self.needs_attach)
 
 
+class FakeSessions:
+    """Stands in for task_tmux.default_runner: answers the tmux and repository calls of --session-name, never a real server."""
+
+    def __init__(self, *, server: bool = False, listing: str = "") -> None:
+        self.calls: list[list[str]] = []
+        self.server = server
+        self.listing = listing
+
+    def __call__(self, args, stdin=None):
+        args = list(args)
+        self.calls.append(args)
+        if args[0] == "git":  # every directory is its own repository here
+            return task_tmux.Result(0, args[2] + "/.git\n", "")
+        tmux_args = args[3:] if args[1] == "-L" else args[1:]
+        if tmux_args[0] == "has-session" or not self.server:
+            return task_tmux.Result(1, "", "no server running")
+        return task_tmux.Result(0, self.listing, "")
+
+
 class LaunchTests(unittest.TestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
@@ -82,6 +101,10 @@ class LaunchTests(unittest.TestCase):
         opener = patch("task_tmux.open_window", self.windows)
         opener.start()
         self.addCleanup(opener.stop)
+        self.sessions = FakeSessions()
+        sessions = patch("task_tmux.default_runner", self.sessions)
+        sessions.start()
+        self.addCleanup(sessions.stop)
         self.tempdir = self.root / "tmp"
         self.tempdir.mkdir()
         temp = patch.object(tempfile, "tempdir", str(self.tempdir))
@@ -351,6 +374,34 @@ class LaunchTests(unittest.TestCase):
         status, _, error = self.launch("--session-name", "--dir", str(self.root / "missing"))
         self.assertEqual(status, 1)
         self.assertIn("--dir is not a folder", error)
+
+    def test_session_name_prints_the_session_where_the_repository_has_windows(self) -> None:
+        legacy = "agentic-agentic-66d44a"
+        self.sessions.server = True
+        self.sessions.listing = "\n".join([
+            "\t".join(["main", "1", "@1", "0", str(self.plain)]),
+            "\t".join([legacy, "0", "@5", "2", str(self.repo)]),
+        ]) + "\n"
+        status, out, error = self.launch("--session-name", "--dir", str(self.repo))
+        self.assertEqual((status, error), (0, ""))
+        self.assertEqual(out, legacy + "\n")
+        self.assertEqual(self.windows.calls, [])
+        self.assertIn(["tmux", "list-panes", "-a", "-F", task_tmux.PANE_FORMAT], self.sessions.calls)
+
+    def test_session_name_ignores_a_session_with_a_name_tmux_targets_refuse(self) -> None:
+        self.sessions.server = True
+        self.sessions.listing = "\t".join(["Agentic", "3", "@5", "0", str(self.repo)]) + "\n"
+        status, out, _ = self.launch("--session-name", "--dir", str(self.repo))
+        self.assertEqual((status, out),
+                         (0, task_tmux.repo_session_name(task_store.repo_identity(self.repo)) + "\n"))
+
+    def test_session_name_applies_the_socket_of_the_environment_to_list_panes(self) -> None:
+        self.sessions.server = True
+        with patch.dict(os.environ, {"BKF_TMUX_SOCKET": "sock-x"}):
+            status, _, _ = self.launch("--session-name", "--dir", str(self.repo))
+        self.assertEqual(status, 0)
+        self.assertIn(["tmux", "-L", "sock-x", "list-panes", "-a", "-F", task_tmux.PANE_FORMAT],
+                      self.sessions.calls)
 
     # What the window receives and the output.
 

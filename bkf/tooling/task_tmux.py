@@ -165,8 +165,12 @@ def _open_outside_tmux(
     *, directory: str, command: str, window_name: str | None, environment: dict[str, str],
     repo: str, size: tuple[int, int] | None, attach: bool, environ: Mapping[str, str], runner: Runner,
 ) -> Window:
-    session = repo_session_name(repo)
-    if _tmux_status(runner, environ, "has-session", "-t", f"={session}").returncode != 0:
+    session, after, exists = _locate_repo_session(directory, repo=repo, environ=environ, runner=runner)
+    if after is not None:
+        # The repository's windows are open in another session: join them after the last one.
+        window_id = _new_window(runner, environ, ["-a", "-t", after], directory, command,
+                                window_name, environment)
+    elif not exists:
         # A new session takes the requested window as its first window, so no bare shell remains.
         created = ["new-session", "-d", "-P", "-F", "#{window_id}", "-s", session]
         if size is not None:
@@ -241,6 +245,56 @@ def repo_session_name(repo: str) -> str:
     slug = slug[: SESSION_NAME_LIMIT - 7].rstrip("-") or "repo"
     digest = hashlib.sha1(repo.encode()).hexdigest()[:6]
     return f"{slug}-{digest}"
+
+
+# A session name other parts of the system accept; a session with another name is never joined.
+SESSION_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
+WINDOW_ID = re.compile(r"@[0-9]+")
+PANE_FORMAT = "#{session_name}\t#{session_attached}\t#{window_id}\t#{window_index}\t#{pane_current_path}"
+
+
+def resolve_repo_session(
+    directory: str, *, repo: str, environ: Mapping[str, str] = os.environ, runner: Runner = default_runner,
+) -> tuple[str, str | None]:
+    """The session a launch from outside tmux goes into, and the window to place the new one after (None: at the end)."""
+    session, after, _ = _locate_repo_session(directory, repo=repo, environ=environ, runner=runner)
+    return session, after
+
+
+def _locate_repo_session(
+    directory: str, *, repo: str, environ: Mapping[str, str], runner: Runner,
+) -> tuple[str, str | None, bool]:
+    """Return (session, window to place after or None, whether the repository's own session exists)."""
+    canonical = repo_session_name(repo)
+    if _tmux_status(runner, environ, "has-session", "-t", f"={canonical}").returncode == 0:
+        return canonical, None, True
+    listing = _tmux_status(runner, environ, "list-panes", "-a", "-F", PANE_FORMAT)
+    if listing.returncode != 0:  # no server is running
+        return canonical, None, False
+    target = _repo_key(directory, runner)
+    keys: dict[str, str] = {}
+    # session name -> (attached clients, window id -> highest window index of the repository's panes)
+    sessions: dict[str, tuple[int, dict[str, int]]] = {}
+    for line in listing.stdout.splitlines():
+        fields = line.split("\t", 4)
+        if len(fields) != 5:
+            continue
+        name, attached, window_id, index, path = fields
+        if not (SESSION_NAME.fullmatch(name) and WINDOW_ID.fullmatch(window_id)
+                and attached.isdigit() and index.isdigit() and path):
+            continue
+        if path not in keys:
+            keys[path] = _repo_key(path, runner)
+        if keys[path] != target:
+            continue
+        clients, windows = sessions.get(name, (int(attached), {}))
+        windows[window_id] = max(windows.get(window_id, -1), int(index))
+        sessions[name] = (clients, windows)
+    if not sessions:
+        return canonical, None, False
+    name = min(sessions, key=lambda candidate: (-sessions[candidate][0], candidate))
+    windows = sessions[name][1]
+    return name, max(windows, key=windows.__getitem__), False
 
 
 def _repo_key(path: str, runner: Runner) -> str:

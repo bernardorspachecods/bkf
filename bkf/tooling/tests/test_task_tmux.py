@@ -15,6 +15,7 @@ import uuid
 
 import task_tmux
 from task_tmux import Result, TmuxError, default_runner, open_window, repo_key, repo_session_name
+from unittest.mock import patch
 
 
 ENV = {"TERM_PROGRAM": "other"}
@@ -178,7 +179,8 @@ class PlacementTests(unittest.TestCase):
         name = repo_session_name("/work/a")
         commands = runner.tmux_commands()
         self.assertEqual(commands[0], ["tmux", "has-session", "-t", f"={name}"])
-        self.assertEqual(commands[1], ["tmux", "new-session", "-d", "-P", "-F", "#{window_id}",
+        self.assertEqual(commands[1], ["tmux", "list-panes", "-a", "-F", task_tmux.PANE_FORMAT])
+        self.assertEqual(commands[2], ["tmux", "new-session", "-d", "-P", "-F", "#{window_id}",
                                        "-s", name, "-x", "120", "-y", "40", "-n", "crew",
                                        "-c", "/work/a", "-e", "A_FIRST=two", "-e", "Z_LAST=1",
                                        wrapped("crew")])
@@ -189,7 +191,7 @@ class PlacementTests(unittest.TestCase):
         runner = FakeTmux(session_exists=False)
         open_window(directory="/work/a", command="crew", repo="/work/a", attach=False,
                     environ=ENV, runner=runner)
-        self.assertEqual(runner.tmux_commands()[1],
+        self.assertEqual(runner.tmux_commands()[2],
                          ["tmux", "new-session", "-d", "-P", "-F", "#{window_id}",
                           "-s", repo_session_name("/work/a"), "-c", "/work/a", wrapped("crew")])
 
@@ -302,6 +304,119 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(default_runner(["bkf-no-such-program-for-tests"]).returncode, 127)
 
 
+def pane(session: str, attached: int, window_id: str, index: int, path: str) -> str:
+    return "\t".join([session, str(attached), window_id, str(index), path])
+
+
+class OutsideTmuxSessionTests(unittest.TestCase):
+    """Outside tmux, a launch joins the windows of its repository in whichever session holds them."""
+
+    def setUp(self):
+        patcher = patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("BKF_TMUX_SOCKET", None)
+        self.legacy = "agentic-agentic-66d44a"
+        self.canonical = repo_session_name("/work/a")
+
+    def open(self, runner, *, environ=None, **kwargs):
+        kwargs.setdefault("attach", False)
+        return open_window(directory=kwargs.pop("directory", "/work/a"), command="crew", repo="/work/a",
+                           environ=environ or ENV, runner=runner, **kwargs)
+
+    def test_canonical_session_exists_so_no_pane_is_listed(self):
+        runner = FakeTmux(session_exists=True, listing=pane(self.legacy, 0, "@5", 2, "/work/a"))
+        window = self.open(runner)
+        self.assertFalse(any("list-panes" in args for args in runner.tmux_commands()))
+        self.assertEqual(new_window_args(runner)[:7],
+                         ["new-window", "-d", "-P", "-F", "#{window_id}", "-t", f"={self.canonical}:"])
+        self.assertEqual(window.session, self.canonical)
+
+    def test_legacy_session_with_a_repository_window_gets_the_window_after_its_last_one(self):
+        listing = "\n".join([
+            pane(self.legacy, 0, "@4", 0, "/work/a"),
+            pane(self.legacy, 0, "@5", 2, "/work/a-wt"),
+            pane(self.legacy, 0, "@6", 1, "/work/b"),
+        ])
+        runner = FakeTmux(session_exists=False, listing=listing)
+        window = self.open(runner)
+        self.assertEqual(runner.tmux_commands()[1], ["tmux", "list-panes", "-a", "-F", task_tmux.PANE_FORMAT])
+        self.assertFalse(any("new-session" in args for args in runner.tmux_commands()))
+        self.assertEqual(new_window_args(runner),
+                         ["new-window", "-d", "-P", "-F", "#{window_id}", "-a", "-t", "@5",
+                          "-c", "/work/a", wrapped("crew")])
+        self.assertEqual(window, task_tmux.Window(session=self.legacy, window_id="@9", needs_attach=True))
+
+    def test_the_joined_session_with_a_client_gets_no_second_terminal(self):
+        listing = pane(self.legacy, 1, "@5", 0, "/work/a")
+        runner = FakeTmux(session_exists=False, attached_clients="/dev/ttys004\n", listing=listing)
+        window = self.open(runner, environ={"TERM_PROGRAM": "iTerm.app"}, attach=True)
+        self.assertEqual(runner.osascript_calls(), [])
+        self.assertFalse(window.needs_attach)
+        self.assertEqual(window.session, self.legacy)
+
+    def test_a_worktree_of_the_repository_counts_as_the_same_repository(self):
+        runner = FakeTmux(session_exists=False, listing=pane("mine", 0, "@3", 1, "/work/a-wt"))
+        window = self.open(runner, directory="/work/a")
+        self.assertEqual(window.session, "mine")
+        self.assertEqual(new_window_args(runner)[5:7], ["-a", "-t"])
+        self.assertEqual(new_window_args(runner)[7], "@3")
+
+    def test_attached_session_beats_an_unattached_one(self):
+        listing = "\n".join([pane("alpha", 0, "@1", 0, "/work/a"), pane("zeta", 2, "@2", 0, "/work/a")])
+        runner = FakeTmux(session_exists=False, listing=listing)
+        self.assertEqual(self.open(runner).session, "zeta")
+        self.assertEqual(new_window_args(runner)[7], "@2")
+
+    def test_equal_attachment_is_broken_by_name_in_ascending_order(self):
+        listing = "\n".join([pane("zeta", 0, "@2", 0, "/work/a"), pane("alpha", 0, "@1", 0, "/work/a")])
+        runner = FakeTmux(session_exists=False, listing=listing)
+        self.assertEqual(self.open(runner).session, "alpha")
+        self.assertEqual(new_window_args(runner)[7], "@1")
+
+    def test_sessions_with_names_tmux_targets_refuse_are_ignored(self):
+        listing = "\n".join([
+            pane("Agentic", 3, "@1", 0, "/work/a"),
+            pane("my.session", 3, "@2", 0, "/work/a"),
+            pane("my session", 3, "@3", 0, "/work/a"),
+            pane("-dash", 3, "@4", 0, "/work/a"),
+        ])
+        runner = FakeTmux(session_exists=False, listing=listing)
+        window = self.open(runner)
+        self.assertEqual(window.session, self.canonical)
+        self.assertFalse(any("new-window" in args for args in runner.tmux_commands()))
+        self.assertIn("new-session", [args[1] for args in runner.tmux_commands() if len(args) > 1])
+
+    def test_no_matching_session_creates_the_canonical_one_as_today(self):
+        runner = FakeTmux(session_exists=False, listing=pane("other", 1, "@1", 0, "/work/b"))
+        window = self.open(runner, size=(120, 40))
+        self.assertEqual(runner.tmux_commands()[2][:9],
+                         ["tmux", "new-session", "-d", "-P", "-F", "#{window_id}", "-s", self.canonical, "-x"])
+        self.assertEqual(window.session, self.canonical)
+
+    def test_a_failing_list_panes_creates_the_canonical_session_as_today(self):
+        runner = FakeTmux(session_exists=False, fail={"list-panes": Result(1, "", "no server running")})
+        window = self.open(runner)
+        self.assertEqual(window.session, self.canonical)
+        self.assertEqual(runner.tmux_commands()[2][:4], ["tmux", "new-session", "-d", "-P"])
+
+    def test_the_socket_prefix_applies_to_list_panes(self):
+        runner = FakeTmux(session_exists=False, listing=pane(self.legacy, 0, "@5", 2, "/work/a"))
+        self.open(runner, environ={"TERM_PROGRAM": "other", "BKF_TMUX_SOCKET": "sock-x"})
+        self.assertEqual(runner.tmux_commands()[0], ["tmux", "-L", "sock-x", "has-session", "-t", f"={self.canonical}"])
+        self.assertEqual(runner.tmux_commands()[1], ["tmux", "-L", "sock-x", "list-panes", "-a", "-F",
+                                                     task_tmux.PANE_FORMAT])
+        self.assertEqual(new_window_args(runner)[:2], ["new-window", "-d"])
+        self.assertEqual(runner.tmux_commands()[2][:4], ["tmux", "-L", "sock-x", "new-window"])
+
+    def test_user_text_is_only_ever_a_value_and_the_listing_call_is_fixed(self):
+        runner = FakeTmux(session_exists=False, listing=pane(self.legacy, 0, "@5", 2, "/work/a"))
+        self.open(runner, window_name="-t")
+        self.assertEqual(new_window_args(runner)[:5], ["new-window", "-d", "-P", "-F", "#{window_id}"])
+        self.assertEqual(new_window_args(runner)[8:10], ["-n", "-t"])
+        self.assertEqual(runner.tmux_commands()[1], ["tmux", "list-panes", "-a", "-F", task_tmux.PANE_FORMAT])
+
+
 class RepositoryNameTests(unittest.TestCase):
     def test_session_name_is_the_slug_and_the_hash_of_the_path(self):
         digest = hashlib.sha1("/work/My Repo.v2".encode()).hexdigest()[:6]
@@ -374,6 +489,17 @@ class RealTmuxTests(unittest.TestCase):
         self.assertIn(first.window_id, ids)
         self.assertIn(second.window_id, ids)
         self.assertTrue(first.needs_attach)
+
+    def test_outside_tmux_a_legacy_session_of_the_repository_gets_the_window_after_its_last(self):
+        self.tmux("new-session", "-d", "-s", "legacy-66d44a", "-c", self.repo_a)
+        self.tmux("new-window", "-d", "-t", "=legacy-66d44a:", "-c", self.repo_b, "sleep 60")
+        window = open_window(directory=self.repo_a, command="sleep 60", repo=self.repo_a,
+                             attach=False, environ=self.environ)
+        self.assertEqual(window.session, "legacy-66d44a")
+        listed = [line.split() for line in self.tmux(
+            "list-windows", "-t", "=legacy-66d44a", "-F", "#{window_index} #{window_id}").splitlines()]
+        self.assertEqual(len(listed), 3)
+        self.assertEqual(listed[1], [listed[1][0], window.window_id])
 
     def test_a_new_session_has_exactly_the_requested_window(self):
         window = open_window(directory=self.repo_b, command="sleep 60", window_name="crew",

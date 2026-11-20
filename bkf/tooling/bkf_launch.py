@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-attach", dest="no_attach", action="store_true", help="do not attach a terminal")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of the lines")
     parser.add_argument("--session-name", dest="session_name", action="store_true",
-                        help="print the tmux session name of --dir's repository and launch nothing")
+                        help="print the tmux session where --dir's repository has windows open (else its own session) and launch nothing")
     return parser
 
 
@@ -123,7 +123,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.session_name:
             if not os.path.isdir(args.dir):
                 raise Refusal(f"--dir is not a folder: {args.dir}")
-            print(task_tmux.repo_session_name(task_store.repo_identity(args.dir)))
+            directory = os.path.abspath(args.dir)
+            session, _ = task_tmux.resolve_repo_session(
+                directory, repo=task_store.repo_identity(directory), environ=os.environ,
+                runner=task_tmux.default_runner,
+            )
+            print(session)
             return 0
         return _launch(args, store)
     except (Refusal, TaskError, OSError) as exc:

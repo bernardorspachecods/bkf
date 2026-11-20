@@ -36,7 +36,7 @@ Settle the intent with the user first (`align-intent`), for the crew as a whole:
 
 A coordinator is for work that needs coordination: several sub-plans, or one sub-plan complex enough to need its own workflows. A simple, localized fix is not: do it yourself in this chat, following `code-work`, and open no coordinator for it.
 
-Run it inside tmux (`$TMUX` is set): coordinators open as tmux windows beside this chat. Outside tmux, `bkf launch` opens them in the repository's tmux session in iTerm2 or Terminal.app, or prints the attach command.
+Run it inside tmux (`$TMUX` is set): coordinators open as tmux windows beside this chat. Outside tmux, `bkf launch` opens them beside the repository's windows in the tmux session that holds them (else the repository's own session) in iTerm2 or Terminal.app, or prints the attach command.
 
 ## Brief
 

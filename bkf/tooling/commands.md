@@ -845,10 +845,13 @@ with `BKF_TASK=<id>` for a card, `BKF_TASKS_DIR` when the caller has it set, and
 rules are those of `task_tmux.py`: inside tmux, the window goes into the caller's
 session, grouped with the windows of the same repository (right after the caller's
 window when the working directory is in its repository, else right after the last
-window of that repository, else at the end). Outside tmux, the window goes into
-the repository's session (`repo_session_name`), created when missing, and a
-terminal attaches to it: iTerm2 gets `tmux -CC attach`, Terminal.app `tmux
-attach`. Elsewhere, or with `--no-attach`, the output says how to attach.
+window of that repository, else at the end). Outside tmux, the window goes right
+after the last window of the repository in the session that already holds such
+windows (a worktree of the repository counts; the session with the most attached
+clients wins, then the first by name, and only sessions with names tmux accepts
+as targets count). With no such window, the repository's session
+(`repo_session_name`) is used, created when missing. A terminal attaches to the
+session: iTerm2 gets `tmux -CC attach`, Terminal.app `tmux attach`. Elsewhere, or with `--no-attach`, the output says how to attach.
 `BKF_TMUX_SOCKET` makes every tmux call use a named server: the tests use it and
 never touch the user's server.
 
@@ -862,9 +865,10 @@ terminal shows the session. With `--json`, one object: `{"task", "session",
 "window", "worktree", "branch", "needs_attach"}`, where `task`, `worktree`, and
 `branch` are null when absent.
 
-**Session name.** `--session-name --dir D` prints the tmux session name of the
-repository of `D` and launches nothing. The Agentic app uses it to bring the
-repository's iTerm2 window forward before a launch.
+**Session name.** `--session-name --dir D` prints the tmux session that the
+placement above uses for `D` (the session holding the repository's windows, else
+its repository session) and launches nothing. The Agentic app uses it to bring
+that session's iTerm2 window forward before a launch.
 
 **Failure.** After the card exists, a failing step (worktree, window, start)
 leaves the card in its status, sets `attention` `launch-failed` with the error as
