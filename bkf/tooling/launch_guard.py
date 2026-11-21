@@ -8,7 +8,6 @@ import shlex
 
 LAUNCHERS = {
     "plan-run.sh": {"start", "resume"},
-    "research-run.sh": {"start", "resume"},
     "delegate-run.sh": None,
 }
 WRAPPERS = {"bash", "sh", "zsh", "env", "nohup", "time", "exec", "command", "setsid"}

@@ -7,8 +7,6 @@ description: "Use when work is handed to agents or needs an independent review: 
 
 A run is a plan: one goal split into units, each implemented, reviewed (and gated where the repository has checks) on its own (pass, back or escalate).
 
-<!-- inject: ../../modules/agentic-roles.md -->
-<!-- BKF:GENERATED-INJECTED -->
 ## Agentic roles
 
 | Role | Exists to | Protects | Sees |
@@ -23,7 +21,6 @@ The coordinator may hold any other role, never authoring and reviewing the same 
 A run's checkpoints are usually the start, the end and an escalation. At a checkpoint, stop until the user approves, and link the file instead of pasting it. Between checkpoints, decide within the agreed intent (`align-intent`) and continue without messaging the user: no progress updates or questions about small decisions.
 
 Report an outcome as it is: what passed, what escalated, what was skipped.
-<!-- BKF:GENERATED-INJECTED-END -->
 
 You are the coordinator; a unit's author is its implementer. When you implement, work under the [implementation guide](roles/agentic-work-implementation.md).
 

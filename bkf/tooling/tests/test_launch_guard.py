@@ -29,13 +29,11 @@ class LaunchGuardTests(unittest.TestCase):
         for command in (
             "plan-run.sh start r goal.md plan.txt",
             "plan-run.sh resume r",
-            "research-run.sh start r q.md",
-            "research-run.sh resume r",
             "delegate-run.sh name brief.md",
             "codex exec -m m -",
             "~/.claude/skills/agentic-work/scripts/plan-run.sh start r g p",
             "cd /repo && /abs/plan-run.sh resume -p none r",
-            "FOO=1 bash scripts/research-run.sh start a b",
+            "FOO=1 bash scripts/plan-run.sh start a b",
             "DELEGATE_IN_PLACE=1 delegate-run.sh n b",
         ):
             with self.subTest(command=command):
@@ -89,7 +87,7 @@ class LaunchGuardTests(unittest.TestCase):
             "plan-run.sh finish r",
             "grep -rn plan-run.sh .",
             "cat scripts/delegate-run.sh",
-            "ls -la | grep research-run.sh",
+            "ls -la | grep plan-run.sh",
             "tail -f /tmp/x.log",
             "echo 'plan-run.sh start r'",
             "codex --help",

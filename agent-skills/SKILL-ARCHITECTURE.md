@@ -8,7 +8,7 @@ It contains only package metadata and supported runtime metadata derived from th
 | --- | --- | --- |
 | [agentic-work](skills/agentic-work/SKILL.md) | Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a review and, where the repository has checks, a gate, driven from this conversation; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm. |  |
 | [align-intent](skills/align-intent/SKILL.md) | Use at the start of any task that is more than a small change: settle with the user what is wanted and why, and when it is done, before working. Do not use inside a plan, a delegated task or a review: the brief already carries the intent. |  |
-| [ambitious](skills/ambitious/SKILL.md) | Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes, or to research a topic (use research). | yes |
+| [ambitious](skills/ambitious/SKILL.md) | Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes. | yes |
 | [before-compaction](skills/before-compaction/SKILL.md) | Before the user compacts the chat, make sure everything the work needs is written in documents and suggest the compaction message. Use only when the user is about to compact; do not use to hand work to a new chat (use handoff). | yes |
 | [brainstorm](skills/brainstorm/SKILL.md) | Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions. |  |
 | [code-work](skills/code-work/SKILL.md) | Use whenever you write or fix code: the principles for building it and verifying it, whoever coordinates the work. |  |
@@ -20,7 +20,6 @@ It contains only package metadata and supported runtime metadata derived from th
 | [prototype](skills/prototype/SKILL.md) | Build throwaway page variants that answer what a page should look like, then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship. |  |
 | [repo-library](skills/repo-library/SKILL.md) | Use when adding or reviewing an entry of a repository's repo-library: a procedure or rule set that the repository applies repeatedly. |  |
 | [repo-maintenance](skills/repo-maintenance/SKILL.md) | Use when your change affects a repository's documents, when organizing or restructuring them, or when writing or revising a document that other agents will act on, mostly under BKF. |  |
-| [research](skills/research/SKILL.md) | Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail; or a stopped research run to resume. |  |
 | [retrieval-chat-audit](skills/retrieval-chat-audit/SKILL.md) | Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses. | yes |
 | [run-to-completion](skills/run-to-completion/SKILL.md) | The user's last interaction before they leave. Tells them in two lines where the work stops for good and whether it needs anything from them right now to avoid that, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end. | yes |
 | [session-export](skills/session-export/SKILL.md) | Export chosen Claude Code or Codex sessions to readable files with what the chat itself does not show (tokens per turn, models, what woke each turn, messages between sessions), to analyze how skills and instructions behave. Use only when the user asks to export or analyze specific sessions; do not use to summarize a conversation or to export sessions on your own initiative. | yes |
@@ -47,7 +46,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## ambitious
 
-- Description: Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes, or to research a topic (use research).
+- Description: Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes.
 - Package: [`agent-skills/skills/ambitious`](skills/ambitious/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:
@@ -158,15 +157,6 @@ It contains only package metadata and supported runtime metadata derived from th
 - Supported UI metadata:
   - `display_name`: Repo maintenance
   - `short_description`: Rules for keeping, organizing and writing a repo's documents under BKF
-
-## research
-
-- Description: Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail; or a stopped research run to resume.
-- Package: [`agent-skills/skills/research`](skills/research/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Research
-  - `short_description`: Sourced research from objective to delivery
 
 ## retrieval-chat-audit
 

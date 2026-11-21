@@ -2,6 +2,7 @@
 
 For maintainers of this skill; a run does not need this page.
 
+- Run commands shared by the scripts: [run-commands.md](run-commands.md).
 - Role guides: [implementation](roles/agentic-work-implementation.md), [review](roles/agentic-work-review.md), [integration](roles/agentic-work-integration.md).
 - Script driver (not mentioned in SKILL.md; read only when the user asks for a script run): [plan-run.sh](scripts/plan-run.sh), workflow definition [plan.py](scripts/plan.py), with [inputs and prompts](scripts/plan_inputs.py), [brief lint](scripts/plan_lint.py), [rehearsal](scripts/plan_rehearse.py), [integration recovery](scripts/plan_integration.py), [board and record](scripts/plan_board.py) and [task cards](scripts/plan_cards.py).
 - Conversation driver: [plan-unit.sh](scripts/plan-unit.sh) with [plan_unit.py](scripts/plan_unit.py), and the launcher [delegate-run.sh](scripts/delegate-run.sh).

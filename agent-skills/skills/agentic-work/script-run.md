@@ -1,6 +1,6 @@
 # Run driven by a script
 
-You write `goal.md`, one brief per unit and `plan.txt`; [plan-run.sh](scripts/plan-run.sh) runs the units and stops when one needs you. Before the first `start` or `resume`, read [run-commands.md](../../modules/run-commands.md).
+You write `goal.md`, one brief per unit and `plan.txt`; [plan-run.sh](scripts/plan-run.sh) runs the units and stops when one needs you. Before the first `start` or `resume`, read [run-commands.md](run-commands.md).
 
 ## Starting
 

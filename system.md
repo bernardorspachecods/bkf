@@ -1,6 +1,6 @@
 ---
 bkf: document
-description: "Lists every piece this repository provides (format, bkf command, hooks, modules, skills, workflows, harness, repo library, logs) with where it lives, when it is used and which document owns it, and routes the common tasks to their start. Holds no rules or details: each row links to its owner."
+description: "Lists every piece this repository provides (format, bkf command, hooks, skills, workflows, harness, repo library, logs) with where it lives, when it is used and which document owns it, and routes the common tasks to their start. Holds no rules or details: each row links to its owner."
 tags: [navigation, overview]
 ---
 
@@ -19,9 +19,8 @@ for the piece your task touches. Why the pieces are built this way is in
 | `bkf` command: `validate`, `inventory`, `skills`, `orient`, `search`, `sources`, `log`, `updates`, `hooks`, `task`, `merge`, `launch`, `help` | `bkf/tooling/` | After editing documents, at session start, to look up rules and manage researched sources, to install hooks; skills and the Agentic app call `task`, `merge` and `launch` to open agent sessions, record their state and land their branches through the merge queue | [Command reference](/bkf/tooling/commands.md); `bkf help` |
 | Hooks: behavior that must run in every session, including the prompt prefixes such as `t:` and `i:` | Code in `bkf/tooling/`, installed under `~/.agent-hooks/` | Every session, once installed on the machine | [`bkf hooks`](/bkf/tooling/commands.md#bkf-hooks) |
 | Personal rules printed at every session start | `~/.agent-hooks/rules.md`, seeded from `bkf/tooling/default_rules.txt` | Every session, with the `rules` hook | [`bkf hooks`](/bkf/tooling/commands.md#bkf-hooks) |
-| Modules: rules written once and injected into skills | `agent-skills/modules/` | Never read on their own; their text arrives inside the skills | [Modules map](/agent-skills/modules/MAP.md) |
 | Skills: one per situation, picked by the harness from their descriptions | `agent-skills/skills/` | When a request matches a skill's description, or the user names it | [Skill catalog](/agent-skills/skill-architecture.md): a generated table of every skill and when to use it |
-| Workflows: `agentic-work`, `research`, run by a script with agents in reviewed roles | Each skill's `scripts/` and `roles/` | Work that spans several agents | Each workflow's skill; shared run commands in [run-commands](/agent-skills/modules/run-commands.md) |
+| Workflow: `agentic-work`, run by a script with agents in reviewed roles | Each skill's `scripts/` and `roles/` | Work that spans several agents | Each workflow's skill; shared run commands in [run-commands](/agent-skills/skills/agentic-work/run-commands.md) |
 | Harness: the engine the workflow scripts, the agent launcher of `agentic-work` calls | `agent-skills/harness/` | Changing how agents, gates, injection or workflow definitions run | [Harness engine](/agent-skills/harness/harness.md) |
 | Repo library: a repository's own procedures and modules | `repo-library/` in each repository that needs one | A procedure repeats in that repository | [`repo-library` skill](/agent-skills/skills/repo-library/SKILL.md) |
 | Upkeep rules for every document change | The `repo-maintenance` skill | Every change that touches a BKF repository's documents | [`repo-maintenance` skill](/agent-skills/skills/repo-maintenance/SKILL.md) |
@@ -37,7 +36,6 @@ for the piece your task touches. Why the pieces are built this way is in
 | Decide whether BKF fits a repository | [Why BKF](/bkf/manual/why-bkf.md) |
 | Change a document in this or any BKF repository | [`repo-maintenance` skill](/agent-skills/skills/repo-maintenance/SKILL.md) |
 | Add or change a skill | [`skill-authoring` skill](/agent-skills/skills/skill-authoring/SKILL.md), then `bkf skills --write` |
-| Add or change a module | [Modules map](/agent-skills/modules/MAP.md), then `bkf skills --write` |
 | Add or change a hook or a `bkf` command | [Tooling map](/bkf/tooling/MAP.md): the files to change and the commands to run |
 | Change how workflows run | [Harness engine](/agent-skills/harness/harness.md) |
 | Change the format | [Specification](/bkf/format/format-specification.md) |

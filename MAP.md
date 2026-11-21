@@ -21,7 +21,7 @@ in: [BKF](/bkf/MAP.md) or [agent skills](/agent-skills/MAP.md).
 | What it is | Document |
 | --- | --- |
 | Sets the repository entry rule for agents: start from the root map and the list of what the repository provides, then follow the active area's instructions. | [AGENTS.md](/AGENTS.md) |
-| Owns the request-matching skills, their generated catalog, and the shared rule modules; it does not index individual skill packages. | [MAP.md](/agent-skills/MAP.md) |
+| Owns the request-matching skills and their generated catalog; it does not index individual skill packages. | [MAP.md](/agent-skills/MAP.md) |
 | Defines the BKF document, map, and bundle format and provides tooling to generate inventories and check conformance. | [MAP.md](/bkf/MAP.md) |
-| Lists every piece this repository provides (format, bkf command, hooks, modules, skills, workflows, harness, repo library, logs) with where it lives, when it is used and which document owns it, and routes the common tasks to their start. Holds no rules or details: each row links to its owner. | [system.md](/system.md) |
+| Lists every piece this repository provides (format, bkf command, hooks, skills, workflows, harness, repo library, logs) with where it lives, when it is used and which document owns it, and routes the common tasks to their start. Holds no rules or details: each row links to its owner. | [system.md](/system.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->

@@ -47,9 +47,7 @@ is created. After adding or renaming a module there, a command fails with
 with `--reinstall`, and for a checkout's `.venv` run
 `uv pip install --python bkf/tooling/.venv/bin/python -e bkf/tooling`.
 
-Skills are installed through the symlink `~/.claude/skills`. Their relative
-links to `../../modules/` resolve through a second symlink,
-`~/.claude/modules`, pointing to `agent-skills/modules`. Create both on a new
+Skills are installed through the symlink `~/.claude/skills`. Create it on a new
 machine.
 
 ## bkf help
@@ -162,8 +160,8 @@ because it would not resolve from the skill. The block is replaced when the sour
 
 `bkf skills [REPOSITORY-ROOT] [--check|--write]` checks or regenerates the
 agent-skills inventories, injected module text, and skill catalog. The root
-defaults to the current directory and must contain `agent-skills/modules` and
-`agent-skills/skills`.
+defaults to the current directory and must contain `agent-skills/skills`; the modules
+check runs only when `agent-skills/modules` exists.
 
 `--check` is the default and never writes. It checks the modules map
 inventories and the injected text in skills, then validates skill metadata and links,
@@ -414,7 +412,7 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   commands are allowed. Refusals are stored per session in
   `~/.agent-hooks/state/` and pruned after 14 days.
   The same hook also denies a `Bash` call that starts a long-run launcher in the
-  foreground: `plan-run.sh` or `research-run.sh` with
+  foreground: `plan-run.sh` with
   `start` or `resume`, `delegate-run.sh`, or `codex exec`, whether
   called by path, behind `cd`, an environment assignment, `bash`, `env` or `nohup`. It is
   allowed only when the tool input has `run_in_background: true`; a launcher backgrounded by

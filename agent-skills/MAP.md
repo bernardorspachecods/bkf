@@ -1,10 +1,10 @@
 ---
-description: Owns the request-matching skills, their generated catalog, and the shared rule modules; it does not index individual skill packages.
+description: Owns the request-matching skills and their generated catalog; it does not index individual skill packages.
 ---
 
 # Agent skills map
 
-The inventory routes to the shared modules bundle. Catalog output and the
+Catalog output and the
 scripts that build and check it are linked as artifact references because the
 skill packages are selected by their own metadata.
 
@@ -17,7 +17,6 @@ refresh the injected text and catalog.
 | What it is | Document |
 | --- | --- |
 | Documents the harness engine's commands, exit codes and environment variables, and how to run its tests; read it when you change how agents, gates, injection or workflow definitions run. | [harness.md](/agent-skills/harness/harness.md) |
-| Owns the shared rule modules whose text the workflow and work skills inject into their bodies; the skills themselves live outside this bundle. | [MAP.md](/agent-skills/modules/MAP.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 
 ## Artifact references
