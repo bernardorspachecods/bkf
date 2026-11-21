@@ -1,6 +1,7 @@
 ---
 name: session-export
 description: Export chosen Claude Code or Codex sessions to readable files with what the chat itself does not show (tokens per turn, models, what woke each turn, messages between sessions), to analyze how skills and instructions behave. Use only when the user asks to export or analyze specific sessions; do not use to summarize a conversation or to export sessions on your own initiative.
+disable-model-invocation: true
 ---
 
 # Session export

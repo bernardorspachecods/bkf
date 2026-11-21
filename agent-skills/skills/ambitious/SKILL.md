@@ -1,6 +1,7 @@
 ---
 name: ambitious
 description: Push a task the user names past the first answer that works, along two lenses - the cause behind the symptom, and how the best in the field would do it. Use only when the user asks to be more ambitious about a task; do not use to widen scope on your own, for small well-bounded changes.
+disable-model-invocation: true
 ---
 
 # Ambitious
