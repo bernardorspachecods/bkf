@@ -1,14 +1,12 @@
 ---
 bkf: document
-description: "Sets the repository entry rule for agents: read what the repository provides, then follow the active area's instructions."
+description: "Sets the repository entry rule for agents: open the map of the area you will change, then follow its instructions."
 tags: [agents, navigation]
 ---
 
 # Agent instructions
 
-Read [what this repository provides](/system.md) before you search the folders: it
-lists every piece and where each task starts. Then open the map for the area
-you will change. Follow any instructions owned by that area.
+Open the map for the area you will change before you search the folders. Follow any instructions owned by that area.
 
 ## Records of past runs
 
