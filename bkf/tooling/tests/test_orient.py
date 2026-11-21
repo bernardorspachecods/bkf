@@ -3,7 +3,6 @@ from __future__ import annotations
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -50,28 +49,11 @@ class OrientTests(unittest.TestCase):
             (root / "guide.md").write_text(document("Guide", "A guide."), encoding="utf-8")
 
             result = run("--cwd", root)
-            without_validation = run("--cwd", root, "--no-validate")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("orientation (from .)", result.stdout)
         self.assertIn("/MAP.md\n  /guide.md  A guide.", result.stdout)
-        self.assertRegex(result.stdout, r"bkf validate: (ok|\d+ errors \(run bkf validate\))")
-        self.assertEqual(without_validation.returncode, 0, without_validation.stderr)
-        self.assertNotIn("bkf validate:", without_validation.stdout)
-
-    def test_warnings_are_listed_after_the_health_line(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "MAP.md").write_text(map_text(root=True), encoding="utf-8")
-            (root / "big.md").write_text(document("Big", "A big one.") + "line\n" * 400, encoding="utf-8")
-            subprocess.run(
-                [sys.executable, str(CLI), "inventory", "--write", str(root)],
-                check=True, capture_output=True, text=True, cwd=TOOLING,
-            )
-
-            result = run("--cwd", root)
-
-        self.assertIn("bkf validate: ok\nbkf validate: 1 warnings (run bkf validate)\n  NAVIGATION_MAP_REVIEW big.md\nNavigation map: the first column", result.stdout)
+        self.assertNotIn("bkf validate:", result.stdout)
 
     def test_nested_area_cwd_prints_map_chain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -82,7 +64,7 @@ class OrientTests(unittest.TestCase):
             (area / "MAP.md").write_text(map_text(description="Area guides."), encoding="utf-8")
             (area / "guide.md").write_text(document("Guide", "A local guide."), encoding="utf-8")
 
-            result = run("--cwd", area, "--no-validate")
+            result = run("--cwd", area)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("/MAP.md\n", result.stdout)
@@ -97,7 +79,7 @@ class OrientTests(unittest.TestCase):
             (inner / "MAP.md").write_text(map_text(root=True, description="Inner bundle."), encoding="utf-8")
             (inner / "guide.md").write_text(document("Guide", "Inner guide."), encoding="utf-8")
 
-            result = run("--cwd", inner, "--no-validate")
+            result = run("--cwd", inner)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("orientation (from bundle)", result.stdout)
@@ -124,7 +106,7 @@ class OrientTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-            result = run("--cwd", root, "--no-validate")
+            result = run("--cwd", root)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertLess(len(result.stdout), 6000)
@@ -134,24 +116,6 @@ class OrientTests(unittest.TestCase):
         pyproject = (TOOLING / "pyproject.toml").read_text(encoding="utf-8")
         module_list = pyproject.split("py-modules = [", 1)[1].split("]", 1)[0]
         self.assertIn('"orient"', module_list)
-
-    def test_validation_timeout_returns_promptly(self) -> None:
-        class SlowValidator:
-            findings: list[object] = []
-
-            def __init__(self, bundle: Path) -> None:
-                pass
-
-            def validate(self) -> None:
-                time.sleep(0.2)
-
-        started = time.monotonic()
-        with patch.object(orient, "VALIDATION_TIMEOUT", 0.01):
-            result = orient._validate(Path("."), lambda root: [root], SlowValidator)
-        elapsed = time.monotonic() - started
-
-        self.assertEqual(result, "bkf validate: skipped (timeout)")
-        self.assertLess(elapsed, 0.15)
 
     def test_orient_does_not_import_signal(self) -> None:
         source = (TOOLING / "orient.py").read_text(encoding="utf-8")
@@ -171,7 +135,7 @@ class OrientTests(unittest.TestCase):
             (root / "MAP.md").write_text(map_text(root=True), encoding="utf-8")
             stream = PlainStream()
             with patch.object(sys, "stdout", stream):
-                result = orient.main(["--cwd", str(root), "--no-validate"])
+                result = orient.main(["--cwd", str(root)])
 
         self.assertEqual(result, 0)
         self.assertIn("/MAP.md", stream.output)
@@ -182,7 +146,7 @@ class OrientTests(unittest.TestCase):
             (root / "MAP.md").write_text(map_text(root=True), encoding="utf-8")
             (root / "broken.md").write_text("---\nbkf: [bad\n---\n", encoding="utf-8")
 
-            result = run("--cwd", root, "--no-validate")
+            result = run("--cwd", root)
 
         self.assertEqual(result.returncode, 0)
         self.assertIn('"systemMessage"', result.stdout)
@@ -195,7 +159,7 @@ class OrientTests(unittest.TestCase):
             (root / "MAP.md").write_text(map_text(root=True), encoding="utf-8")
             (root / "broken.md").write_text("---\nbkf: [bad\n---\n", encoding="utf-8")
 
-            result = run("--cwd", root, "--no-validate", "--debug")
+            result = run("--cwd", root, "--debug")
 
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")

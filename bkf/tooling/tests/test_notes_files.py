@@ -151,7 +151,7 @@ class NotesReaderTests(unittest.TestCase):
                 "notes2.md": "---\n: [ not yaml\n---\nneedle\n",
                 "guide.md": "---\nbkf: document\ndescription: A guide.\ntags: [test]\n---\n\n# Guide\n",
             })
-            oriented = bkf("orient", "--cwd", root, "--no-validate", "--debug")
+            oriented = bkf("orient", "--cwd", root, "--debug")
             searched = bkf("search", "needle", "--cwd", root)
 
         self.assertEqual(oriented.returncode, 0, oriented.stderr)

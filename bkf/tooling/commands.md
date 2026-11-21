@@ -207,19 +207,17 @@ selection failure or invalid command arguments.
 
 ## bkf orient
 
-`bkf orient [--cwd PATH] [--no-validate] [--debug]` prints a short orientation
+`bkf orient [--cwd PATH] [--debug]` prints a short orientation
 block for the selected directory. `--cwd` defaults to the process working
-directory. The output starts with `orientation (from PATH)`, followed by a
-validation health line and the map chain from the outermost bundle root through
+directory. The output starts with `orientation (from PATH)`, followed by the
+map chain from the outermost bundle root through
 the nearest map at or above the directory. Each map path is followed by its
 member inventory rows. Output is capped at 6,000 characters; omitted rows are
-reported with a `read <map-path>` marker. `--no-validate` omits the health line.
+reported with a `read <map-path>` marker. It does not run validation: the `check`
+and `warnings` hooks report findings for the files the session changes (see
+[bkf hooks](#bkf-hooks)).
 
-Validation runs in-process with a five-second limit. The health line reports
-`ok`, the number of errors, or a timeout. When validation finds warnings, a
-second line gives their count and up to 10 of them follow, each as a code and
-path. When any is a navigation map warning, one paragraph of guidance on writing
-the map follows, the same one `bkf validate` ends its findings with. If the
+If the
 directory is outside a bundle, the command prints nothing. An unexpected failure prints a JSON `systemMessage`
 for the user and returns success; `--debug` prints the failure to stderr and
 returns 1.
