@@ -1,6 +1,6 @@
 # Run driven by a script
 
-You write `goal.md`, one brief per unit and `plan.txt`; [plan-run.sh](scripts/plan-run.sh) runs the units and stops when one needs you. Before the first `start` or `resume`, read [run-commands.md](../../modules/run-commands.md).
+You write `goal.md`, one brief per unit and `plan.txt`; [plan-run.sh](scripts/plan-run.sh) runs the units and stops when one needs you. Before the first `start` or `resume`, read [run-commands.md](run-commands.md).
 
 ## Starting
 
@@ -16,6 +16,7 @@ tests.md
 
 - **Pending plans.** A plan ready but not launched lives in `~/.plan-runs-pending/<repo>/<name>/` (`goal.md`, `plan.txt`, briefs). `plan-run.sh pending` lists them; `start <name>` moves one into the run. The script numbers the units, so name the briefs without a number.
 - **The run's worktree.** A run works in `<run>/tree` on a new branch `plan/<name>` and commits each passed unit there. With `--in-place`, do not edit the checkout during a step.
+- **Task cards.** Each run and each unit has a card in the task store (`bkf task`), its unit cards under the run's: `<run>/task` and `<run>/<unit>/task` name them, and `bkf task show` or the Agentic app shows their state. A run waits at its final report as `working` with the `paused` attention; a passed unit's card is closed (deleted) and a failed one stays `failed`; `finish` closes the run's card.
 - **Worktree setup.** The committed `.plan-run.json` sets the worktree up before the first unit, outside any agent: `{"worktree": {"copy": [".env.test"], "prepare": ["pnpm install --frozen-lockfile"]}}`. Never copy a secret: agents read everything in the worktree. `PLAN_PREPARE_TIMEOUT` (default 1800 s).
 
 ## Before every start: gates, lint, rehearsal

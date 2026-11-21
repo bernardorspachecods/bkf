@@ -1,5 +1,5 @@
 interface:
   display_name: "Git Merge Queue"
-  short_description: "Register finished branches and merge them as one tested batch"
+  short_description: "Land finished branches on the target one session at a time, through bkf merge"
 policy:
   allow_implicit_invocation: false

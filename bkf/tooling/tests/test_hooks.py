@@ -37,7 +37,7 @@ class HooksTest(unittest.TestCase):
             "args = sys.argv[1:]\n"
             "mode = os.environ.get('BKF_STUB_MODE', 'ok')\n"
             "if args[:2] == ['hooks', 'run']:\n"
-            "    if args[2:3] == ['rules']: raise SystemExit(0)\n"
+            "    if args[2:3] in (['rules'], ['task']): raise SystemExit(0)\n"
             "    if mode == 'sleep': time.sleep(1)\n"
             "    if mode == 'traceback': print('Traceback (most recent call last):')\n"
             "    elif mode == 'none': pass\n"
@@ -122,9 +122,13 @@ class HooksTest(unittest.TestCase):
         )
         for directory, name in ((".claude", "settings.json"), (".codex", "hooks.json")):
             hooks = self.config(directory, name)["hooks"]
-            self.assertEqual(set(hooks), {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"})
-            self.assertEqual(len(hooks["UserPromptSubmit"]), 5)
+            expected_events = {"UserPromptSubmit", "PreToolUse", "SessionStart", "PostToolUse", "Stop"}
+            if directory == ".claude":
+                expected_events.update({"PostToolUseFailure", "SubagentStop", "PermissionRequest", "StopFailure", "SessionEnd"})
+            self.assertEqual(set(hooks), expected_events)
+            self.assertEqual(len(hooks["UserPromptSubmit"]), 6)
             self.assertEqual(hooks["UserPromptSubmit"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
+            self.assertEqual(hooks["UserPromptSubmit"][5]["hooks"][0]["command"], f"{self.command} hooks run task")
             self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], "python3 " + str((self.home / ".agent-hooks" / "mode.py").resolve()))
             self.assertEqual(hooks["UserPromptSubmit"][1]["hooks"][0]["command"], f"{self.command} hooks run log")
             self.assertEqual(hooks["UserPromptSubmit"][2]["hooks"][0]["command"], f"{self.command} hooks run audit")
@@ -133,17 +137,42 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(hooks["PreToolUse"][1]["matcher"], "Read|Bash")
             self.assertEqual(hooks["PreToolUse"][1]["hooks"][0]["command"], f"{self.command} hooks run guard")
             self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} orient")
-            self.assertEqual(len(hooks["SessionStart"]), 4)
-            self.assertEqual(hooks["SessionStart"][3]["hooks"][0]["command"], f"{self.command} hooks run tabname")
+            self.assertEqual(len(hooks["SessionStart"]), 5)
+            self.assertEqual(hooks["SessionStart"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["Stop"][2]["hooks"][0]["command"], f"{self.command} hooks run tabname")
+            self.assertEqual(hooks["Stop"][3]["hooks"][0]["command"], f"{self.command} hooks run task")
             self.assertEqual(hooks["SessionStart"][1]["hooks"][0]["command"], f"{self.command} hooks run rules")
-            self.assertEqual(hooks["SessionStart"][2]["hooks"][0]["command"], f"{self.command} hooks run snapshot")
+            self.assertEqual(hooks["SessionStart"][2]["hooks"][0]["command"], f"{self.command} hooks run task")
+            self.assertEqual(hooks["SessionStart"][3]["hooks"][0]["command"], f"{self.command} hooks run snapshot")
             self.assertEqual(hooks["PostToolUse"][0]["matcher"], "Edit|Write|NotebookEdit|MultiEdit|apply_patch")
             self.assertEqual(hooks["PostToolUse"][0]["hooks"][0]["command"], f"{self.command} hooks run record")
             self.assertEqual(hooks["Stop"][0]["hooks"][0]["command"], f"{self.command} hooks run stop")
             self.assertEqual(hooks["Stop"][0]["hooks"][0]["timeout"], 60)
             self.assertEqual(hooks["Stop"][1]["hooks"][0]["command"], f"{self.command} hooks run last")
         self.assertEqual(run("status", "--home", self.home)[0], 0)
+
+    def test_sources_preview_and_status_are_claude_only(self) -> None:
+        code, preview = run("install", "--only", "sources", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("preview only", preview)
+        self.assertEqual(preview.count(f"{self.command} hooks run sources"), 5)
+        self.assertFalse((self.home / ".claude" / "settings.json").exists())
+        _, pending, _ = bkf_hooks.report(self.home, "sources")
+        self.assertEqual([target.name for target, _, _ in pending], ["claude"])
+        _, path, config = pending[0]
+        hooks = config["hooks"]
+        self.assertEqual(set(hooks), {"PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SubagentStop"})
+        for event in ("PreToolUse", "PostToolUse"):
+            self.assertEqual(hooks[event][0]["matcher"], "WebFetch|WebSearch")
+        self.assertEqual(hooks["PostToolUseFailure"][0]["matcher"], "WebFetch")
+        for event in ("Stop", "SubagentStop"):
+            self.assertNotIn("matcher", hooks[event][0])
+        path.write_text(json.dumps(config))
+        code, status = run("status", "--only", "sources", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertEqual(status.count(f"{self.command} hooks run sources"), 5)
+        self.assertNotIn("broken", status)
+        self.assertFalse((self.home / ".codex" / "hooks.json").exists())
 
     def test_install_rules_registers_only_for_both_tools(self) -> None:
         code, _ = run("install", "--write", "--only", "rules", "--home", self.home)
@@ -170,6 +199,106 @@ class HooksTest(unittest.TestCase):
         run("install", "--only", "rules", "--home", self.home)
         self.assertFalse((self.home / ".agent-hooks" / "rules.md").exists())
 
+    TASK_EVENTS = {
+        "claude": (
+            "SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "PreToolUse", "PermissionRequest", "StopFailure",
+            "SessionEnd",
+        ),
+        "codex": ("SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "PreToolUse"),
+    }
+
+    def test_install_task_registers_its_events_for_both_tools(self) -> None:
+        code, output = run("install", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        for tool, events in self.TASK_EVENTS.items():
+            for event in events:
+                self.assertIn(f"missing  {tool:<7} {event}", output)
+        self.assertIn("preview only", output)
+        self.assertFalse((self.home / ".claude" / "settings.json").exists())
+        code, _ = run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        for directory, name, tool in ((".claude", "settings.json", "claude"), (".codex", "hooks.json", "codex")):
+            hooks = self.config(directory, name)["hooks"]
+            self.assertEqual(set(hooks), set(self.TASK_EVENTS[tool]))
+            for event in self.TASK_EVENTS[tool]:
+                self.assertEqual(hooks[event][0]["hooks"][0]["command"], f"{self.command} hooks run task")
+                self.assertNotIn("matcher", hooks[event][0])
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_install_replaces_the_old_ask_user_question_matcher(self) -> None:
+        settings = self.home / ".claude" / "settings.json"
+        old = {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": f"{self.command} hooks run task"}]}
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({"hooks": {"PreToolUse": [old]}}))
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 1)
+        code, _ = run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        pre = self.config(".claude", "settings.json")["hooks"]["PreToolUse"]
+        self.assertEqual(len(pre), 1)
+        self.assertNotIn("matcher", pre[0])
+        self.assertEqual(pre[0]["hooks"][0]["command"], f"{self.command} hooks run task")
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_install_leaves_a_shared_group_matcher_to_the_other_hooks(self) -> None:
+        settings = self.home / ".claude" / "settings.json"
+        mine = {"type": "command", "command": "/usr/local/bin/my-question-hook"}
+        shared = {"matcher": "AskUserQuestion", "hooks": [mine, {"type": "command", "command": f"{self.command} hooks run task"}]}
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({"hooks": {"PreToolUse": [shared]}}))
+        code, _ = run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        pre = self.config(".claude", "settings.json")["hooks"]["PreToolUse"]
+        self.assertEqual(pre[0], {"matcher": "AskUserQuestion", "hooks": [mine]})
+        self.assertEqual(len(pre), 2)
+        self.assertNotIn("matcher", pre[1])
+        self.assertEqual(pre[1]["hooks"][0]["command"], f"{self.command} hooks run task")
+        self.assertEqual(run("status", "--only", "task", "--home", self.home)[0], 0)
+
+    def test_task_stop_failure_is_registered_for_claude_only(self) -> None:
+        run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertIn("StopFailure", self.config(".claude", "settings.json")["hooks"])
+        self.assertNotIn("StopFailure", self.config(".codex", "hooks.json")["hooks"])
+
+    def test_task_hook_status_reports_the_new_events_as_missing_then_ok(self) -> None:
+        code, output = run("status", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 1)
+        self.assertIn("missing  claude  UserPromptSubmit", output)
+        self.assertIn("missing  codex   Stop", output)
+        self.assertIn("missing  claude  PermissionRequest", output)
+        self.assertIn("missing  claude  PreToolUse", output)
+        self.assertIn("missing  codex   PostToolUse", output)
+        run("install", "--write", "--only", "task", "--home", self.home)
+        code, output = run("status", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("ok       claude  UserPromptSubmit", output)
+        self.assertIn("ok       codex   Stop", output)
+        self.assertIn("ok       claude  PermissionRequest", output)
+        self.assertIn("ok       codex   PostToolUse", output)
+
+    def test_task_hook_is_not_registered_for_codex_permission_requests(self) -> None:
+        run("install", "--write", "--only", "task", "--home", self.home)
+        self.assertNotIn("PermissionRequest", self.config(".codex", "hooks.json")["hooks"])
+
+    def test_task_install_keeps_other_hooks_on_the_same_events(self) -> None:
+        settings = self.home / ".claude" / "settings.json"
+        other = {"type": "command", "command": "echo mine"}
+        settings.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [other]}]}}))
+        run("install", "--write", "--only", "task", "--home", self.home)
+        stop = self.config(".claude", "settings.json")["hooks"]["Stop"]
+        self.assertEqual(stop[0]["hooks"], [other])
+        self.assertEqual(stop[1]["hooks"][0]["command"], f"{self.command} hooks run task")
+
+    def test_task_hook_is_probed_with_empty_input_and_no_task(self) -> None:
+        run("install", "--write", "--only", "task", "--home", self.home)
+        with patch.dict(os.environ, {"BKF_TASK": "t20260101-000000-abcd"}):
+            code, output = run("status", "--only", "task", "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("ok       claude  SessionStart", output)
+
+    def test_task_hook_is_listed_in_the_group_choices(self) -> None:
+        self.assertIn("task", bkf_hooks.HOOK_NAMES)
+        self.assertEqual(bkf_hooks.build_parser().parse_args(["status", "--only", "task"]).only, "task")
+
     def test_status_reports_rules_registration_and_file_size(self) -> None:
         run("install", "--write", "--only", "rules", "--home", self.home)
         path = self.home / ".agent-hooks" / "rules.md"
@@ -190,7 +319,7 @@ class HooksTest(unittest.TestCase):
         config = json.loads(once)
         self.assertEqual(config["theme"], "dark")
         self.assertIn(other, config["hooks"]["SessionStart"][0]["hooks"])
-        self.assertEqual(len(config["hooks"]["SessionStart"]), 5)
+        self.assertEqual(len(config["hooks"]["SessionStart"]), 6)
         code, output = run("install", "--write", "--home", self.home)
         self.assertIn("nothing to do", output)
         self.assertEqual(settings.read_text(), once)

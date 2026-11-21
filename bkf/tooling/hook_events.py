@@ -26,7 +26,7 @@ AUDIT_PREFIX = re.compile(r"^\s*bkf\s*:", re.IGNORECASE)
 REPORT_DIR = Path.home() / ".agent-hooks" / "reports"
 PASTE_TAG = re.compile(r"^[ \t]*</?pasted_content\b[^>\n]*>[ \t]*\n?|</?pasted_content\b[^>\n]*>", re.MULTILINE)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
-EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit", "warnings", "tabname"}
+EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit", "warnings", "tabname", "sources"}
 TITLE_TAIL_BYTES = 2_000_000
 TAB_NAME_LIMIT = 80
 
@@ -40,7 +40,8 @@ def report_failure(event: str, exc: Exception, fields: dict | None = None) -> No
     payload = {"systemMessage": message}
     payload.update(fields or {})
     payload["systemMessage"] = message
-    print(json.dumps(payload, ensure_ascii=False))
+    if event != "sources":
+        print(json.dumps(payload, ensure_ascii=False))
     print(message, file=sys.stderr)
 
 
@@ -55,10 +56,13 @@ def _probe(event: str) -> None:
     if event == "guard":
         importlib.import_module("read_guard")
         importlib.import_module("launch_guard")
+        importlib.import_module("git_guard")
     elif event == "log":
         importlib.import_module("log_entry")
     elif event == "audit":
         importlib.import_module("audit")
+    elif event == "sources":
+        importlib.import_module("source_hooks")
     elif event == "stop":
         for module in ("generate_inventory", "validate_bundle", "bkf_common", "navigation_map"):
             importlib.import_module(module)
@@ -412,6 +416,14 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
         touched.unlink(missing_ok=True)
         blocks.unlink(missing_ok=True)
         notes = warnings(roots, paths, validators) if roots else []
+        shown = _state(session_id, "warned", state_dir)
+        seen = set(shown.read_text(encoding="utf-8").split("\n")) if shown.exists() else set()
+        fresh_notes = [note for note in notes if note not in seen]
+        if fresh_notes:
+            shown.parent.mkdir(parents=True, exist_ok=True)
+            with shown.open("a", encoding="utf-8") as handle:
+                handle.write("\n".join(fresh_notes) + "\n")
+        notes = fresh_notes
         if notes:
             pending = _state(session_id, "warnings", state_dir)
             pending.parent.mkdir(parents=True, exist_ok=True)
@@ -502,14 +514,26 @@ def main(argv: list[str]) -> int:
         elif event == "warnings":
             output = pending_warnings(data)
         elif event == "tabname":
-            tab_name(data)
+            import session_number
+
+            name = session_number.session_name(data)
+            if name is not None:
+                session_number.rename_window(name)
+                output = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "sessionTitle": name}}
+            else:
+                tab_name(data)
         elif event == "stop":
             output = stop(data)
+        elif event == "sources":
+            from source_hooks import handle
+
+            output = handle(data)
         elif event == "guard":
+            import git_guard
             from launch_guard import check
             from read_guard import guard
 
-            output = guard(data) or check(data)
+            output = guard(data) or check(data) or git_guard.check(data)
     except Exception as exc:
         if event == "stop":
             exc = RuntimeError(f"validation did not run: {exc}")

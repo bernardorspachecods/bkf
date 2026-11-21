@@ -12,23 +12,21 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
 
    Expected result: `bkf` is installed from this checkout, with its executable under `~/.local/bin`. If `bkf` is not found, run `uv tool update-shell` and reopen the shell. If the checkout moves, reinstall from its new location. After pulling a checkout that adds commands or dependencies, run the same install command with `--reinstall` so the new command is picked up.
 
-2. Check whether the skill-link paths already exist before creating them. An existing real folder must be merged or moved first; do not overwrite it. From the repository root, use absolute targets. Choose the pair for your agent:
+2. Check whether the skill-link paths already exist before creating them. An existing real folder must be merged or moved first; do not overwrite it. From the repository root, use absolute targets. Choose the path for your agent:
 
    Claude Code:
 
    ```sh
    ln -s "$PWD/agent-skills/skills" ~/.claude/skills
-   ln -s "$PWD/agent-skills/modules" ~/.claude/modules
    ```
 
    Codex:
 
    ```sh
    ln -s "$PWD/agent-skills/skills" ~/.agents/skills
-   ln -s "$PWD/agent-skills/modules" ~/.agents/modules
    ```
 
-   Expected result: the two skill paths point to `agent-skills/skills` and `agent-skills/modules`; the skills' `../../modules/` links resolve through the modules link.
+   Expected result: the skill path points to `agent-skills/skills`.
 
 3. Check the repository from its root:
 

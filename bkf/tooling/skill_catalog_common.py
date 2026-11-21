@@ -21,7 +21,7 @@ from urllib.parse import unquote, urlsplit
 
 SCHEMA_VERSION = "SC1"
 SKILL_ROOT_RELATIVE = Path("agent-skills/skills")
-CATALOG_RELATIVE = Path("agent-skills/SKILL-ARCHITECTURE.md")
+CATALOG_RELATIVE = Path("agent-skills/skill-architecture.md")
 # Folders under the skill root that an app manages and the catalog does not cover.
 EXCLUDED_PACKAGE_DIRS = frozenset({"synced"})
 FRONTMATTER_START = re.compile(r"^---\s*$")
@@ -404,8 +404,9 @@ def _validate_package_file_links(
                 if target in documents:
                     pending.append(target)
 
+    metadata_file = (package / "agents" / "openai.yaml").resolve()
     for path in package_files:
-        if path == skill_file or path in reachable:
+        if path == skill_file or path == metadata_file or path in reachable:
             continue
         try:
             path.relative_to(package_root)
@@ -1071,7 +1072,7 @@ def write_catalog(root: Path, output_path: Path | None = None) -> Path:
     target = (output_path or root / CATALOG_RELATIVE).resolve()
     canonical = (root / CATALOG_RELATIVE).resolve()
     if target != canonical:
-        raise ValueError("write mode is limited to agent-skills/SKILL-ARCHITECTURE.md")
+        raise ValueError("write mode is limited to agent-skills/skill-architecture.md")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(generate_catalog(root), encoding="utf-8")
     return target

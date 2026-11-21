@@ -26,7 +26,10 @@ def main(argv: list[str] | None = None) -> int:
     skills = root / "agent-skills" / "skills"
     mode = "--write" if args.write else "--check"
 
-    inventory_status = generate_inventory.main([str(bundle), "--skills", str(skills), mode])
+    # A repository without shared modules has nothing to inventory or inject.
+    inventory_status = (
+        generate_inventory.main([str(bundle), "--skills", str(skills), mode]) if bundle.is_dir() else 0
+    )
     if args.write:
         catalog_status = generate_skill_catalog.main([str(root), "--write"])
     else:

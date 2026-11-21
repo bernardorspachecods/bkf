@@ -5,22 +5,4 @@ description: Commit the uncommitted changes of the current worktree, either only
 
 # Git status cleanup
 
-## Scope
-
-| Argument | Commits | Leaves |
-|---|---|---|
-| `mine` (default) | only the changes this session made | everything else, untouched |
-| `all` | every non-ignored change, including work this session did not do | nothing |
-
-## Rules
-
-- Ignored files are out of scope.
-- One commit for the chosen scope, with a concise message that describes it. Without a better description, use `chore(worktree): snapshot existing changes`.
-- `mine`: identify the session's changes from what you edited and created, not from `git status` alone. Stage by path (or by hunk when a file mixes your changes with others'). If you cannot separate your changes from someone else's in the same file, stop and ask; do not guess.
-- Never use `--force`, `reset`, `clean` or `stash`, and never revert or discard changes you did not make.
-- If the worktree is clean, report that no commit was necessary.
-- Report the commit message and, for `mine`, what was left behind.
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).
+One commit with a concise message. `mine` (default) commits only what this session changed, staged by path or hunk; if you cannot separate your changes from someone else's in a file, ask. `all` commits every non-ignored change. Clean worktree: say so and stop. Report the message and, for `mine`, what was left behind.

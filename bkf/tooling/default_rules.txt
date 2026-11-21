@@ -9,7 +9,7 @@
   - Use full sentences for warnings, irreversible actions, and real ambiguity.
 - Match the user's language. Always use an informal tone. If it is Portuguese, use European Portuguese (pt-PT), not Brazilian. If it is English, use American English.
 - Optimize for the best long-term solution, not for speed.
-- In a conversation with the user, for non-trivial work with no way named, ask how to do it: who implements, who reviews (never state a time estimate). The user chooses; never pick or switch it yourself. An agent given a brief, a plan unit or a task does the work and never asks about the way.
+- In a conversation with the user, for non-trivial work with no way named, ask one question: implement with a Haiku subagent or with a Codex agent you launch, both from this conversation (never state a time estimate). You review, unless the user names another way; the user chooses the implementer and you never pick or switch it yourself. An agent given a brief, a plan unit or a task does the work and never asks about the way.
 - Only write to the memory directory when the repo does not use the BKF system. A repo uses BKF when the SessionStart orientation shows `bkf validate` and a root `MAP.md`.
 - Do not answer messages starting with `f:` or `i:`, ask about them, or act on them
 - Self-correct genuinely when challenged, not defensively and not by blind concession

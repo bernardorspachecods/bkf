@@ -17,7 +17,7 @@ import agent_modes
 
 
 SCRIPT_NAME = "mode.py"
-HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "guard", "audit", "tabname")
+HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "task", "guard", "audit", "tabname", "sources")
 EDIT_TOOLS = "Edit|Write|NotebookEdit|MultiEdit|apply_patch"
 TIMEOUT = 10
 RULES_LIMIT = 4000
@@ -49,6 +49,7 @@ class Registration:
     command: str
     owns: re.Pattern[str]
     timeout: int = TIMEOUT
+    claude_only: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,6 +84,7 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
         Registration("guard", "PreToolUse", "Read|Bash", f"{bkf_command(home)} hooks run guard", re.compile(r"(^|/)bkf hooks run guard$")),
         Registration("orient", "SessionStart", None, f"{bkf_command(home)} orient", orient_owner),
         Registration("rules", "SessionStart", None, f"{bkf_command(home)} hooks run rules", re.compile(r"(^|/)bkf hooks run rules$")),
+        Registration("task", "SessionStart", None, f"{bkf_command(home)} hooks run task", re.compile(r"(^|/)bkf hooks run task$")),
         Registration("check", "SessionStart", None, f"{bkf_command(home)} hooks run snapshot", re.compile(r"(^|/)bkf hooks run snapshot$")),
         Registration("check", "PostToolUse", EDIT_TOOLS, f"{bkf_command(home)} hooks run record", re.compile(r"(^|/)bkf hooks run record$")),
         Registration("check", "Stop", None, f"{bkf_command(home)} hooks run stop", re.compile(r"(^|/)bkf hooks run stop$"), 60),
@@ -94,6 +96,21 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
     tabname = f"{bkf_command(home)} hooks run tabname"
     tabname_owner = re.compile(r"(^|/)bkf hooks run tabname$")
     wanted += [Registration("tabname", event, None, tabname, tabname_owner) for event in ("SessionStart", "UserPromptSubmit", "Stop")]
+    task = f"{bkf_command(home)} hooks run task"
+    task_owner = re.compile(r"(^|/)bkf hooks run task$")
+    wanted += [Registration("task", event, None, task, task_owner) for event in ("UserPromptSubmit", "Stop", "PostToolUse")]
+    wanted.append(Registration("task", "PreToolUse", None, task, task_owner))
+    wanted.append(Registration("task", "PermissionRequest", None, task, task_owner, claude_only=True))
+    wanted.append(Registration("task", "StopFailure", None, task, task_owner, claude_only=True))
+    wanted.append(Registration("task", "SessionEnd", None, task, task_owner, claude_only=True))
+    sources = f"{bkf_command(home)} hooks run sources"
+    sources_owner = re.compile(r"(^|/)bkf hooks run sources$")
+    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "SubagentStop"):
+        matcher = "WebFetch|WebSearch" if event in ("PreToolUse", "PostToolUse") else None
+        if event == "PostToolUseFailure":
+            matcher = "WebFetch"
+        timeout = 60 if event == "PostToolUse" else TIMEOUT
+        wanted.append(Registration("sources", event, matcher, sources, sources_owner, timeout, claude_only=True))
     return [item for item in wanted if only in (None, item.hook)]
 
 
@@ -106,28 +123,54 @@ def load_config(path: Path) -> dict:
     return config
 
 
-def find_hook(config: dict, registration: Registration) -> dict | None:
-    """Return the existing hook entry that this registration owns, if any."""
+def find_group(config: dict, registration: Registration) -> tuple[dict, dict] | None:
+    """Return the (group, entry) pair of the existing hook that this registration owns, if any."""
     for group in config.get("hooks", {}).get(registration.event, []):
         for entry in group.get("hooks", []):
             if entry.get("type") == "command" and registration.owns.search(entry.get("command", "")):
-                return entry
+                return group, entry
     return None
 
 
+def find_hook(config: dict, registration: Registration) -> dict | None:
+    """Return the existing hook entry that this registration owns, if any."""
+    found = find_group(config, registration)
+    return found[1] if found else None
+
+
 def state_of(config: dict, registration: Registration) -> str:
-    entry = find_hook(config, registration)
-    if entry is None:
+    found = find_group(config, registration)
+    if found is None:
         return "missing"
-    return "ok" if entry["command"] == registration.command else "differs"
+    group, entry = found
+    same = entry["command"] == registration.command and group.get("matcher") == registration.matcher
+    return "ok" if same else "differs"
 
 
 def apply_registration(config: dict, registration: Registration) -> None:
-    entry = find_hook(config, registration)
-    if entry is not None:
+    found = find_group(config, registration)
+    if found is not None:
+        # An install with an old matcher is updated, not duplicated. A group shared with other hooks keeps its matcher:
+        # the entry moves to a group of its own, so the other hooks still match what they matched.
+        group, entry = found
         entry["command"] = registration.command
+        if group.get("matcher") == registration.matcher:
+            return
+        if len(group["hooks"]) == 1:
+            if registration.matcher is None:
+                group.pop("matcher", None)
+            else:
+                group["matcher"] = registration.matcher
+            return
+        group["hooks"].remove(entry)
+        _append_group(config, registration, entry)
         return
-    group: dict = {"hooks": [{"type": "command", "command": registration.command, "timeout": registration.timeout}]}
+    entry = {"type": "command", "command": registration.command, "timeout": registration.timeout}
+    _append_group(config, registration, entry)
+
+
+def _append_group(config: dict, registration: Registration, entry: dict) -> None:
+    group: dict = {"hooks": [entry]}
     if registration.matcher is not None:
         group = {"matcher": registration.matcher, **group}
     config.setdefault("hooks", {}).setdefault(registration.event, []).append(group)
@@ -203,7 +246,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
     """Return a short failure reason when a registered command cannot run."""
     if registration.hook == "modes":
         probe_input = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "bkf-probe", "prompt": "probe"})
-    elif registration.hook == "orient" or registration.hook == "rules":
+    elif registration.hook in ("orient", "rules", "task"):
         probe_input = ""
     else:
         probe_input = json.dumps({"hook_event_name": "BKFProbe", "probe": True})
@@ -211,6 +254,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
     try:
         with tempfile.TemporaryDirectory() as directory:
             env = os.environ.copy()
+            env.pop("BKF_TASK", None)
             env["HOME"] = directory
             env["USERPROFILE"] = directory
             result = subprocess.run(
@@ -240,7 +284,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
             message = None
         return str(message or "systemMessage")
 
-    if registration.hook in {"check", "log", "guard", "audit", "tabname"}:
+    if registration.hook in {"check", "log", "guard", "audit", "tabname", "sources"}:
         if result.stdout.strip() != '{"probe":"ok"}':
             return "no probe answer (stale install?)" if not result.stdout.strip() else "unexpected probe answer"
         if result.stderr:
@@ -261,14 +305,18 @@ def report(home: Path, only: str | None, *, probe: bool = False) -> tuple[list[s
         current &= state == "ok"
         lines.append(f"{state:<8} script  {installed_script(home)}")
 
+    wanted = registrations(home, only)
     for target in TARGETS:
+        registrations_for_target = [item for item in wanted if not item.claude_only or target.name == "claude"]
+        if not registrations_for_target:
+            continue
         path = target.config_path(home)
         if not (home / target.directory).is_dir():
             lines.append(f"skipped  {target.name}  {home / target.directory} not found")
             continue
         config = load_config(path)
         changed = False
-        for registration in registrations(home, only):
+        for registration in registrations_for_target:
             state = state_of(config, registration)
             entry = find_hook(config, registration)
             reason = _probe_command(entry["command"], registration, home) if probe and entry is not None else None
@@ -294,6 +342,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.event == "rules":
                 home = (args.home or Path.home()).expanduser().resolve()
                 return run_rules(home)
+            if args.event == "task":
+                import task_hook
+
+                return task_hook.run()
             import hook_events as handler
 
             return handler.main([args.event or ""])
@@ -305,7 +357,8 @@ def main(argv: list[str] | None = None) -> int:
                 text = f"bkf hook {args.event or 'unknown'} failed: {type(exc).__name__}: {message}"
                 if len(text) > 300:
                     text = text[:299] + "…"
-                print(json.dumps({"systemMessage": text}, ensure_ascii=False))
+                if args.event != "sources":
+                    print(json.dumps({"systemMessage": text}, ensure_ascii=False))
                 print(text, file=sys.stderr)
             return 0
     home = (args.home or Path.home()).expanduser().resolve()

@@ -30,5 +30,3 @@ These rules apply to every change that touches a BKF repo's documents, whatever 
 - **Log by hand only what the map cannot list,** and only where it helps: spreadsheets, PDFs, data, and files kept out of version control, when you and the user agree it helps someone find them. Files the harness routes to by their own metadata, such as skill packages, need no entry. Add a task route only for requests that cross areas or are ambiguous; do not impose destinations or authority rules the repository has not established.
 - Run `bkf validate .` after changing documents; it checks structure, not whether the content is right.
 - The same procedure or rule has come up more than once in the repository, or the user says "we always do X here": [Grow the repo library](../repo-library/SKILL.md).
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

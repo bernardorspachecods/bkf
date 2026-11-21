@@ -27,6 +27,17 @@ print(json.dumps({"type": "thread.started", "thread_id": thread_id}))
 print('{"type":"turn.completed","usage":{"input_tokens":1}}')
 '''
 
+_FAKE_BKF = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+
+with (pathlib.Path(os.environ["FAKE_STATE"]) / "bkf.log").open("a") as log:
+    print(json.dumps(sys.argv[1:]), file=log)
+if os.environ.get("FAKE_BKF_FAIL"):
+    sys.exit("store unavailable")
+'''
+
+CARD = "t20261120-143005-a3f1"
+
 
 class PlanUnitTests(unittest.TestCase):
     def setUp(self):
@@ -51,10 +62,14 @@ class PlanUnitTests(unittest.TestCase):
         codex = bin_dir / "codex"
         codex.write_text(_FAKE_CODEX, encoding="utf-8")
         codex.chmod(0o755)
+        bkf = bin_dir / "bkf"
+        bkf.write_text(_FAKE_BKF, encoding="utf-8")
+        bkf.chmod(0o755)
         self.env = os.environ.copy()
         self.env.update({
             "PATH": str(bin_dir) + os.pathsep + self.env["PATH"], "FAKE_STATE": str(self.state),
             "PLAN_GUIDES": str(guides), "FAKE_VERDICTS": json.dumps(["pass"]), "HARNESS_BACKEND": "codex",
+            "BKF_TASKS_DIR": str(root / "tasks"), "BKF_TASK": "t20261120-143005-0000", "FAKE_BKF_FAIL": "",
         })
         self.brief = root / "unit.md"
 
@@ -102,6 +117,13 @@ class PlanUnitTests(unittest.TestCase):
     def receipt(self):
         return self.out / "unit" / "receipt" / "receipt.json"
 
+    def link_card(self):
+        (self.out / "unit" / "task").write_text(CARD + "\n", encoding="utf-8")
+
+    def card_calls(self):
+        log = self.state / "bkf.log"
+        return [json.loads(line) for line in log.read_text().splitlines()] if log.is_file() else []
+
     def test_passing_gate_then_a_separate_reviewer_on_its_own_model_gives_pass(self):
         self.write_brief(gate="grep -q changed seed.txt")
         self.begin()
@@ -116,10 +138,12 @@ class PlanUnitTests(unittest.TestCase):
         prompt = self.reviews()[0].read_text()
         self.assertIn("Change seed.", prompt)
         self.assertIn("+changed", (self.out / "unit" / "rounds" / "1" / "diff.patch").read_text())
+        self.assertEqual(self.card_calls(), [])
 
     def test_a_failing_gate_sends_the_unit_back_without_starting_a_reviewer(self):
         self.write_brief(gate="grep -q never-there seed.txt")
         self.begin()
+        self.link_card()
         self.implement()
         result = self.check("--review-model", "haiku-x")
         self.assertEqual(result.returncode, 1, result.stdout)
@@ -127,17 +151,21 @@ class PlanUnitTests(unittest.TestCase):
         self.assertEqual(self.reviews(), [])
         problems = (self.out / "unit" / "rounds" / "1" / "problems.md").read_text()
         self.assertIn("The gate failed: 1 of 1", problems)
+        self.assertEqual(self.card_calls(), [])
 
     def test_same_unit_resumes_reviewer_with_continuation_and_previous_problems(self):
         self.env["FAKE_VERDICTS"] = json.dumps(["back", "pass"])
         self.write_brief()
         self.begin()
+        self.link_card()
         self.implement()
         first = self.check("--review-model", "m")
         self.assertEqual(first.returncode, 1, first.stdout)
+        self.assertEqual(self.card_calls(), [])
         self.implement("changed again\n")
         second = self.check("--review-model", "m")
         self.assertEqual(second.returncode, 0, second.stdout)
+        self.assertEqual(self.card_calls(), [["task", "close", CARD]])
         self.assertEqual(len(self.reviews()), 2)
         first_args = json.loads((self.state / "args-1.json").read_text())
         second_args = json.loads((self.state / "args-2.json").read_text())
@@ -181,19 +209,23 @@ class PlanUnitTests(unittest.TestCase):
                     path.unlink()
                 self.env["FAKE_VERDICTS"] = json.dumps([verdict])
                 self.write_brief()
-                self.plan_unit("begin", str(self.brief), "--dir", str(self.out), "--restart")
+                self.begin("--restart")
+                self.link_card()
                 result = self.check("--review-model", "m")
                 self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertEqual(self.card_calls(), [["task", "fail", CARD, "--note", "escalated"]])
 
     def test_gate_only_runs_the_gate_and_writes_the_diff_without_a_reviewer(self):
         self.write_brief(gate="true")
         self.begin()
+        self.link_card()
         self.implement()
         result = self.check("--gate-only")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertNotIn("VERDICT", result.stdout)
         self.assertEqual(self.reviews(), [])
         self.assertTrue((self.out / "unit" / "rounds" / "1" / "diff.patch").is_file())
+        self.assertEqual(self.card_calls(), [])
 
     def test_begin_does_not_overwrite_a_unit_unless_restarted(self):
         self.write_brief()
@@ -210,9 +242,59 @@ class PlanUnitTests(unittest.TestCase):
         self.assertEqual(no_begin.returncode, 3)
         self.assertIn("run begin first", no_begin.stderr)
         self.begin()
+        self.link_card()
         no_model = self.check()
         self.assertEqual(no_model.returncode, 3)
         self.assertIn("--review-model is required", no_model.stderr)
+        self.assertEqual(self.card_calls(), [])
+
+    def test_missing_review_verdict_leaves_the_card_alone(self):
+        self.env["FAKE_VERDICTS"] = json.dumps(["invalid"])
+        self.write_brief()
+        self.begin()
+        self.link_card()
+        result = self.check("--review-model", "m")
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertEqual(self.card_calls(), [])
+
+    def test_close_records_a_manual_review(self):
+        self.write_brief(gate="true")
+        self.begin()
+        self.link_card()
+        self.assertEqual(self.check("--gate-only").returncode, 0)
+        close = ("close", str(self.brief), "--dir", str(self.out), "--as")
+        for args in (("done",), ("failed",), ("failed", "--note", "needs a decision")):
+            with self.subTest(args=args):
+                result = self.plan_unit(*close, *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.card_calls(), [
+            ["task", "close", CARD],
+            ["task", "fail", CARD],
+            ["task", "fail", CARD, "--note", "needs a decision"],
+        ])
+
+    def test_close_without_a_card_does_nothing(self):
+        self.write_brief()
+        self.begin()
+        result = self.plan_unit("close", str(self.brief), "--dir", str(self.out), "--as", "done")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.card_calls(), [])
+
+    def test_task_failure_warns_without_changing_review_or_close_exit_codes(self):
+        self.write_brief()
+        self.begin()
+        self.link_card()
+        self.env["FAKE_VERDICTS"] = json.dumps(["pass", "escalate"])
+        self.env["FAKE_BKF_FAIL"] = "1"
+        for result, code in (
+            (self.check("--review-model", "m"), 0),
+            (self.check("--review-model", "m"), 2),
+            (self.plan_unit("close", str(self.brief), "--dir", str(self.out), "--as", "done"), 0),
+        ):
+            with self.subTest(code=code):
+                self.assertEqual(result.returncode, code, result.stdout)
+                self.assertIn("warning", result.stderr.lower())
+                self.assertIn("store unavailable", result.stderr)
 
     def test_green_receipt_makes_check_skip_the_gate(self):
         self.write_brief(gate=self.counted_gate())

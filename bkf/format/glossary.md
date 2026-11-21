@@ -83,7 +83,7 @@ See the [format specification](/format/format-specification.md#31-map-files-and-
 
 ## Member
 
-A Markdown file within a bundle, except the optional root `readme.md`. A member is tracked or untracked.
+A Markdown file within a bundle, except the optional root `readme.md` and the root notes files. A member is tracked or untracked.
 
 See the [format specification](/format/format-specification.md#12-discovery-membership-and-composition).
 
@@ -97,13 +97,19 @@ See the [format specification](/format/format-specification.md#31-map-files-and-
 
 A reusable task rule in `agent-skills/modules/`, written once; skills inject its text.
 
-See [the layers](/manual/what-is-bkf.md#the-layers); `agent-skills/modules/MAP.md`.
+See [the layers](/manual/what-is-bkf.md#the-layers).
 
 ## Nested bundle
 
 A folder inside a bundle whose `MAP.md` declares `bkf_version` is a separate bundle with its own root, members, and conformance, assessed by selecting that folder.
 
 See the [format specification](/format/format-specification.md#33-nested-bundles).
+
+## Notes file
+
+A bundle-root `notes.md` or `notes<N>.md` holding the user's private notes; it is not a member, and agents do not read it unless the user asks.
+
+See the [format specification](/format/format-specification.md#35-notes-files).
 
 ## Owner
 
@@ -153,7 +159,7 @@ A multi-stage piece of work in which a coordinator works with the user at the st
 
 ## Workflow type
 
-A skill in `agent-skills/skills/` (`agentic-work`, `council`, `research`) that defines a workflow: its `SKILL.md` is the guide for the coordinator, its `roles/` folder holds one guide for each role, and its `scripts/` folder holds the script that runs it and the definition of its steps.
+A skill in `agent-skills/skills/` (`agentic-work`) that defines a workflow: its `SKILL.md` is the guide for the coordinator, its `roles/` folder holds one guide for each role, and its `scripts/` folder holds the script that runs it and the definition of its steps.
 
 Term to avoid: "workflow shape".
 

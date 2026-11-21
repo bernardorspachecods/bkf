@@ -1,14 +1,12 @@
 ---
 name: agentic-work
-description: "Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a gate and a review, driven from this conversation or by a script; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm."
+description: "Use when work is handed to agents or needs an independent review: one unit or many, each with a brief, a review and, where the repository has checks, a gate, driven from this conversation; or a stopped run to resume. Work you do yourself with no review is not agentic work; to explore options before the goal is agreed, use brainstorm."
 ---
 
 # Agentic work
 
-A run is a plan: one goal split into units, each implemented, gated and reviewed on its own (pass, back or escalate).
+A run is a plan: one goal split into units, each implemented, reviewed (and gated where the repository has checks) on its own (pass, back or escalate).
 
-<!-- inject: ../../modules/agentic-roles.md -->
-<!-- BKF:GENERATED-INJECTED -->
 ## Agentic roles
 
 | Role | Exists to | Protects | Sees |
@@ -23,21 +21,18 @@ The coordinator may hold any other role, never authoring and reviewing the same 
 A run's checkpoints are usually the start, the end and an escalation. At a checkpoint, stop until the user approves, and link the file instead of pasting it. Between checkpoints, decide within the agreed intent (`align-intent`) and continue without messaging the user: no progress updates or questions about small decisions.
 
 Report an outcome as it is: what passed, what escalated, what was skipped.
-<!-- BKF:GENERATED-INJECTED-END -->
 
 You are the coordinator; a unit's author is its implementer. When you implement, work under the [implementation guide](roles/agentic-work-implementation.md).
 
 ## How the run is set
 
-The user decides three things before the first unit, and you never choose or switch them:
+The run is driven from this conversation ([conversation-run.md](conversation-run.md)): units one after another, and the way to hand a single task to an agent.
 
-| Question | Options |
-| --- | --- |
-| Who drives? | This conversation ([conversation-run.md](conversation-run.md)): units one after another, and the way to hand a single task to an agent. Or a script ([script-run.md](script-run.md)): parallel units, pauses, a run that goes on without you |
-| Who implements? | You, an agent you launch on Codex or Claude, or the script's agents |
-| Who reviews? | A reviewer on its own model and backend, you, or the user |
+**Ask one question, and no other about the way:** implement with a Haiku subagent, or with a Codex agent you launch? Both run in this conversation. Offer only those two; the user names anything else (you, another model, another reviewer) if they want it. You never choose or switch it yourself.
 
-Read only the guide of the chosen driver.
+**The reviewer is not asked:** assume you review, unless the user names another reviewer. Run `check --gate-only` and judge the diff against the brief yourself.
+
+A script driver exists ([script-run.md](script-run.md)); never offer it or read it unless the user asks for a script run.
 
 ## 1. The goal and the units
 
@@ -47,7 +42,7 @@ Write the goal once, as `align-intent` defines the intent, and have the user con
 
 **When the split depends on something you do not know yet,** run a unit that only reads and reports first.
 
-**Gates.** Every unit has a gate, or a reason in its brief why no command can decide it. Run each gate line once before the first unit, and include the repository's quick check in every gate, if it has one. **The gate runs once.** The implementer runs it last, through a tool that leaves a receipt (a record of the commands, their results and the tree they ran on); the check and the reviewer use the receipt and never repeat the gate. A receipt is accepted only while the tree and the gate commands are the same, so an edit after it, yours too, brings the gate back. The coordinator never runs a unit's gate commands by hand outside the check.
+**Gates are optional.** Use one only where the repository clearly already has tests or checks that can decide the unit, commands you have seen (a documented script, a test suite, CI). Never invent a gate: no new harness, no ad-hoc `grep` or script, no command guessed from the stack. With nothing that applies, the unit has no `gate` fence, one line in its brief says so, and the reviewer alone judges it (so does a unit that creates the tests). Otherwise run each gate line once before the first unit and include the repository's quick check, if it has one. **The gate runs once.** The implementer runs it last, through a tool that leaves a receipt (the commands, their results and the tree they ran on); the check and the reviewer use the receipt and never repeat the gate. A receipt holds only while the tree and the gate commands are the same, so any later edit, yours too, brings the gate back. The coordinator never runs a unit's gate commands by hand outside the check.
 
 ## 2. The unit brief
 
@@ -78,6 +73,7 @@ grep -q "photo" db/schema.sql
 What this unit must not touch, written by exclusion, never as the list of files that may change. Tests and documents made wrong by the change belong to this unit and are adapted without weakening assertions.
 
 ## Gate
+*Only when the repository already has a check that applies; otherwise omit the fence and say so in one line.*
 ```gate
 pnpm check:quick
 pnpm test:unit

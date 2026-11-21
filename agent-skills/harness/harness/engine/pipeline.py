@@ -69,6 +69,7 @@ def _run_locked(run, workflow, operation):
 def _record_crash(ctx, stage, error):
     run = ctx.run
     run.note("CRASHED: {0}: {1}".format(type(error).__name__, error))
+    ctx.workflow.run_state(ctx, "crashed", "{0}: {1}".format(type(error).__name__, error))
     with open(run.path / "crash.log", "w", encoding="utf-8", newline="") as output:
         output.write(traceback.format_exc())
     if stage == "final review":
@@ -169,6 +170,7 @@ def _pipeline(ctx, workflow):
                 except Stop as stopped:
                     ctx.note("STOPPED at step {0}: {1}".format(key, stopped.reason))
                     ctx.note(workflow.fix_hint(ctx))
+                    workflow.run_state(ctx, "stopped", stopped.reason)
                     ctx.progress("{0} parou".format(marker))
                     print("STOPPED at step {0} ({1}): {2}\nSee {3}/status.log".format(
                         key, step.label, stopped.reason, run.path
@@ -185,6 +187,7 @@ def _pipeline(ctx, workflow):
                 ctx.note("PAUSED after step {0}: read {1}, then: {2} resume {3}".format(
                     key, run.path, workflow.command, run.name
                 ))
+                workflow.run_state(ctx, "paused", "after step {0}".format(key))
                 ctx.progress("{0} pausa".format(marker))
                 print("PAUSED after step {0} ({1}). Read it in {2}, then: {3} resume {4}\nSee {2}/status.log".format(
                     key, step.label, run.path, workflow.command, run.name
@@ -204,6 +207,7 @@ def _pipeline(ctx, workflow):
                 final_step.run(ctx)
             except Stop as stopped:
                 ctx.note("STOPPED at the final review: {0}".format(stopped.reason))
+                workflow.run_state(ctx, "stopped", stopped.reason)
                 ctx.progress("final · parou")
                 print("STOPPED at the final review: {0}\nSee {1}/status.log".format(stopped.reason, run.path))
                 return 1
@@ -212,6 +216,7 @@ def _pipeline(ctx, workflow):
             ctx.progress("final · concluído")
         ready = workflow.ready_path(ctx)
         ctx.note("READY: report at {0}".format(ready))
+        workflow.run_state(ctx, "ready", ready)
         print("READY: {0}\nSee {1}/status.log".format(ready, run.path))
         return 0
     except Exception as error:
@@ -228,6 +233,7 @@ def _regression_failed(ctx, workflow, run, label, shown):
         run.mark_done(marker)
         return False
     ctx.note("STOPPED at the regression check after {0}: {1}".format(shown, failure))
+    ctx.workflow.run_state(ctx, "stopped", failure)
     ctx.progress("{0} regressão falhou".format(shown))
     print("STOPPED at the regression check after {0}: {1}\nSee {2}/status.log".format(shown, failure, run.path))
     return True
@@ -382,6 +388,7 @@ def _resume(workflow, args):
         ctx.settings = settings
         _resume_detection(run)
         ctx.note("resume")
+        workflow.run_state(ctx, "resumed")
         say_path = run.path / "say.md"
         if said:
             say_path.write_text(said + "\n", encoding="utf-8")
@@ -416,6 +423,7 @@ def _finish(workflow, args):
         pid = (run.path / ".lock").read_text(encoding="ascii").rstrip("\n")
         raise RunError("run {0} is being worked on by pid {1}: finish it when it stops".format(rest[0], pid))
     if discard:
+        workflow.run_state(Context(run, workflow), "discarded")
         branch = remove_tree(run.path, run.repo, delete_branch=True)
         shutil.rmtree(run.path)
         if branch:

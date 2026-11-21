@@ -76,8 +76,8 @@ class FeedbackTests(unittest.TestCase):
         self.assertIn("ERROR FEEDBACK_PROFILE feedback.md", result.stdout)
 
     def test_feedback_profile_is_reserved_for_the_root_feedback_file(self) -> None:
-        result = self.run_bundle({"notes.md": feedback_text(body="x\n")})
-        self.assertIn("ERROR FEEDBACK_PROFILE notes.md", result.stdout)
+        result = self.run_bundle({"other.md": feedback_text(body="x\n")})
+        self.assertIn("ERROR FEEDBACK_PROFILE other.md", result.stdout)
         nested = self.run_bundle({"area/feedback.md": feedback_text(body="x\n")})
         self.assertIn("ERROR FEEDBACK_LOCATION area/feedback.md", nested.stdout)
 

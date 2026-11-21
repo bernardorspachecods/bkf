@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,8 @@ TOOLING = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOLING))
 import generate_inventory
 import hook_events
+import task_hook
+import task_store
 import validate_bundle
 
 MAP = (
@@ -230,6 +233,17 @@ class HookEventsTest(unittest.TestCase):
         self.assertIn("the first column of a row should say", context)
         self.assertIn("NAVIGATION_MAP_REVIEW guide.md", prompt["systemMessage"])
         self.assertNotIn("first column", prompt["systemMessage"])
+        self.assertIsNone(self.warnings_prompt())
+
+    def test_the_same_warning_is_given_once_per_session(self) -> None:
+        (self.root / "guide.md").write_text(DOC + "line\n" * 400)
+        self.write_inventory()
+        self.touch(self.root / "guide.md")
+        self.assertIsNone(self.stop())
+        self.assertIsNotNone(self.warnings_prompt())
+
+        self.touch(self.root / "guide.md")
+        self.assertIsNone(self.stop())
         self.assertIsNone(self.warnings_prompt())
 
     def test_only_navigation_map_warnings_bring_the_map_guidance(self) -> None:
@@ -606,6 +620,448 @@ class TabNameTest(unittest.TestCase):
         with patch.dict("os.environ", {}, clear=True), patch.object(hook_events.subprocess, "run") as run:
             hook_events.tab_name({"transcript_path": str(self.transcript)})
         run.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TaskHookTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Path(self.tmp.name) / "tasks"
+        self.env = {"BKF_TASKS_DIR": str(self.store), "HOME": self.tmp.name}
+
+    def make(self, kind: str = "task", status: str | None = None) -> str:
+        task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
+        if status == "to-merge":
+            task_store.update(self.store, task.id, task_store.start)
+            task_store.update(self.store, task.id, task_store.enter_merge)
+        return task.id
+
+    def text(self, task_id: str | None) -> str | None:
+        env = dict(self.env)
+        if task_id is not None:
+            env["BKF_TASK"] = task_id
+        return task_hook.session_text(env)
+
+    def test_names_the_task_and_the_merge_rule(self) -> None:
+        task_id = self.make()
+        text = self.text(task_id)
+        self.assertIn(f"This session works on task {task_id} (task): Fix the parser.", text)
+        self.assertIn('When the owner moves this card to "to be merged", you will get a message: follow the '
+                      "git-merge-queue skill.", text)
+        self.assertIn("`bkf task ready` and `bkf task done` no longer exist", text)
+        self.assertIn("`bkf task close`", text)
+        self.assertTrue(text.endswith("\n"))
+
+    def test_a_card_in_the_merge_queue_still_gets_the_text(self) -> None:
+        task_id = self.make(status="to-merge")
+        self.assertIn(f"task {task_id} (task)", self.text(task_id))
+
+    def test_handoff_kind_gets_the_text(self) -> None:
+        task_id = self.make(kind="handoff")
+        self.assertIn(f"task {task_id} (handoff)", self.text(task_id))
+
+    def test_unit_kind_stays_silent(self) -> None:
+        self.assertIsNone(self.text(self.make(kind="unit")))
+
+    def test_no_variable_or_empty_variable_stays_silent(self) -> None:
+        self.make()
+        self.assertIsNone(self.text(None))
+        self.assertIsNone(self.text(""))
+
+    def test_unknown_invalid_and_corrupt_tasks_stay_silent(self) -> None:
+        self.assertIsNone(self.text("t20990101-000000-ffff"))
+        self.assertIsNone(self.text("../escape"))
+        task_id = self.make()
+        (self.store / task_id / "task.json").write_text("{not json", encoding="utf-8")
+        self.assertIsNone(self.text(task_id))
+
+    def test_hook_exits_zero_and_prints_nothing_for_a_corrupt_task(self) -> None:
+        task_id = self.make()
+        (self.store / task_id / "task.json").write_text("[]", encoding="utf-8")
+        output = io.StringIO()
+        with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
+            code = task_hook.run(environ=None, stream=io.StringIO(""))
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "")
+
+    def test_hook_prints_the_text_on_standard_output(self) -> None:
+        task_id = self.make()
+        output = io.StringIO()
+        with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
+            code = task_hook.run(environ=None, stream=io.StringIO(""))
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), task_hook.session_text({**self.env, "BKF_TASK": task_id}))
+
+
+class TaskTurnHookTest(unittest.TestCase):
+    """The task hook on Stop and UserPromptSubmit: the card waits for the owner, and resumes when they reply."""
+
+    NOTE = "waiting for your reply"
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Path(self.tmp.name) / "tasks"
+        self.env = {"BKF_TASKS_DIR": str(self.store), "HOME": self.tmp.name}
+
+    def make(self, kind: str = "task", status: str = "working", attention: tuple[str, str | None] | None = None) -> str:
+        task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
+        if status in ("working", "to-merge", "failed"):
+            task_store.update(self.store, task.id, task_store.start)
+        if status == "to-merge":
+            task_store.update(self.store, task.id, task_store.enter_merge)
+        elif status == "failed":
+            task_store.update(self.store, task.id, task_store.mark_failed)
+        if attention is not None:
+            reason, note = attention
+            task_store.update(self.store, task.id, lambda t: task_store.set_attention(t, reason, note=note, now=None))
+        return task.id
+
+    def fire(self, event: str, task_id: str | None, raw: str | None = None) -> tuple[int, str]:
+        env = dict(self.env)
+        if task_id is not None:
+            env["BKF_TASK"] = task_id
+        text = raw if raw is not None else json.dumps({"hook_event_name": event, "session_id": "s"})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = task_hook.run(environ=env, stream=io.StringIO(text))
+        return code, output.getvalue()
+
+    def attention(self, task_id: str) -> dict | None:
+        return task_store.read(self.store, task_id).attention
+
+    def test_stop_on_working_task_sets_prompt_attention_with_the_note(self) -> None:
+        task_id = self.make()
+        code, output = self.fire("Stop", task_id)
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "")
+        attention = self.attention(task_id)
+        self.assertEqual(attention["reason"], "prompt")
+        self.assertEqual(attention["note"], self.NOTE)
+        self.assertRegex(attention["since"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_stop_on_working_handoff_sets_the_attention(self) -> None:
+        task_id = self.make(kind="handoff")
+        self.fire("Stop", task_id)
+        self.assertEqual(self.attention(task_id)["note"], self.NOTE)
+
+    def test_stop_keeps_any_existing_attention(self) -> None:
+        for attention in (("prompt", "another note"), ("quota", None), ("escalated", "look")):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("Stop", task_id)
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_stop_leaves_to_merge_failed_and_todo_alone(self) -> None:
+        for status in ("to-merge", "failed", "todo"):
+            task_id = self.make(status=status)
+            before = task_store.read(self.store, task_id).to_json()
+            code, output = self.fire("Stop", task_id)
+            self.assertEqual((code, output), (0, ""))
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, status)
+
+    def test_stop_leaves_unit_cards_alone(self) -> None:
+        task_id = self.make(kind="unit")
+        before = task_store.read(self.store, task_id).to_json()
+        self.fire("Stop", task_id)
+        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_user_prompt_clears_only_the_waiting_mark(self) -> None:
+        task_id = self.make(attention=("prompt", self.NOTE))
+        code, output = self.fire("UserPromptSubmit", task_id)
+        self.assertEqual((code, output), (0, ""))
+        self.assertIsNone(self.attention(task_id))
+        self.assertEqual(task_store.read(self.store, task_id).status, "working")
+
+    def test_user_prompt_keeps_prompt_with_another_note(self) -> None:
+        task_id = self.make(attention=("prompt", "another note"))
+        before = task_store.read(self.store, task_id).to_json()
+        self.fire("UserPromptSubmit", task_id)
+        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_user_prompt_keeps_other_reasons_and_no_attention(self) -> None:
+        for attention in (("escalated", self.NOTE), ("quota", None), None):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            code, output = self.fire("UserPromptSubmit", task_id)
+            self.assertEqual((code, output), (0, ""))
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_stop_then_prompt_round_trip(self) -> None:
+        task_id = self.make()
+        self.fire("Stop", task_id)
+        self.assertIsNotNone(self.attention(task_id))
+        self.fire("UserPromptSubmit", task_id)
+        self.assertIsNone(self.attention(task_id))
+
+    def test_stop_and_prompt_print_nothing_even_for_a_text_card(self) -> None:
+        task_id = self.make()
+        for event in ("Stop", "UserPromptSubmit"):
+            self.assertEqual(self.fire(event, task_id), (0, ""))
+
+    def test_session_start_text_is_unchanged(self) -> None:
+        task_id = self.make()
+        expected = task_hook.session_text({**self.env, "BKF_TASK": task_id})
+        code, output = self.fire("SessionStart", task_id)
+        self.assertEqual((code, output), (0, expected))
+        self.assertIsNone(self.attention(task_id))
+
+    def test_empty_or_invalid_input_behaves_as_session_start(self) -> None:
+        task_id = self.make()
+        expected = task_hook.session_text({**self.env, "BKF_TASK": task_id})
+        for raw in ("", "not json", "[1, 2]", json.dumps({"no": "event"})):
+            self.assertEqual(self.fire("", task_id, raw=raw), (0, expected), raw)
+        self.assertIsNone(self.attention(task_id))
+
+    def test_unknown_or_missing_task_is_silent_and_exits_zero(self) -> None:
+        for task_id in (None, "", "t20990101-000000-ffff", "../escape"):
+            for event in ("Stop", "UserPromptSubmit", "SessionStart"):
+                self.assertEqual(self.fire(event, task_id), (0, ""), (event, task_id))
+        self.assertEqual(task_store.list_tasks(self.store).tasks, [])
+
+    def test_corrupt_card_is_swallowed_on_stop(self) -> None:
+        task_id = self.make()
+        (self.store / task_id / "task.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual(self.fire("Stop", task_id), (0, ""))
+        self.assertEqual(self.fire("UserPromptSubmit", task_id), (0, ""))
+
+    def test_stop_goes_through_the_store_lock_and_bumps_the_generation(self) -> None:
+        task_id = self.make()
+        before = task_store.generation(self.store)
+        self.fire("Stop", task_id)
+        self.assertEqual(task_store.generation(self.store), before + 1)
+        self.fire("Stop", task_id)
+        self.assertEqual(task_store.generation(self.store), before + 1)
+
+
+class TaskAttentionEventsTest(unittest.TestCase):
+    """The task hook's own mark follows what the session is doing: Stop, approvals, questions and resumed work."""
+
+    REPLY = "waiting for your reply"
+    APPROVAL = "waiting for your approval"
+    ANSWER = "waiting for your answer"
+    ERROR = "stopped on an error"
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Path(self.tmp.name) / "tasks"
+        self.env = {"BKF_TASKS_DIR": str(self.store), "HOME": self.tmp.name}
+
+    def make(self, kind: str = "task", status: str = "working", attention: tuple[str, str | None] | None = None) -> str:
+        task = task_store.create(self.store, repo="/repo", title="Fix the parser", kind=kind)
+        if status in ("working", "to-merge", "failed"):
+            task_store.update(self.store, task.id, task_store.start)
+        if status == "to-merge":
+            task_store.update(self.store, task.id, task_store.enter_merge)
+        elif status == "failed":
+            task_store.update(self.store, task.id, task_store.mark_failed)
+        if attention is not None:
+            reason, note = attention
+            task_store.update(self.store, task.id, lambda t: task_store.set_attention(t, reason, note=note, now=None))
+        return task.id
+
+    def fire(self, event: str, task_id: str | None, **fields: object) -> tuple[int, str]:
+        env = dict(self.env)
+        if task_id is not None:
+            env["BKF_TASK"] = task_id
+        text = json.dumps({"hook_event_name": event, "session_id": "s", **fields})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = task_hook.run(environ=env, stream=io.StringIO(text))
+        return code, output.getvalue()
+
+    def attention(self, task_id: str) -> dict | None:
+        return task_store.read(self.store, task_id).attention
+
+    def note(self, task_id: str) -> str | None:
+        attention = self.attention(task_id)
+        return None if attention is None else attention["note"]
+
+    def test_stop_with_background_tasks_only_sets_nothing(self) -> None:
+        task_id = self.make()
+        self.assertEqual(self.fire("Stop", task_id, background_tasks=[{"id": "b1"}]), (0, ""))
+        self.assertIsNone(self.attention(task_id))
+
+    def test_stop_with_session_crons_only_sets_nothing(self) -> None:
+        task_id = self.make()
+        self.assertEqual(self.fire("Stop", task_id, session_crons=[{"id": "c1"}]), (0, ""))
+        self.assertIsNone(self.attention(task_id))
+
+    def test_stop_with_work_in_flight_clears_the_hooks_own_mark(self) -> None:
+        task_id = self.make(attention=("prompt", self.REPLY))
+        self.fire("Stop", task_id, background_tasks=[{"id": "b1"}])
+        self.assertIsNone(self.attention(task_id))
+
+    def test_stop_with_work_in_flight_keeps_a_foreign_mark(self) -> None:
+        task_id = self.make(attention=("prompt", "crew says hi"))
+        before = task_store.read(self.store, task_id).to_json()
+        self.fire("Stop", task_id, session_crons=[{"id": "c1"}])
+        self.assertEqual(task_store.read(self.store, task_id).to_json(), before)
+
+    def test_stop_with_empty_or_absent_in_flight_lists_sets_the_reply_mark(self) -> None:
+        for fields in ({"background_tasks": [], "session_crons": []}, {}, {"background_tasks": None}):
+            task_id = self.make()
+            self.fire("Stop", task_id, **fields)
+            self.assertEqual(self.note(task_id), self.REPLY, fields)
+            self.assertEqual(self.attention(task_id)["reason"], "prompt", fields)
+
+    def test_stop_with_work_in_flight_after_a_reply_clears_it_then_resumes_on_stop(self) -> None:
+        task_id = self.make()
+        self.fire("Stop", task_id)
+        self.fire("Stop", task_id, background_tasks=[{"id": "b1"}])
+        self.assertIsNone(self.attention(task_id))
+        self.fire("Stop", task_id)
+        self.assertEqual(self.note(task_id), self.REPLY)
+
+    def test_permission_request_sets_the_approval_mark(self) -> None:
+        task_id = self.make()
+        self.assertEqual(self.fire("PermissionRequest", task_id, tool_name="Bash"), (0, ""))
+        self.assertEqual(self.note(task_id), self.APPROVAL)
+        self.assertEqual(self.attention(task_id)["reason"], "prompt")
+
+    def test_permission_request_replaces_the_reply_mark(self) -> None:
+        task_id = self.make()
+        self.fire("Stop", task_id)
+        self.fire("PermissionRequest", task_id, tool_name="Bash")
+        self.assertEqual(self.note(task_id), self.APPROVAL)
+
+    def test_stop_replaces_an_approval_mark_with_the_reply_mark(self) -> None:
+        task_id = self.make()
+        self.fire("PermissionRequest", task_id, tool_name="Bash")
+        self.fire("Stop", task_id)
+        self.assertEqual(self.note(task_id), self.REPLY)
+
+    def test_permission_request_leaves_foreign_attention_alone(self) -> None:
+        for attention in (("prompt", "crew says hi"), ("quota", self.REPLY), ("escalated", None)):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("PermissionRequest", task_id, tool_name="Bash")
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, attention)
+
+    def test_ask_user_question_sets_the_answer_mark(self) -> None:
+        task_id = self.make()
+        self.assertEqual(self.fire("PreToolUse", task_id, tool_name="AskUserQuestion"), (0, ""))
+        self.assertEqual(self.note(task_id), self.ANSWER)
+
+    def test_other_pre_tool_use_clears_the_reply_mark_when_the_tool_starts(self) -> None:
+        for note in (self.REPLY, self.APPROVAL, self.ANSWER, self.ERROR):
+            task_id = self.make(attention=("prompt", note))
+            self.assertEqual(self.fire("PreToolUse", task_id, tool_name="Bash"), (0, ""))
+            self.assertIsNone(self.attention(task_id), note)
+
+    def test_other_pre_tool_use_keeps_foreign_attention(self) -> None:
+        for attention in (("prompt", "crew says hi"), ("quota", self.REPLY)):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("PreToolUse", task_id, tool_name="Bash")
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, attention)
+
+    def test_long_tool_after_a_reply_is_not_shown_as_waiting(self) -> None:
+        task_id = self.make()
+        self.fire("Stop", task_id)
+        self.fire("PreToolUse", task_id, tool_name="Bash")
+        self.assertIsNone(self.attention(task_id))
+
+    def test_stop_failure_sets_the_error_mark(self) -> None:
+        task_id = self.make()
+        self.assertEqual(self.fire("StopFailure", task_id, error="rate_limit"), (0, ""))
+        self.assertEqual(self.note(task_id), self.ERROR)
+        self.assertEqual(self.attention(task_id)["reason"], "prompt")
+
+    def test_stop_failure_replaces_the_hooks_other_marks(self) -> None:
+        for note in (self.REPLY, self.APPROVAL, self.ANSWER):
+            task_id = self.make(attention=("prompt", note))
+            self.fire("StopFailure", task_id, error="server_error")
+            self.assertEqual(self.note(task_id), self.ERROR, note)
+
+    def test_stop_failure_leaves_foreign_attention_alone(self) -> None:
+        for attention in (("prompt", "crew says hi"), ("quota", self.REPLY), ("escalated", None)):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("StopFailure", task_id, error="server_error")
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, attention)
+
+    def test_stop_failure_clears_on_the_next_prompt_or_tool_call(self) -> None:
+        task_id = self.make()
+        self.fire("StopFailure", task_id, error="server_error")
+        self.fire("PreToolUse", task_id, tool_name="Read")
+        self.assertIsNone(self.attention(task_id))
+        self.fire("StopFailure", task_id, error="server_error")
+        self.fire("UserPromptSubmit", task_id)
+        self.assertIsNone(self.attention(task_id))
+
+    def test_post_tool_use_clears_the_hooks_own_mark_of_any_note(self) -> None:
+        for note in (self.REPLY, self.APPROVAL, self.ANSWER):
+            task_id = self.make(attention=("prompt", note))
+            self.assertEqual(self.fire("PostToolUse", task_id, tool_name="Read"), (0, ""))
+            self.assertIsNone(self.attention(task_id), note)
+
+    def test_post_tool_use_keeps_foreign_attention(self) -> None:
+        for attention in (("prompt", "crew says hi"), ("quota", self.REPLY)):
+            task_id = self.make(attention=attention)
+            before = task_store.read(self.store, task_id).to_json()
+            self.fire("PostToolUse", task_id, tool_name="Read")
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, attention)
+
+    def test_post_tool_use_without_a_mark_does_not_touch_the_store(self) -> None:
+        task_id = self.make()
+        before = task_store.generation(self.store)
+        self.fire("PostToolUse", task_id, tool_name="Read")
+        self.assertEqual(task_store.generation(self.store), before)
+
+    def test_user_prompt_clears_the_approval_and_answer_marks(self) -> None:
+        for note in (self.APPROVAL, self.ANSWER):
+            task_id = self.make(attention=("prompt", note))
+            self.fire("UserPromptSubmit", task_id)
+            self.assertIsNone(self.attention(task_id), note)
+
+    def test_mark_events_on_a_resumed_card_clear_at_the_first_tool_call(self) -> None:
+        task_id = self.make()
+        self.fire("PermissionRequest", task_id, tool_name="Bash")
+        self.fire("PostToolUse", task_id, tool_name="Bash")
+        self.assertIsNone(self.attention(task_id))
+
+    def test_mark_events_leave_non_working_and_other_kind_cards_alone(self) -> None:
+        cases = (
+            ("to-merge", "task"), ("failed", "task"), ("working", "unit"),
+        )
+        for status, kind in cases:
+            task_id = self.make(kind=kind, status=status)
+            before = task_store.read(self.store, task_id).to_json()
+            events = (
+                ("Stop", {}), ("StopFailure", {}), ("PermissionRequest", {"tool_name": "Bash"}),
+                ("PreToolUse", {"tool_name": "AskUserQuestion"}), ("PostToolUse", {"tool_name": "Read"}),
+                ("UserPromptSubmit", {}),
+            )
+            for event, fields in events:
+                self.assertEqual(self.fire(event, task_id, **fields), (0, ""), (status, kind, event))
+            self.assertEqual(task_store.read(self.store, task_id).to_json(), before, (status, kind))
+
+    def test_mark_events_print_nothing_for_a_text_card(self) -> None:
+        task_id = self.make()
+        for event, fields in (
+            ("PermissionRequest", {"tool_name": "Bash"}), ("PreToolUse", {"tool_name": "AskUserQuestion"}),
+            ("PostToolUse", {"tool_name": "Read"}),
+        ):
+            self.assertEqual(self.fire(event, task_id, **fields), (0, ""), event)
+
+    def test_without_task_variable_outside_tmux_the_hook_reads_no_input_and_touches_no_store(self) -> None:
+        class Unreadable(io.StringIO):
+            def read(self, size: int = -1) -> str:
+                raise AssertionError("the hook read its input without BKF_TASK")
+
+        # An interactive session with no tmux pane is not eligible for a session card.
+        environ = {**self.env, "CLAUDE_CODE_ENTRYPOINT": "cli"}
+        environ.pop("TMUX_PANE", None)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            code = task_hook.run(environ=environ, stream=Unreadable(""))
+        self.assertEqual((code, output.getvalue()), (0, ""))
+        self.assertFalse(self.store.exists())
 
 
 if __name__ == "__main__":

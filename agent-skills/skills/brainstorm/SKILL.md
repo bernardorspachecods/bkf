@@ -34,7 +34,3 @@ Format: Heuristic (a question to run) → Why → Anchor (one concrete illustrat
 **5. Make the basis of a critique legible**
 - Heuristic: When a judgment depends on uncertain or contested claims, have I separated what is known, what I infer or prefer, and what is unknown?
 - Anchor: "The logs confirm the delay; I suspect the retry policy caused it, but we haven't checked that yet."
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

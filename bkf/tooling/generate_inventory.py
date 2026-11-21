@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from bkf_common import (
@@ -33,7 +34,9 @@ TABLE_HEADER = "| What it is | Document |"
 TABLE_SEPARATOR = "| --- | --- |"
 
 
-def update_map(root: Path, map_path: Path) -> tuple[str, str]:
+def update_map(
+    root: Path, map_path: Path, *, on_parse_error: Callable[[str], None] | None = None,
+) -> tuple[str, str]:
     try:
         original = read_text_preserving_newlines(map_path)
     except BKFInputError as exc:
@@ -54,7 +57,7 @@ def update_map(root: Path, map_path: Path) -> tuple[str, str]:
     if any(line.strip() for line in contents[headings[0] + 1 : start]):
         raise BKFInputError("generated markers must directly follow the inventory heading")
 
-    entries = inventory_entries(root, map_path)
+    entries = inventory_entries(root, map_path, on_parse_error=on_parse_error)
     newline = "\r\n" if "\r\n" in original else "\n"
     generated = [TABLE_HEADER + newline, TABLE_SEPARATOR + newline]
     generated.extend(render_inventory_entry(root, entry) + newline for entry in entries)

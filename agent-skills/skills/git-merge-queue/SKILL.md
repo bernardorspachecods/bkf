@@ -1,30 +1,19 @@
 ---
 name: git-merge-queue
-description: Merge the finished work of several sessions of one repository as a batch. Each session registers its branch in a shared queue, then one integrator merges the batch, tests the result and cleans up the sessions it merged. Use only when the user asks to queue a branch, close the batch or resume an integration; do not use for a single session's merge (use git-worktree-cleanup).
+description: Land this session's finished branch on the target branch through the repository's merge queue (bkf merge), which joins it, waits for the turn, merges the target into the branch, verifies and lands it. Use when the owner moves this session's card to "to be merged", when the user asks you to queue, land or merge the branch, to land a batch now while the session keeps working on the branch, or to continue after a failed merge; do not use to clean up worktrees without landing (use git-worktree-cleanup).
 ---
 
-Several sessions finish in separate worktrees. Merging them one by one leaves
-each one behind the `main` the previous one just changed and repeats the full
-suite per session. Here they register first and one integrator merges them
-together, tests the final state and cleans up.
+Sessions land one at a time, and you run every step yourself. Run from your worktree; `BKF_TASK` names your card. `bkf merge status` shows the queue.
 
-Pick your part from what the user asked and read only that file:
+1. Commit your work, then `bkf merge enter`.
+2. `bkf merge wait` until your turn (exit 75: run it again).
+3. `git merge <target>` into the branch: a merge commit, never a rebase. Resolve conflicts you can; otherwise go to 6.
+4. Run the repository's checks. If it names none, go to 6: nothing lands untested.
+5. `bkf merge verify`, then `bkf merge land`. Exit 3 means the target moved: back to 3. After a plain land, remove the worktree and branch ([git-worktree-cleanup](../git-worktree-cleanup/SKILL.md)) and run `bkf task close`.
+6. To give up: `bkf merge fail --reason "<one line>"`, fix, and re-enter at 1.
 
-- Register your finished branch in the queue: [register.md](register.md).
-- Close the batch (merge the queue, test, clean up), or resume or abort an
-  integration: [integrate.md](integrate.md).
+To land a batch and keep working, use `bkf merge land --continue`, then `bkf merge enter` again before the next land.
 
-A batch of one session is not a batch: the user sends that session to
-`git-worktree-cleanup` instead. The user decides which, by whether another
-session also has a merge pending.
+If your entry leaves the queue (`wait` exit 2, or "not in the merge queue"), read the message. After a take-out by the owner or your own `bkf merge leave`, stop and do not re-enter until asked. "Already landed": clean up. Dropped by the queue: re-enter if you still want to land. Any other refusal explains itself on stderr.
 
-The queue is shared by every worktree of the repository and never tracked by
-git. [scripts/merge_queue.py](scripts/merge_queue.py) owns its format and
-behavior; run it as `python3 -I <skill>/scripts/merge_queue.py <command>`, from
-any worktree of the repository. Read the script only to change it; its tests
-run with `python3 -I -m unittest discover -s <skill>/tests`
-([tests/test_merge_queue.py](tests/test_merge_queue.py)).
-
-Not yet run against a real batch of sessions: the first time, use two.
-
-Metadata: [agents/openai.yaml](agents/openai.yaml)
+Rules and exit statuses: [bkf merge](../../../bkf/tooling/commands.md#bkf-merge).

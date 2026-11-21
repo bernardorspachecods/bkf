@@ -9,9 +9,9 @@ A session's own record on disk holds more than any chat export: per-turn token u
 
 ## Find the sessions
 
-The user names them: this session, a name, or a crew. If the match is not one clear session, list the candidates (title, first message, folder, date) and let the user choose before exporting.
+The user names them: this session, a name, or a group of sessions. If the match is not one clear session, list the candidates (title, first message, folder, date) and let the user choose before exporting.
 
-- **Claude Code:** `~/.claude/projects/<working folder, with / replaced by ->/<session id>.jsonl`. Sessions of a crew are named `crew-<name>`; the orchestrator is the session that opened them.
+- **Claude Code:** `~/.claude/projects/<working folder, with / replaced by ->/<session id>.jsonl`.
 - **Codex:** `~/.codex/sessions/<year>/<month>/<day>/rollout-<time>-<id>.jsonl`.
 
 ## Read the record without loading it
@@ -34,7 +34,3 @@ Tokens are what the tool recorded. Do not convert them to money.
 - A session holds whatever passed through it, secrets included. The folder is outside every repository and never goes into git, and its content is never pasted into the chat or sent elsewhere.
 - Do not change or delete the source sessions.
 - When the files are written, run `open` on the folder and give its full path. Do not summarize the sessions unless the user asks.
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

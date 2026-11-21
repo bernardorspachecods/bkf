@@ -11,6 +11,7 @@ HELP_GROUPS = (
     "after editing documents",
     "session start and lookup",
     "install",
+    "called by skills and the app",
 )
 
 COMMANDS = {
@@ -44,6 +45,12 @@ COMMANDS = {
         "before writing or moving a rule, to see where it already lives",
         "session start and lookup",
     ),
+    "sources": (
+        "bkf_sources",
+        "Register and maintain researched sources",
+        "to capture a source's metadata and manage its record",
+        "session start and lookup",
+    ),
     "log": (
         "log_entry",
         "Append an idea or feedback entry to the nearest bundle file",
@@ -61,6 +68,24 @@ COMMANDS = {
         "Preview, install, or check the agent prefix-mode and orientation hooks",
         "on a new machine, or when a hook seems missing or stale",
         "install",
+    ),
+    "task": (
+        "bkf_task",
+        "Record and read the state of agent tasks",
+        "not by hand, except 'bkf task close' inside a task's window once its branch has landed",
+        "called by skills and the app",
+    ),
+    "merge": (
+        "bkf_merge",
+        "Queue a session's branch to land on the target, one at a time",
+        "called by sessions when their card is to be merged, and by the Agentic app; not by hand",
+        "called by skills and the app",
+    ),
+    "launch": (
+        "bkf_launch",
+        "Open an interactive agent session in tmux, with its task card",
+        "called by the handoff skill and the Agentic app; not by hand",
+        "called by skills and the app",
     ),
 }
 
@@ -130,7 +155,8 @@ def main(argv: list[str] | None = None) -> int:
                 message = message[:299] + "…"
             import json
 
-            print(json.dumps({"systemMessage": message}, ensure_ascii=False))
+            if event != "sources":
+                print(json.dumps({"systemMessage": message}, ensure_ascii=False))
             print(message, file=sys.stderr)
         else:
             hook_events.report_failure(event, exc)

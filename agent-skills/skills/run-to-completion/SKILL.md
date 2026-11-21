@@ -23,5 +23,3 @@ If something is needed now, wait for the answer. If not, start right away, witho
 - The checkpoints of the workflow in use still apply, except where they require the user.
 - Stop only if it is fundamental: an irreversible action or one outside what was authorized, or the intent no longer holds. Before stopping, finish what does not depend on the answer and leave the state written down.
 - At the end, one report: done and not done, how it was checked, the decisions, what is unresolved. Say plainly what failed or was skipped.
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

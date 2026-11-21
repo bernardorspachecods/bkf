@@ -93,6 +93,10 @@ class Workflow:
         """Run the plan-wide regression check; return the text of the failure, or None when it passes or there is none."""
         return None
 
+    def run_state(self, ctx, state, reason=""):
+        """Called when the run changes state: paused, stopped, crashed, ready, resumed or discarded; none by default."""
+        return None
+
     def board(self, ctx):
         return ""
 

@@ -15,23 +15,25 @@ guess; a review sends your work back; or you are blocked.
 
 Write one entry per problem: the date, a link to where it happened (file, skill,
 or workflow stage), what happened with the evidence, whether a cause is a guess,
-and who noticed it, the user or you. Do not log secrets. Do not read the file
-during ordinary work. When the user asks you to log something, write it at once
-and quote their words as the evidence.
+and who noticed it, the user or you. Do not log secrets. When the user asks you
+to log something, write it at once and quote their words as the evidence;
+whether it is worth keeping is decided in the filtering session.
 
 ## Record ideas
 
-Add an entry to [ideas.md](/ideas.md), newest first below its introduction, when
-you notice something worth doing later outside the current task. Do not act on
+Add an entry to [ideas.md](/ideas.md), placed the same way, when you notice
+something worth doing later outside the current task. Do not act on
 it or raise it mid-task.
 
 Write one entry per idea: the date, the idea, who raised it, and where it came
-up. Do not read the file during ordinary work. When the user asks you to log an
-idea, write it at once and quote their words.
+up. When the user asks you to log an idea, write it at once and quote their
+words.
 
 Once the ideas session settles an idea, delete its entry. A built or merged idea
 leaves its outcome in the owning document first. A rejected idea is recorded
 nowhere.
+
+Do not read either file during ordinary work.
 
 ## Design work
 

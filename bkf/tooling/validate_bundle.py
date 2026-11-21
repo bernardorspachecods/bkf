@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ from bkf_common import (
     find_bundles,
     in_linked_worktree,
     inventory_entries,
+    is_bundle_root_map,
+    is_notes_file,
     load_tag_vocabulary,
     needs_navigation_map,
     nested_bundle_roots,
@@ -65,6 +68,7 @@ DESCRIPTION_REVIEW_RE = re.compile(r"\b(?:open\s+when|use\s+when)\b", re.IGNOREC
 LOG_PROFILES = frozenset({"feedback", "ideas"})
 AGENT_INSTRUCTION_NAMES = frozenset({"AGENTS.md", "CLAUDE.md"})
 AGENT_INSTRUCTION_WORD_LIMIT = 250
+MAP_SIZE_LIMIT = 4
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,7 @@ class Validator:
         self._ext_validator: Draft202012Validator | None = None
         self._ext_schema_reported = False
         self._tag_vocabulary: dict[str, list[str]] | None = None
+        self._bundle_root_folders: dict[Path, bool] = {}
 
     def add(self, severity: str, code: str, path: Path, message: str) -> None:
         try:
@@ -113,8 +118,10 @@ class Validator:
         self._load_tag_vocabulary()
         self._validate_documents()
         self._validate_agent_instructions_size()
+        self._validate_notes_files()
         for map_path in maps:
             self._validate_map(map_path, root_map)
+            self._validate_map_size(map_path, root_map)
 
         for path, parsed in list(self.member_documents.items()):
             self._validate_links(path, parsed.body)
@@ -400,6 +407,37 @@ class Validator:
             elif title == "Artifact references":
                 self._validate_artifact_references(path, body, section_start, self._next_heading_start(headings, section_start, len(lines)))
 
+    def _validate_map_size(self, path: Path, root_map: Path) -> None:
+        """Warn when a non-root map covers too few items to earn its own navigation purpose."""
+        if path == root_map or is_bundle_root_map(path):
+            return
+        try:
+            entries = inventory_entries(self.root, path)
+            body = self._map_body(path, root_map)
+        except (BKFInputError, OSError, UnicodeError):
+            return  # the map's own errors already explain this
+        size = len(entries)  # tracked documents and child maps in scope
+
+        lines = body.splitlines()
+        headings = self._section_headings(body)
+        for title, start, end in headings:
+            section_end = self._next_heading_start(headings, start, len(lines))
+            if title == "Artifact references":
+                tokens = MARKDOWN.parse("\n".join(lines[start:section_end]))
+                size += sum(1 for token in tokens if token.type == "list_item_open")
+            elif title == "Task routes":
+                rows = [line for line in lines[end:section_end] if line.strip().startswith("|")]
+                size += max(len(rows) - 2, 0)  # the header and separator rows are not routes
+
+        if size <= MAP_SIZE_LIMIT:
+            self.warning(
+                "MAP_TOO_SMALL",
+                path,
+                f"map covers {size} items (limit {MAP_SIZE_LIMIT}). Folders without a distinct navigation "
+                "purpose use their nearest ancestor map. If that is obvious here, delete this MAP.md and let "
+                "the parent map list its contents; if it is not obvious, ignore it.",
+            )
+
     @staticmethod
     def _next_heading_start(
         headings: list[tuple[str, int, int]], current_start: int, default: int
@@ -528,10 +566,39 @@ class Validator:
             (
                 path for path in self.root.rglob("*")
                 if path.is_file() and path.suffix.lower() == ".md"
+                and not is_notes_file(self.root, path)
                 and not in_linked_worktree(self.root, path, cache)
                 and not any(path.is_relative_to(nested_root) for nested_root in nested_roots)
             ),
             key=lambda path: path.relative_to(self.root).as_posix(),
+        )
+
+    def _validate_notes_files(self) -> None:
+        for path in sorted(self.root.iterdir()):
+            if not path.is_file() or not is_notes_file(self.root, path):
+                continue
+            try:
+                frontmatter = parse_markdown(path).frontmatter
+            except BKFInputError:
+                continue
+            if "bkf" in frontmatter:
+                self.error(
+                    "NOTES_TRACKED",
+                    path,
+                    "a notes file holds the user's private notes and must not carry a `bkf` field; "
+                    "ask the user before editing it",
+                )
+
+    def _is_notes_target(self, target: Path) -> bool:
+        folder = target.parent
+        if folder not in self._bundle_root_folders:
+            map_path = folder / MAP_NAME
+            self._bundle_root_folders[folder] = map_path.is_file() and is_bundle_root_map(map_path)
+        if not self._bundle_root_folders[folder]:
+            return False
+        return any(
+            is_notes_file(folder, folder / name) and os.path.samefile(folder / name, target)
+            for name in os.listdir(folder)
         )
 
     def _validate_documents(self) -> None:
@@ -732,7 +799,9 @@ class Validator:
         if not parsed.path.startswith("/"):
             self.error("LINK_PATH", source, "internal links must use bundle-root absolute paths")
             return
-        self._resolve_internal_target(source, parsed.path)
+        target = self._resolve_internal_target(source, parsed.path)
+        if target is not None and self._is_notes_target(target):
+            self.error("NOTES_LINKED", source, f"links must not target the user's private notes file {parsed.path}")
 
     def _resolve_internal_target(self, source: Path, target: str) -> Path | None:
         if not target.startswith("/") or PERCENT_ESCAPE_RE.search(target):
