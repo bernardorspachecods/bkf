@@ -175,6 +175,13 @@ It prints both check results and exits non-zero if either check fails.
 A `SKILL.md` or `openai.yaml` value without quotes that YAML would reject (it
 contains `: `, ends with `:` or starts with `@`, a backtick, `%`, `&`, `*` or
 `!`) is a `FRONTMATTER_INVALID` error: quote the value.
+A user-invoked skill sets both `disable-model-invocation: true` in `SKILL.md`
+(Claude Code) and `policy.allow_implicit_invocation: false` in `agents/openai.yaml`
+(Codex). Setting one without the other is an `INVOCATION_MARKERS_MISMATCH` error.
+The skills in `AGENT_INVOKED_SKILLS` (`bkf/tooling/skill_catalog_common.py`) are
+exempt: a hook or another skill tells an agent to follow them, so they keep the
+Codex marker alone. An exempt skill that does not have that pair is an
+`INVOCATION_EXEMPTION_STALE` error.
 
 `--write` refreshes the modules map inventory and the injected text, then writes the
 generated skill catalog. Use it after changing a skill or a module a skill injects.

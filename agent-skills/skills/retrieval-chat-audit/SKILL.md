@@ -1,6 +1,7 @@
 ---
 name: retrieval-chat-audit
 description: Report what repository material an agent inspected during a task, what it contributed, and where retrieval was inefficient. Use only when the user explicitly asks for a read or retrieval audit; do not add reports to ordinary task responses.
+disable-model-invocation: true
 ---
 
 # Repository Read Audit

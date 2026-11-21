@@ -1,6 +1,7 @@
 ---
 name: handoff
 description: Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task.
+disable-model-invocation: true
 ---
 
 # Handoff

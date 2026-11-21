@@ -9,10 +9,9 @@ This skill owns skill packaging, invocation, and resource boundaries.
 
 ### Invocation
 
-- **Model-invoked:** omit `disable-model-invocation`. The description is a context pointer that is always available for automatic selection, and the user can still invoke the skill by name.
-- **User-invoked:** set `policy.allow_implicit_invocation: false` in `agents/openai.yaml`. Use this when the workflow should run only when the human explicitly asks for it.
-
-Keep invocation policy in `agents/openai.yaml`; do not add unsupported invocation fields to `SKILL.md` frontmatter.
+- **Model-invoked:** set neither marker. The description is always available for automatic selection, and the user can still invoke the skill by name.
+- **User-invoked:** set both `disable-model-invocation: true` in `SKILL.md` (Claude Code: the skill runs only through `/name`) and `policy.allow_implicit_invocation: false` in `agents/openai.yaml` (Codex). Use this when the workflow should run only when the human explicitly asks for it.
+- **Exception:** a skill that a hook or another skill tells an agent to follow stays model-invoked, so it sets only the Codex marker. Add it to `AGENT_INVOKED_SKILLS` in `bkf/tooling/skill_catalog_common.py` with the reference that makes it agent-invoked; `bkf skills --check` enforces the pairing.
 
 ### Frontmatter and description
 

@@ -36,6 +36,17 @@ MACHINE_PATH_RE = re.compile(
 EXTERNAL_SCHEMES = {"http", "https", "mailto", "tel"}
 SUPPORTED_INTERFACE_FIELDS = {"display_name", "short_description"}
 SUPPORTED_POLICY_FIELDS = {"allow_implicit_invocation"}
+DISABLE_MODEL_INVOCATION = "disable-model-invocation"
+# A user-invoked skill sets both markers: DISABLE_MODEL_INVOCATION in SKILL.md (Claude Code) and
+# policy.allow_implicit_invocation: false in agents/openai.yaml (Codex). A skill that a hook or
+# another skill tells an agent to follow stays model-invoked, so it has the Codex marker alone.
+# Each entry names the reference that makes the skill agent-invoked; the check fails when an
+# entry no longer fits (its markers are not the exempt pair).
+AGENT_INVOKED_SKILLS = {
+    "git-merge-queue": "bkf/tooling/task_hook.py:64 tells the session to follow it when a card moves",
+    "git-status-cleanup": "agent-skills/skills/git-worktree-cleanup/SKILL.md:8 runs it as a step",
+    "git-worktree-cleanup": "bkf/tooling/bkf_merge.py:405 tells the agent to use it after a land",
+}
 
 
 @dataclass(frozen=True)
@@ -438,6 +449,110 @@ def _validate_machine_paths(root: Path, package: Path, text: str, relative_file:
             )
 
 
+def _validate_invocation_markers(
+    root: Path, package: Path, frontmatter: dict[str, Any], implicit: bool | None, issues: list[dict[str, Any]]
+) -> None:
+    """Keep the Claude Code and Codex markers of a user-invoked skill set together."""
+    skill_label = display_path(root, package / "SKILL.md")
+    disabled = frontmatter.get(DISABLE_MODEL_INVOCATION)
+    if disabled is not None and not isinstance(disabled, bool):
+        issues.append(
+            issue(
+                "DISABLE_MODEL_INVOCATION_INVALID",
+                "error",
+                skill_label,
+                f"{DISABLE_MODEL_INVOCATION} must be true or false",
+                f"Set {DISABLE_MODEL_INVOCATION} to true or remove it.",
+                status="invalid",
+            )
+        )
+        return
+    user_only_claude = disabled is True
+    user_only_codex = implicit is False
+    if package.name in AGENT_INVOKED_SKILLS:
+        if user_only_codex and not user_only_claude:
+            return
+        issues.append(
+            issue(
+                "INVOCATION_EXEMPTION_STALE",
+                "error",
+                skill_label,
+                f"{package.name} is listed in AGENT_INVOKED_SKILLS, but its markers are not the exempt pair "
+                "(policy.allow_implicit_invocation: false and no disable-model-invocation)",
+                "Remove the entry from AGENT_INVOKED_SKILLS, or set the markers the exemption requires.",
+                status="invalid",
+            )
+        )
+        return
+    if user_only_claude == user_only_codex:
+        return
+    if user_only_claude:
+        explanation = (
+            f"SKILL.md sets {DISABLE_MODEL_INVOCATION}: true, but agents/openai.yaml does not set "
+            "policy.allow_implicit_invocation: false"
+        )
+        suggestion = "Set policy.allow_implicit_invocation: false in agents/openai.yaml too, or remove the Claude Code marker."
+    else:
+        explanation = (
+            "agents/openai.yaml sets policy.allow_implicit_invocation: false, but SKILL.md does not set "
+            f"{DISABLE_MODEL_INVOCATION}: true"
+        )
+        suggestion = (
+            f"Set {DISABLE_MODEL_INVOCATION}: true in SKILL.md, or, if an agent is told to follow this skill, "
+            "list it in AGENT_INVOKED_SKILLS with the reference that does it."
+        )
+    issues.append(
+        issue(
+            "INVOCATION_MARKERS_MISMATCH",
+            "error",
+            skill_label,
+            explanation,
+            suggestion,
+            status="invalid",
+        )
+    )
+
+
+def _validate_policy(root: Path, metadata: dict[str, Any], metadata_path: Path, issues: list[dict[str, Any]], supported: dict[str, Any]) -> None:
+    policy = metadata.get("policy")
+    if policy is not None:
+        if not isinstance(policy, dict):
+            issues.append(
+                issue(
+                    "RUNTIME_POLICY_INVALID",
+                    "error",
+                    display_path(root, metadata_path),
+                    "the policy runtime metadata must be a mapping",
+                    "Use a policy mapping with supported boolean fields.",
+                )
+            )
+        else:
+            for key in sorted(set(policy) - SUPPORTED_POLICY_FIELDS):
+                issues.append(
+                    issue(
+                        "RUNTIME_POLICY_UNKNOWN",
+                        "warning",
+                        display_path(root, metadata_path),
+                        f"runtime policy field is not supported by the catalog: policy.{key}",
+                        "Document a supported policy field before relying on it in generated output.",
+                        status="unknown",
+                    )
+                )
+            value = policy.get("allow_implicit_invocation")
+            if value is not None and not isinstance(value, bool):
+                issues.append(
+                    issue(
+                        "RUNTIME_POLICY_INVALID",
+                        "error",
+                        display_path(root, metadata_path),
+                        "policy.allow_implicit_invocation must be a boolean",
+                        "Set policy.allow_implicit_invocation to true or false.",
+                    )
+                )
+            elif isinstance(value, bool):
+                supported["allow_implicit_invocation"] = value
+
+
 def _validate_runtime_metadata(root: Path, package: Path, issues: list[dict[str, Any]]) -> dict[str, Any]:
     metadata_path = package / "agents" / "openai.yaml"
     if not metadata_path.exists():
@@ -492,6 +607,8 @@ def _validate_runtime_metadata(root: Path, package: Path, issues: list[dict[str,
                 status="unknown",
             )
         )
+    supported: dict[str, Any] = {}
+    _validate_policy(root, metadata, metadata_path, issues, supported)
     interface = metadata.get("interface")
     if interface is None:
         issues.append(
@@ -504,7 +621,7 @@ def _validate_runtime_metadata(root: Path, package: Path, issues: list[dict[str,
                 status="missing",
             )
         )
-        return {"status": "present", "supported": {}}
+        return {"status": "present", "supported": supported}
     if not isinstance(interface, dict):
         issues.append(
             issue(
@@ -516,7 +633,6 @@ def _validate_runtime_metadata(root: Path, package: Path, issues: list[dict[str,
             )
         )
         return {"status": "invalid", "supported": {}}
-    supported: dict[str, str] = {}
     for key in sorted(set(interface) - SUPPORTED_INTERFACE_FIELDS):
         issues.append(
             issue(
@@ -553,43 +669,6 @@ def _validate_runtime_metadata(root: Path, package: Path, issues: list[dict[str,
             )
         else:
             supported[key] = value.strip()
-    policy = metadata.get("policy")
-    if policy is not None:
-        if not isinstance(policy, dict):
-            issues.append(
-                issue(
-                    "RUNTIME_POLICY_INVALID",
-                    "error",
-                    display_path(root, metadata_path),
-                    "the policy runtime metadata must be a mapping",
-                    "Use a policy mapping with supported boolean fields.",
-                )
-            )
-        else:
-            for key in sorted(set(policy) - SUPPORTED_POLICY_FIELDS):
-                issues.append(
-                    issue(
-                        "RUNTIME_POLICY_UNKNOWN",
-                        "warning",
-                        display_path(root, metadata_path),
-                        f"runtime policy field is not supported by the catalog: policy.{key}",
-                        "Document a supported policy field before relying on it in generated output.",
-                        status="unknown",
-                    )
-                )
-            value = policy.get("allow_implicit_invocation")
-            if value is not None and not isinstance(value, bool):
-                issues.append(
-                    issue(
-                        "RUNTIME_POLICY_INVALID",
-                        "error",
-                        display_path(root, metadata_path),
-                        "policy.allow_implicit_invocation must be a boolean",
-                        "Set policy.allow_implicit_invocation to true or false.",
-                    )
-                )
-            elif isinstance(value, bool):
-                supported["allow_implicit_invocation"] = value
     return {"status": "present", "supported": supported}
 
 
@@ -716,7 +795,7 @@ def validate_repository(root: Path, *, check_catalog: bool = False, catalog_path
         package_issues_before = len(issues)
         name = parsed.data.get("name")
         description = parsed.data.get("description")
-        for key in sorted(set(parsed.data) - {"name", "description"}):
+        for key in sorted(set(parsed.data) - {"name", "description", DISABLE_MODEL_INVOCATION}):
             issues.append(
                 issue(
                     "FRONTMATTER_FIELD_UNKNOWN",
@@ -809,6 +888,8 @@ def validate_repository(root: Path, *, check_catalog: bool = False, catalog_path
         _validate_package_file_links(root, package, issues)
         _validate_machine_paths(root, package, text, Path("SKILL.md"), issues)
         runtime = _validate_runtime_metadata(root, package, issues)
+        if runtime["status"] in {"present", "missing"}:
+            _validate_invocation_markers(root, package, parsed.data, runtime["supported"].get("allow_implicit_invocation"), issues)
         metadata_path = package / "agents" / "openai.yaml"
         if metadata_path.is_file():
             try:

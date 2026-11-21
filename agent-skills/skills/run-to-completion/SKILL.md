@@ -1,6 +1,7 @@
 ---
 name: run-to-completion
 description: The user's last interaction before they leave. Tells them in two lines where the work stops for good and whether it needs anything from them right now to avoid that, then works alone to the agreed end. Use only when the user invokes it; do not use for small work or to start a task that has no agreed end.
+disable-model-invocation: true
 ---
 
 # Run to completion
