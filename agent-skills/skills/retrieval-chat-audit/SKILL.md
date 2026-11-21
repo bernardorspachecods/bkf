@@ -95,8 +95,3 @@ that have no evidence:
 
 Do not turn the audit into a general repository review or recommend
 restructuring unless the observed retrieval provides concrete evidence for it.
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in
-[agents/openai.yaml](agents/openai.yaml).

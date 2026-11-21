@@ -56,6 +56,7 @@ def _probe(event: str) -> None:
     if event == "guard":
         importlib.import_module("read_guard")
         importlib.import_module("launch_guard")
+        importlib.import_module("git_guard")
     elif event == "log":
         importlib.import_module("log_entry")
     elif event == "audit":
@@ -415,6 +416,14 @@ def stop(data: dict, state_dir: Path | None = None) -> dict | None:
         touched.unlink(missing_ok=True)
         blocks.unlink(missing_ok=True)
         notes = warnings(roots, paths, validators) if roots else []
+        shown = _state(session_id, "warned", state_dir)
+        seen = set(shown.read_text(encoding="utf-8").split("\n")) if shown.exists() else set()
+        fresh_notes = [note for note in notes if note not in seen]
+        if fresh_notes:
+            shown.parent.mkdir(parents=True, exist_ok=True)
+            with shown.open("a", encoding="utf-8") as handle:
+                handle.write("\n".join(fresh_notes) + "\n")
+        notes = fresh_notes
         if notes:
             pending = _state(session_id, "warnings", state_dir)
             pending.parent.mkdir(parents=True, exist_ok=True)
@@ -520,10 +529,11 @@ def main(argv: list[str]) -> int:
 
             output = handle(data)
         elif event == "guard":
+            import git_guard
             from launch_guard import check
             from read_guard import guard
 
-            output = guard(data) or check(data)
+            output = guard(data) or check(data) or git_guard.check(data)
     except Exception as exc:
         if event == "stop":
             exc = RuntimeError(f"validation did not run: {exc}")

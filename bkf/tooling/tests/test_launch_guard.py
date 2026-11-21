@@ -30,7 +30,6 @@ class LaunchGuardTests(unittest.TestCase):
             "plan-run.sh start r goal.md plan.txt",
             "plan-run.sh resume r",
             "research-run.sh start r q.md",
-            "council-run.sh start r brief.md",
             "research-run.sh resume r",
             "delegate-run.sh name brief.md",
             "codex exec -m m -",

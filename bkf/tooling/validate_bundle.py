@@ -432,8 +432,7 @@ class Validator:
                 path,
                 f"map covers {size} items (limit {MAP_SIZE_LIMIT}). Folders without a distinct navigation "
                 "purpose use their nearest ancestor map. If that is obvious here, delete this MAP.md and let "
-                "the parent map list its contents; if it is not obvious, ask the user before deleting or "
-                "keeping it.",
+                "the parent map list its contents; if it is not obvious, ignore it.",
             )
 
     @staticmethod

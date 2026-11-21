@@ -5,8 +5,6 @@ description: "Use whenever you write or fix code: the principles for building it
 
 # Code work
 
-<!-- inject: ../../modules/core-code-principles.md -->
-<!-- BKF:GENERATED-INJECTED -->
 ## Core principles for code
 
 ### Building
@@ -27,6 +25,3 @@ description: "Use whenever you write or fix code: the principles for building it
 - A check must be able to fail: show it failing once before relying on it. Never weaken an existing one.
 - What code cannot decide is reported as unverified, not passed. Report what ran and what came out, failures included.
 - Exempt: prototypes, exploration, documentation, visual experiments, trivial config.
-<!-- BKF:GENERATED-INJECTED-END -->
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

@@ -235,6 +235,17 @@ class HookEventsTest(unittest.TestCase):
         self.assertNotIn("first column", prompt["systemMessage"])
         self.assertIsNone(self.warnings_prompt())
 
+    def test_the_same_warning_is_given_once_per_session(self) -> None:
+        (self.root / "guide.md").write_text(DOC + "line\n" * 400)
+        self.write_inventory()
+        self.touch(self.root / "guide.md")
+        self.assertIsNone(self.stop())
+        self.assertIsNotNone(self.warnings_prompt())
+
+        self.touch(self.root / "guide.md")
+        self.assertIsNone(self.stop())
+        self.assertIsNone(self.warnings_prompt())
+
     def test_only_navigation_map_warnings_bring_the_map_guidance(self) -> None:
         pending = hook_events._state("s", "warnings", self.state)
         pending.parent.mkdir(parents=True, exist_ok=True)

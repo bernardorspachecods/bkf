@@ -44,7 +44,3 @@ Both lenses can overshoot: a system built for a one-off, a practice copied from 
 **6. Weigh what you found against this task**
 - Heuristic: Does the structural cure cost less than the cases it removes, and does what the best do fit our size and context? Adopt, adapt or leave each one, and say why. A one-off deserves a one-off fix.
 - Anchor: Searching once for a song needs a search, not a tagged library. A large company's review board does not fit a solo project, but the habit behind it, a second look before anything irreversible, does.
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

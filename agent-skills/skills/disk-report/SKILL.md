@@ -36,7 +36,3 @@ Only after the user names the items: delete exactly those, report the free space
 ## Keeping the script current
 
 The risk classification lives in the script's `add` lines, not here. If an app moved its data or the user settled a risk (for example "Android is safe now"), edit the script, not this file. Read the script before changing it.
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

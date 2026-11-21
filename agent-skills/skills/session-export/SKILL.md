@@ -34,7 +34,3 @@ Tokens are what the tool recorded. Do not convert them to money.
 - A session holds whatever passed through it, secrets included. The folder is outside every repository and never goes into git, and its content is never pasted into the chat or sent elsewhere.
 - Do not change or delete the source sessions.
 - When the files are written, run `open` on the folder and give its full path. Do not summarize the sessions unless the user asks.
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

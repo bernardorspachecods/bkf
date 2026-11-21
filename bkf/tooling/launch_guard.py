@@ -8,7 +8,6 @@ import shlex
 
 LAUNCHERS = {
     "plan-run.sh": {"start", "resume"},
-    "council-run.sh": {"start", "resume"},
     "research-run.sh": {"start", "resume"},
     "delegate-run.sh": None,
 }

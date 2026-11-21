@@ -16,12 +16,10 @@ refresh the injected text and catalog.
 <!-- BKF:GENERATED-MEMBER-INVENTORY:START -->
 | What it is | Document |
 | --- | --- |
-| States what the agent harness is for, its layers, the decisions taken about it and what is still to verify or build. The code and each skill own their own behavior. | [harness-goal.md](/agent-skills/harness-goal.md) |
+| Documents the harness engine's commands, exit codes and environment variables, and how to run its tests; read it when you change how agents, gates, injection or workflow definitions run. | [harness.md](/agent-skills/harness/harness.md) |
 | Owns the shared rule modules whose text the workflow and work skills inject into their bodies; the skills themselves live outside this bundle. | [MAP.md](/agent-skills/modules/MAP.md) |
-| Lists what is still open after the 2026-10-26 audit of the skills against harness-goal.md and the refactor that moved the harness out of skills/: the choices that are the owner's and the small gaps left. Delete an item when it is settled. | [skills-audit.md](/agent-skills/skills-audit.md) |
 <!-- BKF:GENERATED-MEMBER-INVENTORY:END -->
 
 ## Artifact references
 
-- [Harness engine](/agent-skills/harness/README.md) — read it when you change how agents, gates, injection or workflow definitions run; each workflow's own script and definition are in its skill's `scripts/`.
-- [Generated skill catalog](/agent-skills/SKILL-ARCHITECTURE.md) — it opens with a table of every skill, when to use it, and whether it runs only when the user asks; read it when you need to know which skills exist or to inspect the collection as a whole.
+- [Generated skill catalog](/agent-skills/skill-architecture.md) — it opens with a table of every skill, when to use it, and whether it runs only when the user asks; read it when you need to know which skills exist or to inspect the collection as a whole.

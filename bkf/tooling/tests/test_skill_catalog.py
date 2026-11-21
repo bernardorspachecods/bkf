@@ -186,7 +186,7 @@ class SkillCatalogTests(unittest.TestCase):
             "alpha-skill",
             "---\nname: alpha-skill\ndescription: Alpha behavior\n---\n\nUse $zeta-skill when needed.\n",
         )
-        output = root / "agent-skills" / "SKILL-ARCHITECTURE.md"
+        output = root / "agent-skills" / "skill-architecture.md"
 
         try:
             first = generate_catalog(root)
@@ -252,7 +252,7 @@ class SkillCatalogTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            markdown_exists = (root / "agent-skills" / "SKILL-ARCHITECTURE.md").is_file()
+            markdown_exists = (root / "agent-skills" / "skill-architecture.md").is_file()
         finally:
             temp_dir.cleanup()
 
@@ -306,7 +306,7 @@ class SkillCatalogTests(unittest.TestCase):
         self.assertEqual(written.returncode, 0, written.stdout + written.stderr)
         self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
         self.assertIn("updated: MAP.md", written.stdout)
-        self.assertIn("wrote agent-skills/SKILL-ARCHITECTURE.md", written.stdout)
+        self.assertIn("wrote agent-skills/skill-architecture.md", written.stdout)
         self.assertIn("Alpha library rule.", tagged)
         self.assertIn("all BKF map inventories are up to date", checked.stdout)
         self.assertIn("status: valid", checked.stdout)

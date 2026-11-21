@@ -4,44 +4,18 @@ description: Write a handoff for the task in progress and open a fresh Claude or
 ---
 
 # Handoff
-
-A handoff carries work in flight into a new session that does not
-inherit the old chat. Its value is what it leaves out. Facts that stay true
-after the task belong in the repository's documents, placed by
-[repo-maintenance](../repo-maintenance/SKILL.md), not here.
-
 ## Write
 
 1. Take the purpose of the next session from the user. If they did not state it, ask. It decides what stays.
 2. Write the handoff to the scratchpad as `handoff-<short-name>.md`, following these rules:
-   - Keep an item only if the new agent would err or have to ask without it. Drop context that only served the earlier task.
+   - Drop context that only served the earlier task.
    - Point to specs, issues, diffs and files by path or URL. Do not copy them.
    - State settled decisions with their reason, and what was tried and ruled out.
-   - State the working directory, the branch, and where uncommitted changes stand.
-   - Mark each claim as verified (say how) or as an assumption. The new agent will not re-check a claim written as fact, so re-check cheap ones now and downgrade the rest, especially "X is done" and "Y is not built".
-   - Leave out keys, tokens and passwords.
-   - Leave out whatever a new session already loads on its own at start (standing instructions, memory, repository documents, hooks). Restating it risks a stale or distorted copy that competes with the real one. Write only what this task adds, or what it needs stricter than the standing rules, each with its reason. Do not describe the user's temperament or habits; turn them into a concrete stop condition for this task, or drop them.
-   - Sources: give each one's path and what it is authoritative for, and what wins when they disagree (by default the plan on intent and scope, the code on current behavior). Say what not to read, whether examples are binding or only shape references, and whether history is current truth or background.
-   - Name what the new agent can access (repo, tools, files) and what it lacks. Put the essential context in the file, stating anything settled in this chat, instead of pointing to guidance the new agent cannot reach.
-   - Delimit pasted or retrieved material (logs, documents, code) from the instructions and say what it is.
-   - Use only the sections that a source does not already cover, in this order with the immediate request last, in one or two sentences: objective (only when the request alone would lose the purpose), context the new agent lacks, sources, rules (hard constraints, each with its reason), preferences and what to do when they conflict, examples (only when a format or tone is hard to describe), history, ask-before and stop conditions, process (only when order matters or the default approach would be wrong), verify-by, output format.
-   - Autonomous work tends to fail by silent scope growth and by guessing past ambiguity: default to stopping when scope must change or a decision needs clarifying, and let the user's standing guardrails take precedence.
+   - Mark each claim as verified (say how) or as an assumption.
+   - Leave out whatever a new session already loads on its own at start (standing instructions, memory, repository documents, hooks). 
    - If the user wants a prompt to paste themselves instead of a launched session, give it in one fenced block ready to paste, and after it at most a few lines on the assumptions made and what was left out because a source covers it. Do not walk through the structure.
-3. Re-read the file as the new agent would, without this chat, and fix what you could not act on. Then launch without showing it to the user, unless they asked to see it first.
+3. Re-read the file as the new agent would, without this chat, and fix what you could not act on. Then launch without showing it to the user.
 
 ## Launch
 
 Run `bkf launch claude --dir <working-dir> --prompt-file <absolute-handoff-path> --title "<one-line name of the task>" [--model M] [--effort E]`, with `codex` in place of `claude` only when the user asked for Codex. The working directory may be any directory, not only the caller's. The new session's first message is the whole handoff file, so the user sees it in full, and the current chat is untouched. Give a model or effort only when the user chose one; without them the session takes the user's defaults.
-
-Each launch makes a new task card of kind `handoff`, a child of this session's task when it has one. `bkf launch` opens the window and says where it went: inside tmux, beside the caller and grouped by repository; outside tmux, beside the repository's windows in the tmux session that holds them (else the repository's own session) in iTerm2 or Terminal.app. Where it can open no window, it prints an attach command, which you give the user. For how the window is placed, read `bkf help launch` and the `## bkf launch` section of [the command reference](../../../bkf/tooling/commands.md).
-
-When the new session will message this one or others (`SendMessage`), two things decide whether it works:
-
-- Messages between sessions are delivered only when both are in the same permission class: auto, acceptEdits and dontAsk count as prompting, bypass as the other. Otherwise each message waits for the user's approval. Give `--permission-mode` to match when the sessions differ.
-- A session treats another session's message as information, never as the user's word. If the new session is to follow another session's decisions, say so in the handoff itself, because its first message comes from the user.
-
-Afterward, tell the user the handoff path, the card id that `bkf launch` printed, and that the new session is open, or give the attach command it printed.
-
-## Runtime metadata
-
-This skill's invocation and display metadata is in [agents/openai.yaml](agents/openai.yaml).

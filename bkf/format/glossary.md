@@ -159,7 +159,7 @@ A multi-stage piece of work in which a coordinator works with the user at the st
 
 ## Workflow type
 
-A skill in `agent-skills/skills/` (`agentic-work`, `council`, `research`) that defines a workflow: its `SKILL.md` is the guide for the coordinator, its `roles/` folder holds one guide for each role, and its `scripts/` folder holds the script that runs it and the definition of its steps.
+A skill in `agent-skills/skills/` (`agentic-work`, `research`) that defines a workflow: its `SKILL.md` is the guide for the coordinator, its `roles/` folder holds one guide for each role, and its `scripts/` folder holds the script that runs it and the definition of its steps.
 
 Term to avoid: "workflow shape".
 

@@ -12,13 +12,12 @@ It contains only package metadata and supported runtime metadata derived from th
 | [before-compaction](skills/before-compaction/SKILL.md) | Before the user compacts the chat, make sure everything the work needs is written in documents and suggest the compaction message. Use only when the user is about to compact; do not use to hand work to a new chat (use handoff). | yes |
 | [brainstorm](skills/brainstorm/SKILL.md) | Guide open-ended conversations where the user wants to explore an idea, compare approaches, reach a decision or plan, or critically examine an idea, decision, plan, or result. Do not use for direct execution tasks or simple factual questions. |  |
 | [code-work](skills/code-work/SKILL.md) | Use whenever you write or fix code: the principles for building it and verifying it, whoever coordinates the work. |  |
-| [council](skills/council/SKILL.md) | Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume. |  |
 | [disk-report](skills/disk-report/SKILL.md) | Measure what takes disk space on the user's Mac and present it as a table with a risk per item (Claude and Codex sessions, caches, Xcode, VMs, app data). Use when the user wants to free disk space or asks what is filling the disk. It is read-only and never deletes anything; do not use to clean up git branches or worktrees (use git-worktree-cleanup). |  |
 | [git-merge-queue](skills/git-merge-queue/SKILL.md) | Land this session's finished branch on the target branch through the repository's merge queue (bkf merge), which joins it, waits for the turn, merges the target into the branch, verifies and lands it. Use when the owner moves this session's card to "to be merged", when the user asks you to queue, land or merge the branch, to land a batch now while the session keeps working on the branch, or to continue after a failed merge; do not use to clean up worktrees without landing (use git-worktree-cleanup). | yes |
 | [git-status-cleanup](skills/git-status-cleanup/SKILL.md) | Commit the uncommitted changes of the current worktree, either only what this session changed (default) or everything. Do not use to delete merged branches or worktrees (use git-worktree-cleanup). | yes |
 | [git-worktree-cleanup](skills/git-worktree-cleanup/SKILL.md) | Close out git worktrees and branches. `mine` (default) commits this session's changes, lands its branch on the default branch through the merge queue (bkf merge, never a rebase), then removes the session worktree (if any) and branch and closes its card. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup). | yes |
 | [handoff](skills/handoff/SKILL.md) | Write a handoff for the task in progress and open a fresh Claude or Codex session on it in a new terminal tab, so the work continues without the old chat's context. Use only when the user asks to continue in a new chat; do not use to summarize a conversation or to record knowledge that outlives the task. | yes |
-| [prototype](skills/prototype/SKILL.md) | Build throwaway code that answers a design question - does a logic or state model feel right, or what should a page look like - then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship. |  |
+| [prototype](skills/prototype/SKILL.md) | Build throwaway page variants that answer what a page should look like, then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship. |  |
 | [repo-library](skills/repo-library/SKILL.md) | Use when adding or reviewing an entry of a repository's repo-library: a procedure or rule set that the repository applies repeatedly. |  |
 | [repo-maintenance](skills/repo-maintenance/SKILL.md) | Use when your change affects a repository's documents, when organizing or restructuring them, or when writing or revising a document that other agents will act on, mostly under BKF. |  |
 | [research](skills/research/SKILL.md) | Use when the user asks for sourced or verified findings, a comparison across sources, an audit of a conclusion, or literature work that needs multiple sources or an evidence trail; or a stopped research run to resume. |  |
@@ -84,15 +83,6 @@ It contains only package metadata and supported runtime metadata derived from th
   - `display_name`: Code work
   - `short_description`: Principles for writing and fixing code, and for verifying it
 
-## council
-
-- Description: Use only when the user explicitly asks for a council on a question or decision, or a stopped council run to resume.
-- Package: [`agent-skills/skills/council`](skills/council/SKILL.md)
-- Runtime metadata: `present`
-- Supported UI metadata:
-  - `display_name`: Council
-  - `short_description`: Five advisors and five reviewers on one question
-
 ## disk-report
 
 - Description: Measure what takes disk space on the user's Mac and present it as a table with a risk per item (Claude and Codex sessions, caches, Xcode, VMs, app data). Use when the user wants to free disk space or asks what is filling the disk. It is read-only and never deletes anything; do not use to clean up git branches or worktrees (use git-worktree-cleanup).
@@ -144,7 +134,7 @@ It contains only package metadata and supported runtime metadata derived from th
 
 ## prototype
 
-- Description: Build throwaway code that answers a design question - does a logic or state model feel right, or what should a page look like - then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship.
+- Description: Build throwaway page variants that answer what a page should look like, then carry the decision into the real code. Use when the user asks for a prototype, a demo to try, or design variants to compare; do not use for code that will ship.
 - Package: [`agent-skills/skills/prototype`](skills/prototype/SKILL.md)
 - Runtime metadata: `present`
 - Supported UI metadata:

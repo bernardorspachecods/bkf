@@ -29,6 +29,7 @@ py-modules = [
     "bkf_task",
     "generate_inventory",
     "hook_events",
+    "git_guard",
     "launch_guard",
     "log_entry",
     "merge_git",
