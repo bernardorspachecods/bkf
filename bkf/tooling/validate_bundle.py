@@ -63,6 +63,8 @@ OPTIONAL_FIELDS = {
 }
 DESCRIPTION_REVIEW_RE = re.compile(r"\b(?:open\s+when|use\s+when)\b", re.IGNORECASE)
 LOG_PROFILES = frozenset({"feedback", "ideas"})
+AGENT_INSTRUCTION_NAMES = frozenset({"AGENTS.md", "CLAUDE.md"})
+AGENT_INSTRUCTION_WORD_LIMIT = 250
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,7 @@ class Validator:
 
         self._load_tag_vocabulary()
         self._validate_documents()
+        self._validate_agent_instructions_size()
         for map_path in maps:
             self._validate_map(map_path, root_map)
 
@@ -589,6 +592,25 @@ class Validator:
                 )
             if profile not in LOG_PROFILES:
                 self._validate_navigation_map(path, parsed.body)
+
+    def _validate_agent_instructions_size(self) -> None:
+        """Warn when an AGENTS.md or CLAUDE.md body is long enough to crowd every session's context."""
+        for path in self.markdown_files:
+            if path.name not in AGENT_INSTRUCTION_NAMES:
+                continue
+            try:
+                body = parse_markdown(path).body
+            except (BKFInputError, OSError, UnicodeError):
+                continue  # the file's own errors are reported by document validation
+            _, words = body_size(body)
+            if words > AGENT_INSTRUCTION_WORD_LIMIT:
+                self.warning(
+                    "AGENT_INSTRUCTIONS_LONG",
+                    path,
+                    f"{path.name} is loaded into every session; its body has {words} words "
+                    f"(limit {AGENT_INSTRUCTION_WORD_LIMIT}). Move rules that a hook or a script can check into "
+                    "that hook or script, move detail into the document that owns it, and leave a pointer to it.",
+                )
 
     def _validate_navigation_map(self, path: Path, body: str) -> None:
         has_map, problems = map_problems(body)

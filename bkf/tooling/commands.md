@@ -89,6 +89,11 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   ([frontmatter profiles](/format/frontmatter-profiles.md#tag-vocabulary)).
 - `REPO_LIBRARY_ENTRY_UNLINKED` warns when no enclosing-bundle document outside
   `repo-library/` links to a Markdown entry.
+- `AGENT_INSTRUCTIONS_LONG` warns when an `AGENTS.md` or `CLAUDE.md` anywhere in
+  the bundle has a body over 250 words (frontmatter not counted), because agent
+  harnesses load these files into every session. The finding says to move rules
+  a hook or script can check into that hook or script, and detail into the
+  document that owns it, leaving a pointer.
 
 ## bkf updates
 
