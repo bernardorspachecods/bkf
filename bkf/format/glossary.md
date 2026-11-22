@@ -101,7 +101,7 @@ See [the layers](/manual/what-is-bkf.md#the-layers).
 
 ## Nested bundle
 
-A folder inside a bundle whose `MAP.md` declares `bkf_version` is a separate bundle with its own root, members, and conformance, assessed by selecting that folder.
+A folder inside a bundle whose `MAP.md` declares `bkf_version` is a separate bundle with its own root, members, and conformance, assessed by selecting that folder. Its links resolve from the [outermost bundle root](#outermost-bundle-root), like every other link.
 
 See the [format specification](/format/format-specification.md#33-nested-bundles).
 
@@ -110,6 +110,12 @@ See the [format specification](/format/format-specification.md#33-nested-bundles
 A bundle-root `notes.md` or `notes<N>.md` holding the user's private notes; it is not a member, and agents do not read it unless the user asks.
 
 See the [format specification](/format/format-specification.md#35-notes-files).
+
+## Outermost bundle root
+
+The bundle root of the outermost bundle that contains a document, when bundles are nested. Every link in every bundle, nested bundles included, resolves from this root, so a file has one address.
+
+See the [format specification](/format/format-specification.md#51-links-between-documents).
 
 ## Owner
 

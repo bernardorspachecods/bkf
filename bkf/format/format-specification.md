@@ -287,12 +287,11 @@ beside self-contained bundles for its areas.
 - The enclosing bundle lists the nested bundle's `MAP.md` as a child map and
   stops there: it does not enumerate, validate, or count as members any file
   below it.
-- Links inside a nested bundle resolve from its own root, and the bundle-root
-  rules (`AGENTS.md`, `feedback.md`, `ideas.md`, `readme.md`) apply to each bundle
-  separately. A document in the enclosing bundle MAY link to a file in a nested
-  bundle by its path from the enclosing root, and that link is checked. A
-  nested bundle MUST NOT use Markdown links to files outside itself; it names
-  them as plain paths, which are not checked.
+- The bundle-root rules (`AGENTS.md`, `feedback.md`, `ideas.md`, `readme.md`)
+  apply to each bundle separately. Links in every bundle, nested bundles
+  included, resolve from the [outermost bundle root](/format/glossary.md#outermost-bundle-root).
+  A document in a nested bundle MAY link to a file outside it by its path from
+  that root, and the link is checked like any other.
 
 ### 3.4 Ideas file
 
@@ -369,8 +368,9 @@ are logs read in dedicated sessions rather than navigated.
 ### 5.1 Links between documents
 
 Documents link to other files within a BKF bundle using standard Markdown
-links with bundle-root absolute paths beginning with `/`. Resolve these
-paths from the bundle root. Relative paths MUST NOT be used for links
+links with absolute paths beginning with `/`. Resolve these paths from the
+[outermost bundle root](/format/glossary.md#outermost-bundle-root), in every
+bundle, nested bundles included. Relative paths MUST NOT be used for links
 within the bundle. Use absolute URLs for external web resources.
 
 Every link to a file within the bundle MUST resolve to an existing file;

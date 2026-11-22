@@ -79,8 +79,12 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   unrecognized version gets best-effort validation, and the finding says
   whether to update the validator or move the bundle to a supported version.
 - Nested bundles (see [nested bundles](/format/format-specification.md#33-nested-bundles))
-  are validated from their own roots with findings grouped by bundle; the exit
-  status is the highest. `--this-bundle` skips them.
+  are validated each as a bundle, with membership and conformance per bundle and
+  findings grouped by bundle; their links resolve from the
+  [outermost bundle root](/format/glossary.md#outermost-bundle-root). `bkf validate`
+  on a folder inside a bundle finds that root by climbing parent folders and
+  stops at the first directory that contains `.git`. The exit status is the
+  highest. `--this-bundle` skips them.
 - A tracked description containing `open when` or `use when` is a warning, as
   is a document over 350 body lines or 2,000 words without a `## Navigation
   map` table (`NAVIGATION_MAP_REVIEW`). A document with that table gets
