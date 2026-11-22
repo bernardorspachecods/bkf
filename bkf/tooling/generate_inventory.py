@@ -18,6 +18,7 @@ from bkf_common import (
     discover_maps,
     find_bundles,
     inventory_entries,
+    outermost_bundle_root,
     render_inventory_entry,
     read_text_preserving_newlines,
 )
@@ -58,9 +59,10 @@ def update_map(
         raise BKFInputError("generated markers must directly follow the inventory heading")
 
     entries = inventory_entries(root, map_path, on_parse_error=on_parse_error)
+    link_root = outermost_bundle_root(root)
     newline = "\r\n" if "\r\n" in original else "\n"
     generated = [TABLE_HEADER + newline, TABLE_SEPARATOR + newline]
-    generated.extend(render_inventory_entry(root, entry) + newline for entry in entries)
+    generated.extend(render_inventory_entry(link_root, entry) + newline for entry in entries)
     updated = "".join(lines[: start + 1] + generated + lines[end:])
     return original, updated
 

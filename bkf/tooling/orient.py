@@ -29,6 +29,13 @@ def _bundle_root(cwd: Path, is_bundle_root_map) -> Path | None:
     return min(roots, key=lambda directory: len(directory.parts)) if roots else None
 
 
+def _nearest_bundle_root(directory: Path, is_bundle_root_map) -> Path:
+    for candidate in [directory, *directory.parents]:
+        if (candidate / "MAP.md").is_file() and is_bundle_root_map(candidate / "MAP.md"):
+            return candidate
+    return directory
+
+
 def _render(root: Path, cwd: Path, map_paths: list[Path], entries_by_map: list[list[object]]) -> str:
     relative_cwd = cwd.relative_to(root).as_posix() or "."
     omitted = [0] * len(map_paths)
@@ -77,7 +84,11 @@ def main(argv: list[str] | None = None) -> int:
         if cwd.is_relative_to(root):
             directories.append(cwd)
         map_paths = [directory / MAP_NAME for directory in directories if (directory / MAP_NAME).is_file()]
-        entries_by_map = [inventory_entries(root, map_path) for map_path in map_paths]
+        # Each map lists the members of its own bundle; links are shown from the outermost root.
+        entries_by_map = [
+            inventory_entries(_nearest_bundle_root(map_path.parent, is_bundle_root_map), map_path)
+            for map_path in map_paths
+        ]
         reconfigure = getattr(sys.stdout, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8")

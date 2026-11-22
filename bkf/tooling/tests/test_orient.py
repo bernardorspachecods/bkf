@@ -70,6 +70,23 @@ class OrientTests(unittest.TestCase):
         self.assertIn("/MAP.md\n", result.stdout)
         self.assertIn("/area/MAP.md\n  /area/guide.md  A local guide.", result.stdout)
 
+    def test_nested_bundle_readme_is_not_listed_in_its_map(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inner = root / "bundle"
+            inner.mkdir()
+            (root / "MAP.md").write_text(map_text(root=True, description="Outer bundle."), encoding="utf-8")
+            (inner / "MAP.md").write_text(map_text(root=True, description="Inner bundle."), encoding="utf-8")
+            (inner / "readme.md").write_text(document("Readme", "Inner readme."), encoding="utf-8")
+            (inner / "guide.md").write_text(document("Guide", "Inner guide."), encoding="utf-8")
+
+            result = run("--cwd", inner)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("/bundle/guide.md  Inner guide.", result.stdout)
+        self.assertNotIn("readme.md", result.stdout)
+        self.assertNotIn("Inner readme.", result.stdout)
+
     def test_nested_bundle_cwd_includes_outer_and_inner_maps(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

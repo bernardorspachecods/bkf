@@ -10,6 +10,8 @@ from pathlib import Path
 TOOLING = Path(__file__).resolve().parents[1]
 VALIDATOR = TOOLING / "validate_bundle.py"
 INVENTORY = TOOLING / "generate_inventory.py"
+sys.path.insert(0, str(TOOLING))
+from bkf_common import outermost_bundle_root  # noqa: E402
 
 MAP_TEXT = (
     "{front}# Bundle\n\n"
@@ -272,6 +274,137 @@ class NestedBundleTests(unittest.TestCase):
             self.assertEqual(
                 validated.stdout, run(VALIDATOR, "--this-bundle", root).stdout
             )
+
+
+class NestedLinkRootTests(unittest.TestCase):
+    """Every link resolves from the outermost bundle root, including links written in a nested bundle."""
+
+    def test_nested_link_from_outermost_root_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inner = build(root, inner_body="# Inner\n\n[shared](/manual/x.md)\n")
+            (root / "manual").mkdir()
+            (root / "manual" / "x.md").write_text(document("Shared manual."), encoding="utf-8")
+            self.assertEqual(run(INVENTORY, "--write", root).returncode, 0)
+
+            result = run(VALIDATOR, root)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("== inner ==", result.stdout)
+        self.assertNotIn("LINK_TARGET_MISSING", result.stdout)
+
+    def test_nested_own_root_form_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inner = build(root, inner_body="# Inner\n\n[old](/manual/x.md)\n")
+            (inner / "manual").mkdir()  # the file exists only under the nested root, so the outer-root form misses it
+            (inner / "manual" / "x.md").write_text(document("Nested manual."), encoding="utf-8")
+            self.assertEqual(run(INVENTORY, "--write", root).returncode, 0)
+            self.assertEqual(run(INVENTORY, "--write", root).returncode, 0)
+
+            result = run(VALIDATOR, root)
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("LINK_TARGET_MISSING guide.md", result.stdout)
+
+    def test_nested_link_outside_itself_passes_when_target_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build(root, inner_body="# Inner\n\n[up](/outer.md)\n")
+
+            result = run(VALIDATOR, root)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_nested_link_outside_itself_fails_when_target_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build(root, inner_body="# Inner\n\n[gone](/nope.md)\n")
+
+            result = run(VALIDATOR, root)
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("LINK_TARGET_MISSING guide.md", result.stdout)
+
+    def test_nested_inventory_rows_use_outermost_root_links(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inner = build(root)
+
+            inner_map = (inner / "MAP.md").read_text(encoding="utf-8")
+            outer_map = (root / "MAP.md").read_text(encoding="utf-8")
+            checked = run(INVENTORY, "--check", root)
+            validated = run(VALIDATOR, root)
+
+        self.assertIn("](/inner/guide.md)", inner_map)
+        self.assertNotIn("](/guide.md)", inner_map)
+        self.assertIn("](/inner/MAP.md)", outer_map)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertEqual(validated.returncode, 0, validated.stdout)
+
+    def test_validating_nested_folder_directly_uses_outermost_links(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inner = build(root, inner_body="# Inner\n\n[up](/outer.md)\n")
+
+            result = run(VALIDATOR, inner)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Result: CONFORMANT", result.stdout)
+
+    def test_worktree_inside_checkout_is_its_own_link_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory) / "checkout"
+            (checkout / ".git").mkdir(parents=True)
+            (checkout / "MAP.md").write_text(MAP_TEXT.format(front=ROOT_FRONT), encoding="utf-8")
+            worktree = checkout / ".claude" / "worktrees" / "w"
+            worktree.mkdir(parents=True)
+            (worktree / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+            inner = build(worktree, inner_body="# Inner\n\n[up](/outer.md)\n[self](/inner/guide.md)\n")
+
+            self.assertEqual(outermost_bundle_root(worktree), worktree)
+            self.assertEqual(outermost_bundle_root(inner), worktree)
+            result = run(VALIDATOR, worktree)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("== inner ==", result.stdout)
+
+    def test_nested_bundle_in_worktree_links_from_worktree_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory) / "checkout"
+            (checkout / ".git").mkdir(parents=True)
+            (checkout / "MAP.md").write_text(MAP_TEXT.format(front=ROOT_FRONT), encoding="utf-8")
+            worktree = checkout / "w"
+            worktree.mkdir()
+            (worktree / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+            build(worktree, inner_body="# Inner\n\n[old](/guide.md)\n")
+
+            result = run(VALIDATOR, worktree)
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("LINK_TARGET_MISSING guide.md", result.stdout)
+
+    def test_outermost_bundle_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            plain = base / "plain"
+            plain.mkdir()
+            (plain / "MAP.md").write_text(MAP_TEXT.format(front="---\ndescription: Plain.\n---\n\n"), encoding="utf-8")
+            alone = plain / "alone"
+            alone.mkdir()
+            (alone / "MAP.md").write_text(MAP_TEXT.format(front=ROOT_FRONT), encoding="utf-8")
+            outer = base / "outer"
+            one = outer / "one"
+            two = one / "two"
+            two.mkdir(parents=True)
+            (outer / "MAP.md").write_text(MAP_TEXT.format(front=ROOT_FRONT), encoding="utf-8")
+            (one / "MAP.md").write_text(MAP_TEXT.format(front=CHILD_FRONT), encoding="utf-8")
+            (two / "MAP.md").write_text(MAP_TEXT.format(front=CHILD_FRONT), encoding="utf-8")
+
+            self.assertEqual(outermost_bundle_root(alone), alone)  # no bundle root above it
+            self.assertEqual(outermost_bundle_root(one), outer)  # one level above
+            self.assertEqual(outermost_bundle_root(two), outer)  # two levels above
+            self.assertEqual(outermost_bundle_root(outer), outer)
 
 
 if __name__ == "__main__":

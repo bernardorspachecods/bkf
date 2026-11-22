@@ -35,6 +35,7 @@ from bkf_common import (
     load_tag_vocabulary,
     needs_navigation_map,
     nested_bundle_roots,
+    outermost_bundle_root,
     parse_markdown,
     render_inventory_entry,
     tracking_state,
@@ -80,8 +81,10 @@ class Finding:
 
 
 class Validator:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, link_root: Path | None = None) -> None:
         self.root = root
+        # Every link resolves from the outermost bundle root, so a nested bundle's links match its enclosing bundle's.
+        self.link_root = link_root if link_root is not None else outermost_bundle_root(root)
         self.findings: list[Finding] = []
         self.member_documents: dict[Path, ParsedMarkdown] = {}
         self.parsed_markdown_files: dict[Path, ParsedMarkdown] = {}
@@ -199,8 +202,8 @@ class Validator:
                     decoded = unquote(parsed.path, encoding="utf-8", errors="strict")
                 except (ValueError, UnicodeDecodeError):
                     continue
-                target = (self.root / decoded.lstrip("/")).resolve()
-                if target.is_relative_to(self.root) and target in entry_targets:
+                target = (self.link_root / decoded.lstrip("/")).resolve()
+                if target.is_relative_to(self.link_root) and target in entry_targets:
                     linked_entries.add(target)
 
         for entry in sorted(entries, key=lambda path: path.relative_to(self.root).as_posix()):
@@ -375,7 +378,7 @@ class Validator:
                 "| What it is | Document |",
                 "| --- | --- |",
                 *(
-                render_inventory_entry(self.root, entry)
+                render_inventory_entry(self.link_root, entry)
                 for entry in inventory_entries(self.root, path)
                 ),
             ]
@@ -817,9 +820,9 @@ class Validator:
         except UnicodeDecodeError:
             self.error("LINK_PATH", source, "internal path must use valid UTF-8 percent-encoding")
             return None
-        resolved = (self.root / decoded.lstrip("/")).resolve()
-        if not resolved.is_relative_to(self.root):
-            self.error("LINK_PATH", source, "internal target resolves outside the bundle root")
+        resolved = (self.link_root / decoded.lstrip("/")).resolve()
+        if not resolved.is_relative_to(self.link_root):
+            self.error("LINK_PATH", source, "internal target resolves outside the outermost bundle root")
             return None
         if not resolved.is_file():
             self.error("LINK_TARGET_MISSING", source, f"internal file target does not exist: {target}")

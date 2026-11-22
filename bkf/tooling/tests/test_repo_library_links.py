@@ -176,9 +176,11 @@ class RepoLibraryLinkTests(unittest.TestCase):
 
             result = validate(root)
 
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        # The nested link resolves from the outermost root, so it is valid, but the outer bundle
+        # still does not count links from another bundle as linking its repo-library entry.
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("WARNING REPO_LIBRARY_ENTRY_UNLINKED repo-library/modules/x.md", result.stdout)
-        self.assertIn("LINK_TARGET_MISSING guide.md", result.stdout)
+        self.assertNotIn("LINK_TARGET_MISSING", result.stdout)
 
 
 if __name__ == "__main__":

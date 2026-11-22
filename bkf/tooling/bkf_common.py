@@ -177,6 +177,22 @@ def is_bundle_root_map(map_path: Path) -> bool:
         return False
 
 
+def outermost_bundle_root(bundle_root: Path) -> Path:
+    """Return the topmost bundle root at or above `bundle_root`: the one link base every bundle in the chain uses.
+
+    The climb stops at the first directory that holds `.git` (a folder, or a file in a linked worktree), so a
+    worktree inside another checkout never resolves against that checkout's bundle.
+    """
+    outermost = bundle_root
+    for directory in (bundle_root, *bundle_root.parents):
+        map_path = directory / MAP_NAME
+        if map_path.is_file() and is_bundle_root_map(map_path):
+            outermost = directory
+        if (directory / ".git").exists():
+            break
+    return outermost
+
+
 def is_linked_worktree(directory: Path) -> bool:
     """Return whether `directory` is the root of a linked git worktree (its `.git` is a file)."""
     return (directory / ".git").is_file()
