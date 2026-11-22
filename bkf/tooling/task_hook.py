@@ -19,7 +19,6 @@ TASK_ENV = "BKF_TASK"
 # Opt-in: the file that receives every raw hook input as one line, to read a real payload (never set by default).
 DEBUG_ENV = "BKF_HOOK_DEBUG_FILE"
 # A script owns the card of these kinds, so the session is not told to move it.
-OWNED_KINDS = ("unit",)
 # The hook marks a card of these kinds while it is working; other kinds are never marked.
 WAITING_KINDS = ("task", "handoff")
 MARK_REASON = "prompt"
@@ -45,25 +44,6 @@ Plan = tuple[str, str | None]
 
 class _Unchanged(Exception):
     """Raised inside a store change to leave the card as it is."""
-
-
-def session_text(environ: Mapping[str, str]) -> str | None:
-    """Return the session-start text for the task named by BKF_TASK, or None when the hook stays silent."""
-    task_id = environ.get(TASK_ENV, "")
-    if not task_id:
-        return None
-    try:
-        task = task_store.read(task_store.store_dir(environ), task_id)
-    except TaskError:
-        return None
-    if task.kind in OWNED_KINDS:
-        return None
-    return (
-        f"This session works on task {task.id} ({task.kind}): {task.title}. "
-        "When the owner moves this card to \"to be merged\", you will get a message: follow the "
-        "git-merge-queue skill. `bkf task ready` and `bkf task done` no longer exist; the card leaves the "
-        "board with `bkf task close` once its branch has landed.\n"
-    )
 
 
 def _plan(task: task_store.Task, event: str, data: Mapping[str, Any]) -> Plan | None:
@@ -167,9 +147,8 @@ def run(environ: Mapping[str, str] | None = None, stream: TextIO | None = None) 
     """Handle the hook event on standard input. Always exits 0 and never raises.
 
     With BKF_TASK, the mark events (Stop, StopFailure, UserPromptSubmit, PermissionRequest, PreToolUse,
-    PostToolUse) set or clear the hook's own mark and print nothing, and PostToolUse and Stop also renew the lease
-    of a merge turn the task holds; any other event but SessionEnd, or unreadable input, prints the session-start
-    text, as SessionStart does. Without BKF_TASK, an interactive Claude session
+    PostToolUse) set or clear the hook's own mark, and PostToolUse and Stop also renew the lease of a merge turn
+    the task holds. The hook never prints: nothing it does reaches the agent's context. Without BKF_TASK, an interactive Claude session
     in tmux keeps its session card (task_session); every other session returns before reading its input.
     """
     env = os.environ if environ is None else environ
@@ -191,10 +170,6 @@ def _run_bound(env: Mapping[str, str], stream: TextIO | None) -> None:
         _mark(store, env[TASK_ENV], event, data)
     if event in LEASE_EVENTS:
         _renew_lease(store, env[TASK_ENV], env)
-    if event not in MARK_EVENTS and event != SESSION_END:
-        text = session_text(env)
-        if text:
-            sys.stdout.write(text)
 
 
 def _run_session(env: Mapping[str, str], stream: TextIO | None) -> None:

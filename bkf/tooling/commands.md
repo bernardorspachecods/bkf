@@ -299,18 +299,8 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   `UserPromptSubmit`, a `Stop`, a `PostToolUse` and a `PreToolUse` hook (all
   tools); for Claude Code also a `PermissionRequest`, a `StopFailure` and a
   `SessionEnd` hook. All run `bkf hooks run task`. With `BKF_TASK` set, it
-  reads the task from the [task store](#bkf-task). On `SessionStart` it prints
-  this text, and nothing on the other events:
-
-  > This session works on task <id> (<kind>): <title>. When the owner moves
-  > this card to "to be merged", you will get a message: follow the
-  > git-merge-queue skill. `bkf task ready` and `bkf task done` no longer exist;
-  > the card leaves the board with `bkf task close` once its branch has landed.
-
-  It prints nothing when the task cannot be read or when its kind is `unit`
-  (a script owns those cards). Unknown events and unreadable input print the
-  text as `SessionStart` does. The mark events and `SessionEnd` never print,
-  since their standard output would go to the agent's context.
+  reads the task from the [task store](#bkf-task). It never prints on any event:
+  nothing it does reaches the agent's context.
 
   On `PostToolUse` and `Stop` the hook also renews the lease of the merge turn
   when the task holds it and the lease is more than a minute old (see

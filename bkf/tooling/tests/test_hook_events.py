@@ -640,61 +640,20 @@ class TaskHookTest(unittest.TestCase):
             task_store.update(self.store, task.id, task_store.enter_merge)
         return task.id
 
-    def text(self, task_id: str | None) -> str | None:
-        env = dict(self.env)
-        if task_id is not None:
-            env["BKF_TASK"] = task_id
-        return task_hook.session_text(env)
+    def run_hook(self, task_id: str) -> tuple[int, str]:
+        output = io.StringIO()
+        with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
+            code = task_hook.run(environ=None, stream=io.StringIO(""))
+        return code, output.getvalue()
 
-    def test_names_the_task_and_the_merge_rule(self) -> None:
-        task_id = self.make()
-        text = self.text(task_id)
-        self.assertIn(f"This session works on task {task_id} (task): Fix the parser.", text)
-        self.assertIn('When the owner moves this card to "to be merged", you will get a message: follow the '
-                      "git-merge-queue skill.", text)
-        self.assertIn("`bkf task ready` and `bkf task done` no longer exist", text)
-        self.assertIn("`bkf task close`", text)
-        self.assertTrue(text.endswith("\n"))
-
-    def test_a_card_in_the_merge_queue_still_gets_the_text(self) -> None:
-        task_id = self.make(status="to-merge")
-        self.assertIn(f"task {task_id} (task)", self.text(task_id))
-
-    def test_handoff_kind_gets_the_text(self) -> None:
-        task_id = self.make(kind="handoff")
-        self.assertIn(f"task {task_id} (handoff)", self.text(task_id))
-
-    def test_unit_kind_stays_silent(self) -> None:
-        self.assertIsNone(self.text(self.make(kind="unit")))
-
-    def test_no_variable_or_empty_variable_stays_silent(self) -> None:
-        self.make()
-        self.assertIsNone(self.text(None))
-        self.assertIsNone(self.text(""))
-
-    def test_unknown_invalid_and_corrupt_tasks_stay_silent(self) -> None:
-        self.assertIsNone(self.text("t20990101-000000-ffff"))
-        self.assertIsNone(self.text("../escape"))
-        task_id = self.make()
-        (self.store / task_id / "task.json").write_text("{not json", encoding="utf-8")
-        self.assertIsNone(self.text(task_id))
+    def test_session_start_prints_nothing_for_any_kind_or_status(self) -> None:
+        for task_id in (self.make(), self.make(status="to-merge"), self.make(kind="handoff"), self.make(kind="unit")):
+            self.assertEqual(self.run_hook(task_id), (0, ""))
 
     def test_hook_exits_zero_and_prints_nothing_for_a_corrupt_task(self) -> None:
         task_id = self.make()
         (self.store / task_id / "task.json").write_text("[]", encoding="utf-8")
-        output = io.StringIO()
-        with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
-            code = task_hook.run(environ=None, stream=io.StringIO(""))
-        self.assertEqual(code, 0)
-        self.assertEqual(output.getvalue(), "")
-
-    def test_hook_prints_the_text_on_standard_output(self) -> None:
-        task_id = self.make()
-        output = io.StringIO()
-        with patch.dict(os.environ, {**self.env, "BKF_TASK": task_id}), contextlib.redirect_stdout(output):
-            code = task_hook.run(environ=None, stream=io.StringIO(""))
-        self.assertEqual(code, 0)
-        self.assertEqual(output.getvalue(), task_hook.session_text({**self.env, "BKF_TASK": task_id}))
+        self.assertEqual(self.run_hook(task_id), (0, ""))
 
 
 class TaskTurnHookTest(unittest.TestCase):
@@ -803,18 +762,16 @@ class TaskTurnHookTest(unittest.TestCase):
         for event in ("Stop", "UserPromptSubmit"):
             self.assertEqual(self.fire(event, task_id), (0, ""))
 
-    def test_session_start_text_is_unchanged(self) -> None:
+    def test_session_start_prints_nothing(self) -> None:
         task_id = self.make()
-        expected = task_hook.session_text({**self.env, "BKF_TASK": task_id})
         code, output = self.fire("SessionStart", task_id)
-        self.assertEqual((code, output), (0, expected))
+        self.assertEqual((code, output), (0, ""))
         self.assertIsNone(self.attention(task_id))
 
-    def test_empty_or_invalid_input_behaves_as_session_start(self) -> None:
+    def test_empty_or_invalid_input_prints_nothing(self) -> None:
         task_id = self.make()
-        expected = task_hook.session_text({**self.env, "BKF_TASK": task_id})
         for raw in ("", "not json", "[1, 2]", json.dumps({"no": "event"})):
-            self.assertEqual(self.fire("", task_id, raw=raw), (0, expected), raw)
+            self.assertEqual(self.fire("", task_id, raw=raw), (0, ""), raw)
         self.assertIsNone(self.attention(task_id))
 
     def test_unknown_or_missing_task_is_silent_and_exits_zero(self) -> None:
