@@ -21,6 +21,18 @@ COMMANDS = {
         "after adding, removing, or re-describing a tracked document, to refresh its map",
         "after editing documents",
     ),
+    "mv": (
+        "bkf_mv",
+        "Move a tracked file or folder and fix every link to it",
+        "to move a document or folder inside a bundle without breaking its links",
+        "after editing documents",
+    ),
+    "relink": (
+        "bkf_relink",
+        "Fix links after files were moved by hand",
+        "after moving files in Finder or an editor, to repair the links bkf validate reports",
+        "after editing documents",
+    ),
     "skills": (
         "skills",
         "Check or regenerate shared skill lists and catalog",

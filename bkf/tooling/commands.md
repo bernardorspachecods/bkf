@@ -13,6 +13,8 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Install the command or list its subcommands | [Install](#install) and [bkf help](#bkf-help) |
 | Check a bundle against the format | [bkf validate](#bkf-validate) |
 | Refresh a map's member inventory | [bkf inventory](#bkf-inventory) |
+| Move a file or folder and fix every link to it | [bkf mv](#bkf-mv) |
+| Fix links after files were moved by hand | [bkf relink](#bkf-relink) |
 | Check or write the skill catalog | [bkf skills](#bkf-skills) |
 | Record an idea or feedback entry | [bkf log](#bkf-log) |
 | Print the format update documents a bundle needs | [bkf updates](#bkf-updates) |
@@ -160,6 +162,53 @@ file's text without its frontmatter, with headings one level lower and relative 
 rebased to the skill. A bundle-root link (`/...`) in the file stops generation with an error,
 because it would not resolve from the skill. The block is replaced when the source changes, and
 `--check` reports the skill stale.
+
+## bkf mv
+
+`bkf mv [--check] [--root DIR] <source> <target>` moves a tracked file or
+folder with `git mv`, then rewrites the links that point to it and regenerates
+the map inventories. `--check` lists the moves and the link updates without
+changing anything. `--root` names the bundle root; by default it is the outermost
+ancestor whose `MAP.md` is a bundle root. Each nested bundle is rewritten with its
+own link paths, so the outer bundle's links to a moved file in a nested bundle are
+fixed too.
+
+It rewrites bundle-root-absolute Markdown links and images to the moved files,
+keeping their fragments, and relative `href` and `src` values in HTML, both the
+links to a moved file and the moved file's own. Each changed file is printed as
+`updated:`.
+
+It refuses, exit `1` with nothing changed, when the source is not tracked by
+git, the target exists or is outside the root, the move crosses a bundle
+boundary, or the source is a `MAP.md`. Exit `0` means the move and the updates
+are done.
+
+## bkf relink
+
+`bkf relink [--check] [--root DIR] [--since REF] [--map OLD=NEW ...]` fixes the
+links after files were moved outside `bkf mv`, for example in Finder. Moves are
+found by git rename detection between `REF` (default `HEAD`) and the working
+tree. Detection stages the working tree into a temporary copy of the index, so
+the real index is never touched.
+
+Each detected move is rewritten as `mv` rewrites links, and the inventories are
+regenerated. `--map OLD=NEW` adds an explicit move, with paths relative to the
+root, for a case detection cannot settle; `OLD` must no longer exist and `NEW`
+must be a file. `--check` prints `would relink:` and `would update:` lines
+without changing anything. The default root is the outermost bundle, and each
+nested bundle is checked with its own link paths, so the outer bundle's links to
+its nested files are fixed too. A move whose old and new paths lie in different
+bundles is printed as `skipped:` and exits `1`.
+
+A Markdown link that is still missing after the moves is printed as
+`unresolved: <path>` (nested bundles print `unresolved: /<path> (in DIR/)`),
+followed by `candidates:` when bundle files share its basename. Unresolved links are never rewritten. The agent asks the user which
+file is meant and reruns with `--map`.
+
+Exit `0` means every link resolves and no move was skipped, `1` means some links are
+unresolved or a move was skipped, and
+`2` means the run could not start or the input was invalid, such as a missing
+git repository or a bad `--map` path. Nothing is changed on exit `2`.
 
 ## bkf skills
 
