@@ -1,5 +1,5 @@
 ---
-bkf_version: "0.1"
+bkf_version: "0.2"
 description: "Routes the common tasks of this repository to their owner document; local navigation belongs to each area's map. Holds no rules or details."
 ---
 
