@@ -125,5 +125,31 @@ class ApplyMovesTests(unittest.TestCase):
         self.assertEqual(changed, [])
 
 
+
+class OutermostBundleRootStopsAtGitTests(unittest.TestCase):
+    def test_worktree_inside_another_checkout_does_not_climb_into_it(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        import relink
+
+        map_text = '---\nbkf_version: "0.1"\n---\n\n# M\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            main = Path(tmp).resolve()
+            (main / ".git").mkdir()
+            (main / "MAP.md").write_text(map_text, encoding="utf-8")
+            worktree = main / ".claude" / "worktrees" / "w"
+            worktree.mkdir(parents=True)
+            (worktree / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            (worktree / "MAP.md").write_text(map_text, encoding="utf-8")
+            nested = worktree / "inner"
+            nested.mkdir()
+            (nested / "MAP.md").write_text(map_text, encoding="utf-8")
+
+            self.assertEqual(relink.find_outermost_bundle_root(worktree), worktree)
+            self.assertEqual(relink.find_outermost_bundle_root(nested), worktree)
+            self.assertEqual(relink.find_outermost_bundle_root(main), main)
+
+
 if __name__ == "__main__":
     unittest.main()

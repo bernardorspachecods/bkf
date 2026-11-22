@@ -201,11 +201,17 @@ def _retarget_html(value: str, old_path: str, new_path: str, moves: dict[str, st
 
 
 def find_outermost_bundle_root(cwd: Path) -> Path | None:
-    """Return the topmost directory at or above cwd whose MAP.md is a bundle root, or None."""
+    """Return the topmost directory at or above cwd whose MAP.md is a bundle root, or None.
+
+    The climb stops at the first directory holding `.git` (a folder, or a file in a linked worktree),
+    so a worktree inside another checkout never resolves to that checkout's bundle.
+    """
     found = None
     for directory in (cwd, *cwd.parents):
         if is_bundle_root_map(directory / MAP_NAME):
             found = directory
+        if (directory / ".git").exists():
+            break
     return found
 
 
