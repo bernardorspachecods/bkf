@@ -16,7 +16,7 @@ import orient
 
 def map_text(*, root: bool = False, description: str = "An area map.") -> str:
     front = (
-        f'bkf_version: "0.1"\ndescription: {description}\n'
+        f'bkf_version: "0.2"\ndescription: {description}\n'
         if root
         else f"description: {description}\n"
     )

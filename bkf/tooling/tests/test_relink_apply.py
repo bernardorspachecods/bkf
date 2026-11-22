@@ -6,12 +6,12 @@ from pathlib import Path
 from relink import apply_moves
 
 ROOT_MAP = (
-    '---\nbkf_version: "0.1"\n---\n\n# Bundle\n\n## Member inventory\n\n'
+    '---\nbkf_version: "0.2"\n---\n\n# Bundle\n\n## Member inventory\n\n'
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n"
 )
 INNER_MAP = (
-    '---\ndescription: Inner bundle.\nbkf_version: "0.1"\n---\n\n# Inner\n\n## Member inventory\n\n'
+    '---\ndescription: Inner bundle.\nbkf_version: "0.2"\n---\n\n# Inner\n\n## Member inventory\n\n'
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n"
 )
@@ -143,7 +143,7 @@ class OutermostBundleRootStopsAtGitTests(unittest.TestCase):
 
         import relink
 
-        map_text = '---\nbkf_version: "0.1"\n---\n\n# M\n'
+        map_text = '---\nbkf_version: "0.2"\n---\n\n# M\n'
         with tempfile.TemporaryDirectory() as tmp:
             main = Path(tmp).resolve()
             (main / ".git").mkdir()

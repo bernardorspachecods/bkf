@@ -11,12 +11,12 @@ from generate_inventory import main as _inventory
 from validate_bundle import Validator
 
 ROOT_MAP = (
-    '---\nbkf_version: "0.1"\n---\n\n# Bundle\n\n## Member inventory\n\n'
+    '---\nbkf_version: "0.2"\n---\n\n# Bundle\n\n## Member inventory\n\n'
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n"
 )
 INNER_MAP = (
-    '---\ndescription: Inner bundle.\nbkf_version: "0.1"\n---\n\n# Inner\n\n## Member inventory\n\n'
+    '---\ndescription: Inner bundle.\nbkf_version: "0.2"\n---\n\n# Inner\n\n## Member inventory\n\n'
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n"
 )

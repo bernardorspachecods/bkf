@@ -50,7 +50,7 @@ ext:
 
 def make_bundle(root: Path, *, schema: str | None = SCHEMA) -> None:
     (root / "MAP.md").write_text(
-        "---\nbkf_version: \"0.1\"\n---\n\n# Bundle\n\n"
+        "---\nbkf_version: \"0.2\"\n---\n\n# Bundle\n\n"
         "## Member inventory\n\n"
         "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
         "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",

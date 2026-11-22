@@ -8,20 +8,20 @@ tags: [bkf, agents]
 
 ## Record what goes wrong
 
-Add an entry to [feedback.md](/feedback.md), newest first below its introduction,
+Add an entry to [feedback.md](/bkf/feedback.md), newest first below its introduction,
 when the user corrects your work; a command or the validator fails unexpectedly;
 an instruction or document is ambiguous or contradicts another and you had to
 guess; a review sends your work back; or you are blocked.
 
 Write one entry per problem: the date, a link to where it happened (file, skill,
-or workflow stage), what happened with the evidence, whether a cause is a guess,
+or stage), what happened with the evidence, whether a cause is a guess,
 and who noticed it, the user or you. Do not log secrets. When the user asks you
 to log something, write it at once and quote their words as the evidence;
-whether it is worth keeping is decided in the filtering session.
+whether it is worth keeping is decided when filtering.
 
 ## Record ideas
 
-Add an entry to [ideas.md](/ideas.md), placed the same way, when you notice
+Add an entry to [ideas.md](/bkf/ideas.md), placed the same way, when you notice
 something worth doing later outside the current task. Do not act on
 it or raise it mid-task.
 

@@ -146,7 +146,7 @@ by a field inside `ext` with `if` and `then`.
 
 `bkf: feedback` selects the profile for the optional bundle-root
 `feedback.md`, where agents record what went wrong in their work. The
-[format specification](/format/format-specification.md#32-feedback-file) defines
+[format specification](/bkf/format/format-specification.md#32-feedback-file) defines
 how it is used.
 
 ```yaml
@@ -165,7 +165,7 @@ description: Collects evidence about problems in agent work for later review wit
 
 `bkf: ideas` selects the profile for the optional bundle-root `ideas.md`, where
 the user or agents record ideas for later. The
-[format specification](/format/format-specification.md#34-ideas-file) defines
+[format specification](/bkf/format/format-specification.md#34-ideas-file) defines
 how it is used.
 
 ```yaml
@@ -185,7 +185,7 @@ description: Collects ideas from the user and agents for later review as future 
 
 `MAP.md` is a structural file and carries no `bkf` profile field. Its
 `description` follows the [description rule](#descriptions). The
-[format specification](/format/format-specification.md#31-map-files-and-inventories)
+[format specification](/bkf/format/format-specification.md#31-map-files-and-inventories)
 defines the allowed fields and other map requirements.
 
 ### Tag vocabulary
@@ -210,5 +210,5 @@ the file); while it is invalid, tags are not checked.
   document). When the tag equals a synonym, compared case-insensitively, the
   message names its canonical tag; otherwise it lists up to three closest keys.
 - The file is not a member: BKF does not list it in the map.
-- [`bkf search`](/tooling/commands.md#bkf-search) uses the vocabulary to widen
+- [`bkf search`](/bkf/tooling/commands.md#bkf-search) uses the vocabulary to widen
   queries and to resolve `--tag`.

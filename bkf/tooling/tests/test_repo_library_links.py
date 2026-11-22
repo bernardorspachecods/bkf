@@ -12,7 +12,7 @@ VALIDATOR = TOOLING / "validate_bundle.py"
 INVENTORY = TOOLING / "generate_inventory.py"
 
 ROOT_MAP = (
-    '---\nbkf_version: "0.1"\n---\n\n# Bundle\n\n'
+    '---\nbkf_version: "0.2"\n---\n\n# Bundle\n\n'
     "## Member inventory\n\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n"
@@ -36,7 +36,7 @@ def make_bundle(root: Path, *, nested_library: bool = False) -> Path:
     library.mkdir()
     if nested_library:
         (library / "MAP.md").write_text(
-            '---\ndescription: Nested library bundle.\nbkf_version: "0.1"\n---\n\n'
+            '---\ndescription: Nested library bundle.\nbkf_version: "0.2"\n---\n\n'
             "# Library\n\n## Member inventory\n\n"
             "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
             "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",
@@ -165,7 +165,7 @@ class RepoLibraryLinkTests(unittest.TestCase):
             inner = root / "inner"
             inner.mkdir()
             (inner / "MAP.md").write_text(
-                '---\ndescription: Separate nested bundle.\nbkf_version: "0.1"\n---\n\n'
+                '---\ndescription: Separate nested bundle.\nbkf_version: "0.2"\n---\n\n'
                 "# Inner\n\n## Member inventory\n\n"
                 "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
                 "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",

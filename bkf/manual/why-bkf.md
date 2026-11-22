@@ -45,4 +45,4 @@ BKF also covers what a collection does not: how a repo's own documents are organ
 
 Use a single `AGENTS.md` if the repo is small, has one author, and its rules fit on a screen. Use plain editor rules if you work in one tool and the rules are stable. Revisit when you notice the same fact written in two places or an agent acting on an outdated rule.
 
-To learn what BKF is and how it is layered, read [what BKF is](/manual/what-is-bkf.md). To adopt it, use [the build procedure](/manual/build-repo-organization.md).
+To learn what BKF is and how it is layered, read [what BKF is](/bkf/manual/what-is-bkf.md). To adopt it, use [the build procedure](/bkf/manual/build-repo-organization.md).

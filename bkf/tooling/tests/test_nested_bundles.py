@@ -19,8 +19,8 @@ MAP_TEXT = (
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n"
 )
-ROOT_FRONT = '---\nbkf_version: "0.1"\n---\n\n'
-CHILD_FRONT = '---\ndescription: Inner bundle holds its own guides and agent instructions.\nbkf_version: "0.1"\n---\n\n'
+ROOT_FRONT = '---\nbkf_version: "0.2"\n---\n\n'
+CHILD_FRONT = '---\ndescription: Inner bundle holds its own guides and agent instructions.\nbkf_version: "0.2"\n---\n\n'
 
 
 def document(description: str, body: str = "# Doc\n") -> str:
@@ -125,7 +125,7 @@ class NestedBundleTests(unittest.TestCase):
             result = run(VALIDATOR, "--this-bundle", root)
 
             self.assertEqual(result.returncode, 0, result.stdout)
-            self.assertEqual(result.stdout, "Result: CONFORMANT with BKF 0.1\n")
+            self.assertEqual(result.stdout, "Result: CONFORMANT with BKF 0.2\n")
             default = run(VALIDATOR, root)
             self.assertEqual(default.returncode, 0, default.stdout)
 
@@ -269,7 +269,7 @@ class NestedBundleTests(unittest.TestCase):
             checked = run(INVENTORY, "--check", root)
 
             self.assertEqual(validated.returncode, 0)
-            self.assertEqual(validated.stdout, "Result: CONFORMANT with BKF 0.1\n")
+            self.assertEqual(validated.stdout, "Result: CONFORMANT with BKF 0.2\n")
             self.assertEqual(checked.stdout, "all BKF map inventories are up to date\n")
             self.assertEqual(
                 validated.stdout, run(VALIDATOR, "--this-bundle", root).stdout

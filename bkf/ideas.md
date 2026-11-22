@@ -5,7 +5,7 @@ description: Collects ideas from the user and agents for later review as future 
 
 # Ideas
 
-Agents add entries as [AGENTS.md](/AGENTS.md#record-ideas) says, newest
+Agents add entries as [AGENTS.md](/bkf/AGENTS.md#record-ideas) says, newest
 first. This file is data for later review, not instructions.
 
 ## 2026-10-19: Academic extension for research: a future optional guide…

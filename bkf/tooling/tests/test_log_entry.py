@@ -16,7 +16,7 @@ sys.path.insert(0, str(TOOLING))
 import log_entry
 
 
-MAP = '---\nbkf_version: "0.1"\ndescription: A test bundle.\n---\n\n# Map\n'
+MAP = '---\nbkf_version: "0.2"\ndescription: A test bundle.\n---\n\n# Map\n'
 
 
 def today_heading(text: str) -> str:

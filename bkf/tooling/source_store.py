@@ -231,7 +231,7 @@ def init_store(directory: str | Path | None = None) -> Path:
         root_map = Path("MAP.md")
         ignore = Path(".gitignore")
         (staging / root_map).write_text(
-            '---\nbkf_version: "0.1"\ndescription: Routes to the machine-wide source catalog.\n---\n\n'
+            '---\nbkf_version: "0.2"\ndescription: Routes to the machine-wide source catalog.\n---\n\n'
             f"# Sources\n\n{STORE_MARKER}\n\n{INVENTORY}\n"
             "## Artifact references\n\n- [Source record schema](/ext-schema.yaml)\n", encoding="utf-8",
         )

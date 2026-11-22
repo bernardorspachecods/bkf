@@ -269,7 +269,7 @@ class SkillCatalogTests(unittest.TestCase):
         package = skills / "alpha-skill"
         package.mkdir(parents=True)
         (library / "MAP.md").write_text(
-            "---\nbkf_version: \"0.1\"\n---\n\n# Library\n\n"
+            "---\nbkf_version: \"0.2\"\n---\n\n# Library\n\n"
             "## Member inventory\n\n"
             "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
             "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",

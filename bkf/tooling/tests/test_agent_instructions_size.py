@@ -11,7 +11,7 @@ TOOLING = Path(__file__).resolve().parents[1]
 VALIDATOR = TOOLING / "validate_bundle.py"
 INVENTORY = TOOLING / "generate_inventory.py"
 
-ROOT_FRONT = '---\nbkf_version: "0.1"\n---\n\n'
+ROOT_FRONT = '---\nbkf_version: "0.2"\n---\n\n'
 WARNING = "WARNING AGENT_INSTRUCTIONS_LONG {path}: {name} is loaded into every session; its body has {words} words (limit 250)."
 
 

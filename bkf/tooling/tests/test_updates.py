@@ -45,7 +45,7 @@ class UpdatesTests(unittest.TestCase):
     def test_all_bundles_current(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "bundle"
-            make_bundle(root, "0.1")
+            make_bundle(root, "0.2")
 
             status, output, error = run_updates(root, updates_dir=Path(directory) / "updates")
 
@@ -75,7 +75,7 @@ class UpdatesTests(unittest.TestCase):
     def test_ahead_bundle_reports_checkout_update(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "bundle"
-            make_bundle(root, "0.2")
+            make_bundle(root, "0.3")
 
             status, output, error = run_updates(root, updates_dir=Path(directory) / "updates")
 
@@ -88,13 +88,14 @@ class UpdatesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             root = base / "root"
-            make_bundle(root, "0.1")
+            make_bundle(root, "0.2")
             behind = make_bundle(root, "0.0", nested=True)
             ahead_root = base / "ahead"
-            make_bundle(ahead_root, "0.2")
+            make_bundle(ahead_root, "0.3")
             updates_dir = base / "updates"
             updates_dir.mkdir()
             (updates_dir / "0-1.md").write_text("Update one\n", encoding="utf-8")
+            (updates_dir / "0-2.md").write_text("Update two\n", encoding="utf-8")
 
             status, output, error = run_updates(root, ahead_root, updates_dir=updates_dir)
 
@@ -121,7 +122,7 @@ class UpdatesTests(unittest.TestCase):
 
             self.assertEqual(status, 1)
             self.assertIn("Status: behind", output)
-            self.assertIn("installed bkf update document for 0.1 is missing", error)
+            self.assertIn("installed bkf update document for 0.2 is missing", error)
 
     def test_absent_updates_folder_is_error_for_behind_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -149,18 +150,44 @@ class UpdatesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             current = base / "current"
-            make_bundle(current, "0.1")
+            make_bundle(current, "0.2")
             behind = base / "behind"
             make_bundle(behind, "0.0")
             updates_dir = base / "updates"
             updates_dir.mkdir()
             (updates_dir / "0-1.md").write_text("Update\n", encoding="utf-8")
+            (updates_dir / "0-2.md").write_text("Update\n", encoding="utf-8")
 
             self.assertEqual(run_updates(current, updates_dir=updates_dir)[0], 0)
             self.assertEqual(run_updates(behind, updates_dir=updates_dir)[0], 1)
             code, _, error = run_updates(base / "missing", updates_dir=updates_dir)
             self.assertEqual(code, 2)
             self.assertIn("path is not a directory", error)
+
+    def test_bundle_at_0_1_prints_installed_0_2_update_document(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = make_bundle(Path(directory) / "bundle", "0.1")
+
+            installed = Path(updates.__file__).resolve().parents[1] / "updates"
+            status, output, error = run_updates(root, updates_dir=installed)
+
+            update = (installed / "0-2.md").read_text(encoding="utf-8")
+            self.assertEqual(status, 1)
+            self.assertIn("Status: behind", output)
+            self.assertIn("--- BKF 0.2 ---", output)
+            self.assertIn(update, output)
+            self.assertNotIn("--- BKF 0.1 ---", output)
+            self.assertEqual(error, "")
+
+    def test_bundle_at_0_2_is_current_with_installed_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = make_bundle(Path(directory) / "bundle", "0.2")
+
+            status, output, error = run_updates(root, updates_dir=Path(updates.__file__).resolve().parents[1] / "updates")
+
+            self.assertEqual(status, 0)
+            self.assertIn("Status: current", output)
+            self.assertEqual(error, "")
 
     def test_validator_older_version_finding_points_to_updates_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

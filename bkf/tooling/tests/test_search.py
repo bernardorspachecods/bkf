@@ -15,7 +15,7 @@ import search
 
 
 def map_text(*, root: bool = False) -> str:
-    front = 'bkf_version: "0.1"\n' if root else ""
+    front = 'bkf_version: "0.2"\n' if root else ""
     return f"---\n{front}description: Bundle map.\n---\n\n# Map\n"
 
 

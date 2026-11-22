@@ -37,7 +37,7 @@ class SkillWithoutDirectivesTests(unittest.TestCase):
             modules.mkdir()
             (skills / "plain").mkdir(parents=True)
             (modules / "MAP.md").write_text(
-                "---\nbkf_version: \"0.1\"\n---\n\n# Modules\n\n## Member inventory\n\n"
+                "---\nbkf_version: \"0.2\"\n---\n\n# Modules\n\n## Member inventory\n\n"
                 "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
                 "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",
                 encoding="utf-8",
@@ -59,7 +59,7 @@ class SkillInjectionTests(unittest.TestCase):
         (self.library / "modules").mkdir(parents=True)
         (self.skills / "sample").mkdir(parents=True)
         (self.library / "MAP.md").write_text(
-            "---\nbkf_version: \"0.1\"\n---\n\n# Library\n\n## Member inventory\n\n"
+            "---\nbkf_version: \"0.2\"\n---\n\n# Library\n\n## Member inventory\n\n"
             "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
             "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n",
             encoding="utf-8",

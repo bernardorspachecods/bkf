@@ -37,7 +37,7 @@ The format defines what a valid bundle is, and its tooling makes the structure c
 
 ## Hooks
 
-Hooks handle behavior that must run in every session, which a skill cannot guarantee: context the agent must see before the first prompt, a check that must run before a session ends, a mode the agent cannot leave on its own, a refusal that must hold even when the agent forgets a rule. They are optional and installed once per machine with the repository's `INSTALL.md`. What each group does is in the [`bkf hooks` reference](/tooling/commands.md#bkf-hooks).
+Hooks handle behavior that must run in every session, which a skill cannot guarantee: context the agent must see before the first prompt, a check that must run before a session ends, a mode the agent cannot leave on its own, a refusal that must hold even when the agent forgets a rule. They are optional and installed once per machine with the repository's `INSTALL.md`. What each group does is in the [`bkf hooks` reference](/bkf/tooling/commands.md#bkf-hooks).
 
 ## How a task moves through the layers
 
@@ -51,5 +51,5 @@ For a complex task the coordinator picks a workflow skill and agrees the objecti
 - Run the validator and the inventory check after changing documents. They catch structural drift. They cannot catch a wrong fact or a missing document, so judgment still reads the result.
 - Record what goes wrong, a correction, an ambiguity, a failed check, in the feedback file. Review it with the user to fix the rules, not only the symptom.
 - Record ideas for later in the ideas file. Review them with the user in dedicated ideas sessions.
-- When the signs of drift described in the `repo-maintenance` skill appear, stop and rebuild with the user using [the build procedure](/manual/build-repo-organization.md). Do not patch around them.
+- When the signs of drift described in the `repo-maintenance` skill appear, stop and rebuild with the user using [the build procedure](/bkf/manual/build-repo-organization.md). Do not patch around them.
 - When a repeated procedure appears in a repo, offer to add it to the repo library; the user approves.

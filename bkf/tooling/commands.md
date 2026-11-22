@@ -59,7 +59,7 @@ machine.
 after editing documents, session start and lookup, install, and called by
 skills and the app. The `help` command appears at the end. `bkf help <command>` shows
 that command's options. Both exit with `0`; an unknown command or `help` target
-exits with `2`. `COMMANDS` in [bkf_cli.py](/tooling/bkf_cli.py) owns the list,
+exits with `2`. `COMMANDS` in [bkf_cli.py](/bkf/tooling/bkf_cli.py) owns the list,
 group assignments, summaries, and `use:` lines. `HELP_GROUPS` in the same file
 owns the known groups and their display order; use `bkf help` for the current
 list instead of repeating it here.
@@ -68,8 +68,8 @@ list instead of repeating it here.
 
 `bkf validate <bundle-root>` checks the bundle against its declared BKF version
 and prints findings with severity, code, path, and explanation. The rules are
-in the [specification](/format/format-specification.md#6-conformance) and the
-[frontmatter profiles](/format/frontmatter-profiles.md). It does not check body quality or style, fragment targets
+in the [specification](/bkf/format/format-specification.md#6-conformance) and the
+[frontmatter profiles](/bkf/format/frontmatter-profiles.md). It does not check body quality or style, fragment targets
 (except the links of a `## Navigation map`), linked artifact contents, or remote URLs (URL syntax only).
 
 - Exit `0`: conformant with the supported version. `1`: non-conformant. `2`: the
@@ -79,10 +79,10 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   tell the agent to run `bkf updates <bundle-root>` on that bundle. An
   unrecognized version gets best-effort validation, and the finding says
   whether to update the validator or move the bundle to a supported version.
-- Nested bundles (see [nested bundles](/format/format-specification.md#33-nested-bundles))
+- Nested bundles (see [nested bundles](/bkf/format/format-specification.md#33-nested-bundles))
   are validated each as a bundle, with membership and conformance per bundle and
   findings grouped by bundle; their links resolve from the
-  [outermost bundle root](/format/glossary.md#outermost-bundle-root). `bkf validate`
+  [outermost bundle root](/bkf/format/glossary.md#outermost-bundle-root). `bkf validate`
   on a folder inside a bundle finds that root by climbing parent folders and
   stops at the first directory that contains `.git`. The exit status is the
   highest. `--this-bundle` skips them.
@@ -91,7 +91,7 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   map` table (`NAVIGATION_MAP_REVIEW`). A document with that table gets
   `NAVIGATION_MAP_STALE` for a link to a heading that does not exist, a level 2
   section no row reaches, or a table without rows, whatever its size
-  ([specification §4](/format/format-specification.md#4-bkf-documents-and-profiles)).
+  ([specification §4](/bkf/format/format-specification.md#4-bkf-documents-and-profiles)).
   The `feedback` and `ideas` logs are exempt from the navigation map warnings.
   When any navigation map warning is printed, one paragraph on writing the map
   ends the findings.
@@ -103,8 +103,8 @@ in the [specification](/format/format-specification.md#6-conformance) and the
   the stop hook gives it to the agent for changed `MAP.md` files.
 - A bundle with a `tag-vocabulary.yaml` gets `TAG_VOCABULARY_INVALID` for an
   unusable file and `TAG_UNKNOWN` for each tag that is not a canonical tag
-  ([frontmatter profiles](/format/frontmatter-profiles.md#tag-vocabulary)).
-- A [notes file](/format/format-specification.md#35-notes-files) with a `bkf`
+  ([frontmatter profiles](/bkf/format/frontmatter-profiles.md#tag-vocabulary)).
+- A [notes file](/bkf/format/format-specification.md#35-notes-files) with a `bkf`
   field is `NOTES_TRACKED`, and a link to one from a document or a map is
   `NOTES_LINKED`; both are errors. The validator reads only a notes file's
   frontmatter, and frontmatter it cannot parse is not a finding.
@@ -136,7 +136,7 @@ version supported by the installed `bkf`, and one status:
 Applicable update documents have target versions greater than the bundle's
 declared version and no greater than the installed `bkf` version. The update
 file rules are in the
-[format specification](/format/format-specification.md#31-map-files-and-inventories).
+[format specification](/bkf/format/format-specification.md#31-map-files-and-inventories).
 
 Exit `0` means every bundle is `current`. Exit `1` means at least one bundle
 is `behind` or `ahead`, or a behind bundle has no update document for the
@@ -186,11 +186,11 @@ the same run, and `--this-bundle` limits it to the selected bundle.
 
 It validates every map and in-scope tracked member before writing anything, and
 follows the table, ordering, marker, and line-ending rules of the
-[specification](/format/format-specification.md#31-map-files-and-inventories).
+[specification](/bkf/format/format-specification.md#31-map-files-and-inventories).
 For child-map rows, it reads the map's `description`. A missing, empty, or
 non-string description stops generation with an error naming the map; the
 validator reports the same condition as an error. The required map fields are
-owned by the [map specification](/format/format-specification.md#31-map-files-and-inventories).
+owned by the [map specification](/bkf/format/format-specification.md#31-map-files-and-inventories).
 
 `--skills <skills-dir>` also expands the inject directives of the `SKILL.md` files in that directory. From the repository root, `bkf inventory agent-skills/modules --skills agent-skills/skills --write` refreshes them; use the same invocation with `--check` to verify.
 
@@ -514,12 +514,12 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   Compound openers (`do`, `then`, `{`, `(`) are looked through, and `bash -c`/`eval`
   strings are judged as if written out. Commands that only mention a name (`grep`, `cat`, `echo`) and the read-only
   subcommands (`status`, `board`, `gates`, `finish`) are allowed.
-  [launch_guard.py](/tooling/launch_guard.py) owns the check.
+  [launch_guard.py](/bkf/tooling/launch_guard.py) owns the check.
   The same hook asks the user (`permissionDecision: ask`) before a `git` command that
   discards work: `branch -D` (or `-d -f`), `worktree remove --force`, `clean`, `reset --hard`
   and a forced `push`. Approving is the user's request to discard; `branch -d` and
   `worktree remove` without force pass, because git refuses what is not merged or is dirty.
-  [git_guard.py](/tooling/git_guard.py) owns the check.
+  [git_guard.py](/bkf/tooling/git_guard.py) owns the check.
 - **audit** registers a `UserPromptSubmit` hook, `bkf hooks run audit`, with a
   60-second timeout. A prompt starting with `bkf:` (any case) triggers an audit
   of the git repository that contains the working directory; any other prompt
@@ -546,7 +546,7 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   other by a short name. It sets the name through the hook's `sessionTitle` and
   renames the tmux window at once. A name chosen with `/rename` or `--name`, or
   already of that form, is kept; a number is free again when its session ends.
-  [session_number.py](/tooling/session_number.py) owns the choice.
+  [session_number.py](/bkf/tooling/session_number.py) owns the choice.
 - **sources** looks up and captures web research in the initialized
   [sources store](#bkf-sources).
   - Before `WebFetch`, an unregistered URL passes silently. A registered
@@ -631,13 +631,13 @@ The index includes tracked BKF documents and every `AGENTS.md`. It excludes
 `MAP.md`, feedback and ideas profiles, untracked files, the bundle-root
 `readme.md` and notes files, and files inside hidden folders. Membership and
 document metadata follow the
-[membership rules](/format/format-specification.md#12-discovery-membership-and-composition) and
-[frontmatter profiles](/format/frontmatter-profiles.md).
+[membership rules](/bkf/format/format-specification.md#12-discovery-membership-and-composition) and
+[frontmatter profiles](/bkf/format/frontmatter-profiles.md).
 
 Tags are indexed for every section of a document, so a query word that is a
 tag ranks that document's sections. Queries that match no tag rank as they would
 without tags. When a bundle has a
-[`tag-vocabulary.yaml`](/format/frontmatter-profiles.md#tag-vocabulary) and the
+[`tag-vocabulary.yaml`](/bkf/format/frontmatter-profiles.md#tag-vocabulary) and the
 query contains a canonical tag or any of its synonyms (case-insensitive; a
 multi-word synonym matches a contiguous run of words, stopwords included), the
 canonical tag and all its synonyms are added to the query as phrases. Each bundle

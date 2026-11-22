@@ -19,7 +19,7 @@ thesis: []
 
 def make_bundle(root: Path, vocabulary: str | None = VOCABULARY, *, nested: bool = False) -> None:
     (root / "MAP.md").write_text(
-        "---\nbkf_version: \"0.1\"\n"
+        "---\nbkf_version: \"0.2\"\n"
         + ("description: A nested bundle.\n" if nested else "")
         + "---\n\n# Bundle\n\n## Member inventory\n\n"
         "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"

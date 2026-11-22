@@ -43,7 +43,7 @@ from bkf_common import (
 from navigation_map import GUIDANCE, WARNING_CODES, map_problems
 
 
-SUPPORTED_VERSION = (0, 1)
+SUPPORTED_VERSION = (0, 2)
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)$")
 DOCUMENT_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 PERCENT_ESCAPE_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -278,7 +278,7 @@ class Validator:
             self.warning(
                 "MINOR_MIGRATION_RECOMMENDED",
                 path,
-                f"run `bkf updates <bundle-root>` on this bundle, then migrate it to the supported version {SUPPORTED_VERSION[0]}.{SUPPORTED_VERSION[1]}",
+                f"run `bkf updates <bundle-root>` on this bundle, then migrate it to the supported version {SUPPORTED_VERSION[0]}.{SUPPORTED_VERSION[1]} with `bkf upgrade <bundle-root>`",
             )
         elif declared[0] > SUPPORTED_VERSION[0]:
             self.warning(

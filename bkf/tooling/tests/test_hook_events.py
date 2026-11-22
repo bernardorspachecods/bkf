@@ -22,7 +22,7 @@ import task_store
 import validate_bundle
 
 MAP = (
-    '---\nbkf_version: "0.1"\ndescription: A test bundle.\n---\n\n# Map\n\n## Member inventory\n\n'
+    '---\nbkf_version: "0.2"\ndescription: A test bundle.\n---\n\n# Map\n\n## Member inventory\n\n'
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:START -->\n"
     "<!-- BKF:GENERATED-MEMBER-INVENTORY:END -->\n"
 )

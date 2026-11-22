@@ -11,9 +11,9 @@ TOOLING = Path(__file__).resolve().parents[1]
 VALIDATOR = TOOLING / "validate_bundle.py"
 INVENTORY = TOOLING / "generate_inventory.py"
 
-ROOT_FRONT = '---\nbkf_version: "0.1"\n---\n\n'
+ROOT_FRONT = '---\nbkf_version: "0.2"\n---\n\n'
 CHILD_FRONT = '---\ndescription: Inner folder map for the test.\n---\n\n'
-NESTED_FRONT = '---\ndescription: Nested bundle for the test.\nbkf_version: "0.1"\n---\n\n'
+NESTED_FRONT = '---\ndescription: Nested bundle for the test.\nbkf_version: "0.2"\n---\n\n'
 WARNING = "WARNING MAP_TOO_SMALL inner/MAP.md: map covers {size} items (limit 4)."
 
 

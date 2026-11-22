@@ -27,9 +27,9 @@ from bkf_common import (
     read_text_preserving_newlines,
 )
 from relink import bundle_files, prefix_markdown_links_counted, refresh_inventories
-from validate_bundle import VERSION_RE
+from validate_bundle import SUPPORTED_VERSION, VERSION_RE
 
-TARGET_VERSION = (0, 2)
+TARGET_VERSION = SUPPORTED_VERSION
 _TARGET_TEXT = f"{TARGET_VERSION[0]}.{TARGET_VERSION[1]}"
 _VERSION_LINE = re.compile(
     r"^(bkf_version[ \t]*:[ \t]*)(\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s#\"'][^\s#]*)([ \t]+#.*|[ \t]*)$"
