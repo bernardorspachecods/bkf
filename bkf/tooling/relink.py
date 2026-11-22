@@ -10,6 +10,7 @@ import io
 import os
 import posixpath
 import re
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -76,10 +77,43 @@ def rewrite_markdown(text: str, moves: dict[str, str]) -> str:
     moves maps an old bundle-root-relative file path to its new path. Only
     destinations starting with "/" are candidates; fragments and titles are kept.
     """
-    return "".join(
-        _rewrite_line(body, spans, moves) + line[len(body):]
-        for line, body, spans in _markdown_lines(text)
+    return _transform_destinations(text, lambda dest: _retarget(dest, moves))[0]
+
+
+def prefix_markdown_links(text: str, prefix: str, exists: Callable[[str], bool]) -> str:
+    """Return text with every root-absolute link destination written from the outermost bundle root.
+
+    prefix is the nested bundle's path from the outermost root, without slashes ("bkf", "a/b").
+    A destination that already starts with "<prefix>/" is left alone when exists, given the
+    percent-decoded path after that prefix (read from the nested bundle root), is false: it was
+    already written from the outermost root. External links and "#" links do not start with "/",
+    so they are never candidates; a protocol-relative "//host" link is skipped too.
+    """
+    return prefix_markdown_links_counted(text, prefix, exists)[0]
+
+
+def prefix_markdown_links_counted(
+    text: str, prefix: str, exists: Callable[[str], bool]
+) -> tuple[str, int]:
+    """Return prefix_markdown_links' text and the number of destinations it changed."""
+    return _transform_destinations(
+        text, lambda dest: _prefix_destination(dest, prefix, exists)
     )
+
+
+def _transform_destinations(text: str, transform: Callable[[str], str]) -> tuple[str, int]:
+    """Apply transform to every link destination outside code; return the text and the changed count.
+
+    transform receives a destination as written (angle brackets included) and returns its new form.
+    Each line keeps its line break, so only the destinations change.
+    """
+    parts = []
+    changed = 0
+    for line, body, spans in _markdown_lines(text):
+        new_body, count = _rewrite_line(body, spans, transform)
+        changed += count
+        parts.append(new_body + line[len(body):])
+    return "".join(parts), changed
 
 
 def markdown_link_paths(text: str) -> list[str]:
@@ -97,15 +131,33 @@ def markdown_link_paths(text: str) -> list[str]:
     return paths
 
 
-def _rewrite_line(body: str, spans: list[tuple[int, int]], moves: dict[str, str]) -> str:
+def _rewrite_line(
+    body: str, spans: list[tuple[int, int]], transform: Callable[[str], str]
+) -> tuple[str, int]:
     result = body
+    count = 0
     # Replace from the end so earlier offsets stay valid.
     for start, end in sorted(spans, reverse=True):
         dest = body[start:end]
-        new = _retarget(dest, moves)
+        new = transform(dest)
         if new != dest:
             result = result[:start] + new + result[end:]
-    return result
+            count += 1
+    return result, count
+
+
+def _prefix_destination(dest: str, prefix: str, exists: Callable[[str], bool]) -> str:
+    angled = dest.startswith("<") and dest.endswith(">")
+    inner = dest[1:-1] if angled else dest
+    if not inner.startswith("/") or inner.startswith("//"):
+        return dest
+    path, hash_mark, fragment = inner.partition("#")
+    decoded = unquote(path[1:])
+    marker = prefix + "/"
+    if decoded.startswith(marker) and not exists(decoded[len(marker):]):
+        return dest
+    new = "/" + quote(prefix, safe="/-._~") + path + hash_mark + fragment
+    return f"<{new}>" if angled else new
 
 
 def _retarget(dest: str, moves: dict[str, str]) -> str:

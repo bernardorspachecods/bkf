@@ -69,6 +69,12 @@ COMMANDS = {
         "to record an idea or a problem without acting on it now",
         "session start and lookup",
     ),
+    "upgrade": (
+        "bkf_upgrade",
+        "Migrate bundles to the current BKF format version",
+        "when bkf validate or bkf updates says a bundle is behind",
+        "install",
+    ),
     "updates": (
         "updates",
         "Print the BKF format updates needed by a bundle",

@@ -43,6 +43,7 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/tooling/bkf_cl
 - [skill_catalog_common.py](/tooling/skill_catalog_common.py) — Validates skill packages and generates the skill catalog.
 - [relink.py](/tooling/relink.py) — Shares the link rewriting for `bkf mv` and `bkf relink`: Markdown and HTML link rules, bundle file discovery, and the move application.
 - [bkf_mv.py](/tooling/bkf_mv.py) — Implements `bkf mv`: validates the move, runs `git mv`, rewrites links, and refreshes inventories.
+- [bkf_upgrade.py](/tooling/bkf_upgrade.py) — Implements `bkf upgrade`: migrates bundles to format 0.2 by prefixing nested bundles' links with their path from the outermost root and setting `bkf_version`.
 - [bkf_relink.py](/tooling/bkf_relink.py) — Implements `bkf relink`: finds moves by git rename detection, applies `--map` moves, reports unresolved links, and sets its exit statuses.
 - [generate_skill_catalog.py](/tooling/generate_skill_catalog.py) — Writes or prints the generated skill catalog.
 - [validate_skill_catalog.py](/tooling/validate_skill_catalog.py) — Validates skill metadata and catalog consistency.

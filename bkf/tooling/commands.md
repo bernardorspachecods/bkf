@@ -18,6 +18,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Check or write the skill catalog | [bkf skills](#bkf-skills) |
 | Record an idea or feedback entry | [bkf log](#bkf-log) |
 | Print the format update documents a bundle needs | [bkf updates](#bkf-updates) |
+| Migrate bundles written before the current format version | [bkf upgrade](#bkf-upgrade) |
 | Orient an agent at session start | [bkf orient](#bkf-orient) |
 | Install, check, or understand the hooks | [bkf hooks](#bkf-hooks) |
 | Search the documents | [bkf search](#bkf-search) |
@@ -141,6 +142,40 @@ Exit `0` means every bundle is `current`. Exit `1` means at least one bundle
 is `behind` or `ahead`, or a behind bundle has no update document for the
 supported version, or no BKF bundles were found under the searched paths.
 Exit `2` means the command was invoked with invalid usage.
+
+## bkf upgrade
+
+`bkf upgrade [--check] [PATH]...` migrates bundles written before the current
+format version to it. With no paths it uses `.`; each path must be a directory.
+It finds the bundles at or inside each path, as `bkf updates` does, and skips
+`node_modules` and linked git worktrees. It runs on any directory tree and does
+not need git.
+
+Before format 0.2 a nested bundle wrote its root-absolute links from its own
+root. From 0.2 every link resolves from the outermost bundle root, so for each
+nested bundle that declares an older version, `upgrade` adds the bundle's path
+from the outermost root to every root-absolute Markdown link and image in its
+`.md` files, excluding files inside deeper nested bundles, which are migrated
+with their own prefix. A destination that already starts with that prefix is
+left alone when the path after it does not exist under the nested bundle's own
+root, because it was already written from the outermost root. Links inside code
+spans and fenced code, external links, `#` links, relative paths, and HTML files
+are not changed. Then it sets `bkf_version` in the bundle's `MAP.md` to `"0.2"`,
+replacing only that value, and regenerates the map inventories of the chain. The
+outermost bundle needs no link changes, only the version. Each changed file is
+printed as `updated:` with its link count.
+
+A bundle already at 0.2 or later is left alone, so a second run changes nothing
+and prints `already current`. `--check` changes nothing: it prints
+`would upgrade:` and `would update:` lines, with link counts, and exits `1` when
+anything would change. Exit `0` means the bundles are current, `1` (with
+`--check`) means something would change, and `2` means a path is not a
+directory, or a bundle's `MAP.md` has no readable `bkf_version`, or the
+inventories could not be refreshed. A `2` from an invalid version changes
+nothing, because every bundle is planned before any file is written.
+
+It edits files in place. Commit or back up the bundles first, and run
+`bkf validate` afterwards.
 
 ## bkf inventory
 
