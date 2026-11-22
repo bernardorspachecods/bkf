@@ -18,7 +18,7 @@ from task_store import Task
 from task_tmux import Result
 
 
-SESSION = "sess-1"
+SESSION = "11111111-1111-4111-8111-111111111111"
 PANE = "%7"
 WINDOW = Result(0, "main\t@3\tAgentic work\n", "")
 
@@ -111,6 +111,13 @@ class TaskSessionTest(unittest.TestCase):
         again = self.card()
         self.assertEqual((again.id, again.status), (card.id, "working"))
         self.assertEqual(again.session["tmux_window"], "@9")
+
+    def test_legacy_session_link_fills_a_missing_current_uuid_in_task_list(self) -> None:
+        card = self.start()
+        task_store.update(self.store, card.id, lambda current: current.session.pop("claude_session_id"))
+        task_store.write_session_link(self.store, SESSION, {"task": card.id, "default_title": None})
+        listed = task_store.list_tasks(self.store).tasks[0]
+        self.assertEqual(listed.session["claude_session_id"], SESSION)
 
     def test_two_starts_with_one_session_id_make_one_card(self) -> None:
         self.start()
@@ -205,17 +212,31 @@ class TaskSessionTest(unittest.TestCase):
         self.fire("PostToolUse", tool_name="Bash")
         self.assertIsNone(self.card().attention)
 
-    def test_session_with_task_variable_never_touches_the_index(self) -> None:
+    def test_explicit_task_session_is_linked_without_owning_card_lifecycle(self) -> None:
         task = task_store.create(self.store, repo="/repo", title="Launched")
-        task_store.update(self.store, task.id, task_store.start)
+        task_store.update(self.store, task.id, lambda card: task_store.start(card, session={
+            "agent": "claude", "model": None, "effort": None, "reviewer": None,
+            "tmux_session": "main", "tmux_window": "@3", "claude_session_id": None,
+        }))
         bound = {**self.env, "BKF_TASK": task.id}
         self.fire("SessionStart", environ=bound)
+        self.assertIsNone(task_store.session_link(self.store, SESSION))
+        self.assertEqual(self.card().session["claude_session_id"], SESSION)
         self.fire("Stop", environ=bound)
         self.fire("SessionEnd", environ=bound, reason="other")
         self.fire("UserPromptSubmit", environ=bound, prompt="A prompt")
         self.assertFalse((self.store / ".sessions").exists())
         self.assertEqual([card.id for card in self.cards()], [task.id])
         self.assertEqual(self.card().title, "Launched")
+
+    def test_explicit_session_does_not_replace_a_different_current_uuid(self) -> None:
+        task = task_store.create(self.store, repo="/repo", title="Launched")
+        task_store.update(self.store, task.id, lambda card: task_store.start(card, session={
+            "agent": "claude", "model": None, "effort": None, "reviewer": None,
+            "tmux_session": "main", "tmux_window": "@3", "claude_session_id": "older-session",
+        }))
+        self.fire("SessionStart", environ={**self.env, "BKF_TASK": task.id})
+        self.assertEqual(self.card().session["claude_session_id"], "older-session")
 
     def test_session_end_prints_nothing_for_a_launched_task(self) -> None:
         task = task_store.create(self.store, repo="/repo", title="Launched")

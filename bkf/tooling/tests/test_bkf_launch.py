@@ -417,10 +417,22 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(loaded.session, {
             "agent": "claude", "model": "opus", "effort": None, "reviewer": None,
             "tmux_session": "fake-session", "tmux_window": "@7",
+            "claude_session_id": shlex.split(self.command())[self.command().split().index("--session-id") + 1],
         })
+        self.assertEqual(shlex.split(self.command())[1], "--session-id")
+        self.assertEqual(str(uuid.UUID(loaded.session["claude_session_id"])), loaded.session["claude_session_id"])
         self.assertEqual(loaded.worktree["path"], card.worktree["path"])
         self.assertEqual(loaded.worktree["branch"], f"task/{task_worktree.slug('Do it', card.id)}")
         self.assertEqual(out.splitlines(), [card.id, "fake-session:@7"])
+
+    def test_launch_session_id_is_passed_to_claude_and_recorded_on_the_card(self) -> None:
+        prompt = self.write("first.md", "Do the thing\n")
+        self.launch("claude", "--dir", str(self.repo), "--prompt-file", prompt, "--kind", "task", "--title", "Do it")
+        card = self.only_card()
+        session_id = task_store.read(self.store, card.id).session["claude_session_id"]
+        command = shlex.split(self.command())
+        self.assertEqual(command[1:3], ["--session-id", session_id])
+        self.assertEqual(str(uuid.UUID(session_id)), session_id)
 
     def test_the_prompt_is_copied_to_the_card_and_the_window_reads_the_copy(self) -> None:
         prompt = self.write("first.md", "Do the thing\n")
@@ -428,7 +440,11 @@ class LaunchTests(unittest.TestCase):
         card = self.only_card()
         copy = self.store / card.id / "prompt.md"
         self.assertEqual(copy.read_text(encoding="utf-8"), "Do the thing\n")
-        self.assertEqual(self.command(), f'claude "$(cat {shlex.quote(str(copy.absolute()))})"')
+        command = shlex.split(self.command())
+        self.assertEqual(command[0], "claude")
+        self.assertEqual(command[1], "--session-id")
+        self.assertEqual(str(uuid.UUID(command[2])), command[2])
+        self.assertEqual(command[3], f"$(cat {shlex.quote(str(copy.absolute()))})")
 
     def test_standard_input_with_a_card_is_saved_as_the_prompt(self) -> None:
         status, _, error = self.launch("claude", "--dir", str(self.plain), "--title", "s",
@@ -575,9 +591,10 @@ class RealTmuxLaunchTests(unittest.TestCase):
 
     def launch_json(self, *arguments: str) -> dict:
         stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             status = bkf_cli.main(["launch", *arguments, "--no-attach", "--json"])
-        self.assertEqual(status, 0)
+        self.assertEqual(status, 0, stderr.getvalue())
         return json.loads(stdout.getvalue())
 
     def wait_for_record(self) -> dict:
@@ -595,7 +612,9 @@ class RealTmuxLaunchTests(unittest.TestCase):
         result = self.launch_json("claude", "--dir", str(self.repo), "--prompt-file", str(prompt),
                                   "--kind", "task", "--title", "Real run")
         record = self.wait_for_record()
-        self.assertEqual(record["argv"], [text.rstrip("\n")])
+        self.assertEqual(record["argv"][0], "--session-id")
+        self.assertEqual(str(uuid.UUID(record["argv"][1])), record["argv"][1])
+        self.assertEqual(record["argv"][2:], [text.rstrip("\n")])
         self.assertEqual(record["cwd"], result["worktree"])
         self.assertEqual(record["task"], result["task"])
         self.assertTrue(result["worktree"].startswith(str(self.repo)))
@@ -604,6 +623,7 @@ class RealTmuxLaunchTests(unittest.TestCase):
         self.assertEqual(shown["status"], "working")
         self.assertEqual(shown["session"]["tmux_window"], result["window"])
         self.assertEqual(shown["session"]["tmux_session"], result["session"])
+        self.assertEqual(shown["session"]["claude_session_id"], record["argv"][1])
 
         self.record.unlink()
         second = self.launch_json("codex", "--dir", str(self.repo), "--prompt-file", str(prompt))

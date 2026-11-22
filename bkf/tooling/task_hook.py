@@ -166,6 +166,8 @@ def _run_bound(env: Mapping[str, str], stream: TextIO | None) -> None:
     data = hook_input(stream, env.get(DEBUG_ENV))
     event = data.get("hook_event_name")
     store = task_store.store_dir(env)
+    if event == "SessionStart" and env.get(task_session.ENTRYPOINT_ENV) == task_session.INTERACTIVE_ENTRYPOINT:
+        task_session.bind_explicit_task(store, data.get("session_id"), env[TASK_ENV], env)
     if event in MARK_EVENTS:
         _mark(store, env[TASK_ENV], event, data)
     if event in LEASE_EVENTS:

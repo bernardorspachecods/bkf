@@ -334,10 +334,15 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   **Session cards.** With `BKF_TASK` unset, an interactive Claude session in tmux
   (`CLAUDE_CODE_ENTRYPOINT` is `cli` and `TMUX_PANE` is set) has a card of its
   own: kind `task`, source `session`, session agent `claude`. Any other session,
-  such as `claude -p`, one outside tmux, or one with `BKF_TASK` set, returns
-  before it reads its input, and a `BKF_TASK` session never touches the session
-  links. The session's `session_id` is its link to the card, kept in the store
-  as described under [bkf task](#bkf-task):
+  such as `claude -p` or one outside tmux, returns before it reads its input.
+  A `BKF_TASK` session does not create a session card. `bkf launch` gives each
+  new Claude task session a UUID with `claude --session-id` and records it on
+  the task. A `SessionStart` can backfill an older explicit task only when it
+  has no recorded UUID, is working for Claude, and the hook's tmux pane matches
+  the task's recorded window. An old session therefore cannot replace a newer
+  association. `SessionEnd` never deletes an explicit task. The session card's
+  `session_id` link is kept in the store as described under
+  [bkf task](#bkf-task):
 
   - `SessionStart` with no card for the `session_id`, in a git repository (the
     input's `cwd`): creates the card, `working`. Its repository is the one that
@@ -346,13 +351,14 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
     (the window id) of `TMUX_PANE`. Outside a git repository nothing is read or
     written. A link whose card is missing is replaced by a new card.
   - `SessionStart` with a card (`resume`, `compact`): reuses it and points its
-    session at the pane's window again.
+    session at the pane's window again. A repeated start for the same UUID does
+    not update the task.
   - `UserPromptSubmit`: while the card's title is still the one it was created
     with, the first prompt with text names it: its first line that has words,
     without leading `#` marks, with runs of spaces collapsed, and cut to 80
     characters ending in `…`. The window name gives the title the same way.
     Later prompts never rename it, and a title someone else set is kept.
-  - `SessionEnd`: the card is deleted, unless it is `to-merge` or has the
+  - `SessionEnd`: a session card is deleted, unless it is `to-merge` or has the
     `merge-failed` attention: those wait for the owner (the merge queue, or the
     failed merge), so they stay. The link stays either way; a resume whose card
     is gone gets a new card, and a link is replaced only when its card is gone.
@@ -781,7 +787,7 @@ it ran. The merge queue's files live under `<store>/.merge/` (see
 | `source` | where the task came from, or null |
 | `status` | one of the statuses below |
 | `attention` | `{reason, since, note}` when a person is needed, else null |
-| `session` | `{agent, model, effort, reviewer, tmux_session, tmux_window}`, else null |
+| `session` | `{agent, model, effort, reviewer, tmux_session, tmux_window, claude_session_id}`, else null; `claude_session_id` is optional and names the current interactive Claude UUID |
 | `worktree` | `{path, branch, head}`, else null |
 | `run_dir` | the run folder, or null |
 | `exit` | the exit status of a failed run, or null |

@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -171,7 +172,8 @@ def _launch(args: argparse.Namespace, store: Path) -> int:
         prompt_path = _prompt_path(store, card, args, prompt_text)
 
         # Step 5: the command.
-        command = _command(args, prompt_path)
+        claude_session_id = str(uuid.uuid4()) if card is not None and args.agent == "claude" else None
+        command = _command(args, prompt_path, session_id=claude_session_id)
 
         # Step 6: the window.
         environment: dict[str, str] = {}
@@ -193,6 +195,8 @@ def _launch(args: argparse.Namespace, store: Path) -> int:
                 "agent": args.agent, "model": args.model, "effort": args.effort,
                 "reviewer": args.reviewer, "tmux_session": window.session, "tmux_window": window.window_id,
             }
+            if claude_session_id is not None:
+                session["claude_session_id"] = claude_session_id
             recorded = None
             if worktree is not None:
                 recorded = {"path": worktree["path"], "branch": worktree["branch"]}
@@ -312,10 +316,12 @@ def _prompt_path(store: Path, card: Task | None, args: argparse.Namespace, text:
     return path
 
 
-def _command(args: argparse.Namespace, prompt_path: str | None) -> str:
+def _command(args: argparse.Namespace, prompt_path: str | None, session_id: str | None = None) -> str:
     quote = shlex.quote
     if args.agent == "claude":
         parts = ["claude"]
+        if session_id is not None:
+            parts += ["--session-id", quote(session_id)]
         if args.name is not None:
             parts += ["--name", quote(args.name)]
         if args.permission_mode is not None:

@@ -44,6 +44,7 @@ def session_start(store: Path, session_id: Any, cwd: Any, environ: Mapping[str, 
         "agent": AGENT,
         "tmux_session": window.session if window else None,
         "tmux_window": window.window_id if window else None,
+        "claude_session_id": session_id,
     }
     with task_store.locked(store):
         link = task_store.session_link(store, session_id)
@@ -71,6 +72,31 @@ def session_end(store: Path, session_id: Any) -> None:
         if _keeps_card(card):
             return
         task_store.delete(store, card.id)
+
+
+def bind_explicit_task(store: Path, session_id: Any, task_id: Any, environ: Mapping[str, str]) -> None:
+    """Associate an explicit BKF task with its current interactive Claude UUID without owning its lifecycle."""
+    if not task_store.is_valid_session_id(session_id) or not task_store.is_valid_id(task_id):
+        return
+    with task_store.locked(store):
+        try:
+            card = task_store.read(store, task_id)
+        except TaskError:
+            return
+        current = (card.session or {}).get("claude_session_id")
+        if current == session_id or current is not None:
+            return
+        if card.status != "working" or (card.session or {}).get("agent") != AGENT:
+            return
+        window = task_tmux.pane_window(environ.get(PANE_ENV, ""), environ)
+        if window is None or (card.session or {}).get("tmux_session") != window.session \
+                or (card.session or {}).get("tmux_window") != window.window_id:
+            return
+        task_store.update(store, task_id, lambda active: _set_claude_session(active, session_id))
+
+
+def _set_claude_session(card: task_store.Task, session_id: str) -> None:
+    card.session = {**(card.session or {}), "claude_session_id": session_id}
 
 
 def _keeps_card(card: task_store.Task) -> bool:

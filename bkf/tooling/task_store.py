@@ -23,7 +23,7 @@ SCHEMA = 1
 KINDS = ("task", "handoff", "unit")
 STATUSES = ("todo", "working", "to-merge", "failed")
 REASONS = ("prompt", "quota", "launch-failed", "escalated", "paused", "merge-failed")
-SESSION_KEYS = ("agent", "model", "effort", "reviewer", "tmux_session", "tmux_window")
+SESSION_KEYS = ("agent", "model", "effort", "reviewer", "tmux_session", "tmux_window", "claude_session_id")
 WORKTREE_KEYS = ("path", "branch", "head")
 ATTENTION_KEYS = ("reason", "since", "note")
 FIELDS = (
@@ -216,7 +216,33 @@ def list_tasks(store: Path) -> TaskList:
         except CorruptTask:
             unreadable.append(entry.name)
     tasks.sort(key=lambda task: (task.created, task.id))
+    _attach_legacy_session_ids(store, tasks)
     return TaskList(tasks=tasks, unreadable=unreadable)
+
+
+def _attach_legacy_session_ids(store: Path, tasks: list[Task]) -> None:
+    """Expose an old link only when it is the sole UUID for a card without a recorded current UUID."""
+    folder = Path(store) / SESSIONS_FOLDER
+    try:
+        files = list(folder.glob("*.json"))
+    except OSError:
+        return
+    links: dict[str, set[str]] = {}
+    for path in files:
+        session_id = path.stem
+        if not is_valid_session_id(session_id):
+            continue
+        link = session_link(store, session_id)
+        if link is None:
+            continue
+        links.setdefault(link["task"], set()).add(session_id)
+    for task in tasks:
+        if not task.session or task.session.get("agent") != "claude" or "claude_session_id" in task.session:
+            continue
+        ids = links.get(task.id, set())
+        if len(ids) != 1:
+            continue
+        task.session = {**(task.session or {}), "claude_session_id": next(iter(ids))}
 
 
 def update(
@@ -289,6 +315,8 @@ def start(
     task.exit = None
     if session is not None:
         task.session = _object(session, SESSION_KEYS)
+        if "claude_session_id" not in session:
+            task.session.pop("claude_session_id", None)
     if worktree is not None:
         task.worktree = _object(worktree, WORKTREE_KEYS)
     if run_dir is not None:
@@ -440,7 +468,12 @@ def _problem(data: dict[str, Any], folder: str | None) -> str | None:
         value = data[name]
         if value is None:
             continue
-        if not _has_keys(value, keys) or not all(_opt_str(value[key]) for key in keys):
+        if not isinstance(value, dict):
+            return f"{name} has the wrong fields"
+        optional_session_id = name == "session" and set(value) == set(keys[:-1])
+        if (not _has_keys(value, keys) and not optional_session_id) or not all(
+            _opt_str(value[key]) for key in value
+        ):
             return f"{name} has the wrong fields"
     if not _opt_str(data["run_dir"]):
         return "run_dir is not text"
