@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from relink import apply_chain, apply_moves
+from relink import apply_moves
 
 ROOT_MAP = (
     '---\nbkf_version: "0.1"\n---\n\n# Bundle\n\n## Member inventory\n\n'
@@ -53,7 +53,7 @@ class ApplyMovesTests(unittest.TestCase):
 
         changed = apply_moves(self.root, {"notes/a.md": "archive/a.md"}, True)
 
-        self.assertEqual(changed, ["guide.md", "notes/sub/c.md"])
+        self.assertEqual(changed, ["guide.md", "inner/g.md", "notes/sub/c.md"])
         self.assertEqual(self.read("guide.md"), '# Guide\n\nSee [a](/archive/a.md#sec) and [c](/notes/sub/c.md "t").\r\n')
         self.assertIn("[back](/archive/a.md)", self.read("notes/sub/c.md"))
 
@@ -81,32 +81,32 @@ class ApplyMovesTests(unittest.TestCase):
         self.assertEqual(self.read("page.html"), '<a href="deep/x/a.html">a</a>\n')
         self.assertEqual(self.read("deep/x/a.html"), '<a href="../../guide.md">g</a><img src="../../notes/sub/c.png">\n')
 
-    def test_nested_bundle_files_are_not_touched(self) -> None:
+    def test_nested_bundle_links_to_a_moved_file_are_rewritten(self) -> None:
         move(self.root, "notes/a.md", "archive/a.md")
 
         changed = apply_moves(self.root, {"notes/a.md": "archive/a.md"}, True)
 
-        self.assertNotIn("inner/g.md", changed)
-        self.assertEqual(self.read("inner/g.md"), "[x](/notes/a.md)\n")
+        self.assertIn("inner/g.md", changed)
+        self.assertEqual(self.read("inner/g.md"), "[x](/archive/a.md)\n")
 
-    def test_apply_chain_fixes_links_in_the_nested_bundle_in_its_own_coordinates(self) -> None:
+    def test_file_moved_inside_nested_bundle_is_linked_from_the_top_root(self) -> None:
         write(self.root, "inner/x.md", "# X\n")
-        write(self.root, "inner/g.md", "[x](/x.md)\n")
+        write(self.root, "inner/g.md", "[x](/inner/x.md)\n")
         move(self.root, "inner/x.md", "inner/y.md")
 
-        changed = apply_chain(self.root, {"inner/x.md": "inner/y.md"}, True)
+        changed = apply_moves(self.root, {"inner/x.md": "inner/y.md"}, True)
 
         self.assertEqual(changed, ["inner/g.md"])
-        self.assertEqual(self.read("inner/g.md"), "[x](/y.md)\n")
+        self.assertEqual(self.read("inner/g.md"), "[x](/inner/y.md)\n")
 
-    def test_apply_chain_does_not_apply_a_move_across_a_boundary(self) -> None:
+    def test_file_moved_across_a_bundle_boundary_is_linked_everywhere(self) -> None:
         move(self.root, "notes/a.md", "inner/a.md")
-        before = self.read("guide.md")
 
-        changed = apply_chain(self.root, {"notes/a.md": "inner/a.md"}, True)
+        changed = apply_moves(self.root, {"notes/a.md": "inner/a.md"}, True)
 
-        self.assertEqual(changed, [])
-        self.assertEqual(self.read("guide.md"), before)
+        self.assertEqual(changed, ["guide.md", "inner/g.md", "notes/sub/c.md"])
+        self.assertIn("[a](/inner/a.md#sec)", self.read("guide.md"))
+        self.assertEqual(self.read("inner/g.md"), "[x](/inner/a.md)\n")
 
     def test_write_false_reports_without_writing(self) -> None:
         move(self.root, "notes/a.md", "archive/a.md")
@@ -114,8 +114,18 @@ class ApplyMovesTests(unittest.TestCase):
 
         changed = apply_moves(self.root, {"notes/a.md": "archive/a.md"}, False)
 
-        self.assertEqual(changed, ["guide.md", "notes/sub/c.md"])
+        self.assertEqual(changed, ["guide.md", "inner/g.md", "notes/sub/c.md"])
         self.assertEqual(self.read("guide.md"), before)
+
+    def test_linked_worktree_inside_the_root_is_never_rewritten(self) -> None:
+        write(self.root, ".claude/worktrees/w/.git", "gitdir: elsewhere\n")
+        write(self.root, ".claude/worktrees/w/guide.md", "[a](/notes/a.md)\n")
+        move(self.root, "notes/a.md", "archive/a.md")
+
+        changed = apply_moves(self.root, {"notes/a.md": "archive/a.md"}, True)
+
+        self.assertNotIn(".claude/worktrees/w/guide.md", changed)
+        self.assertEqual(self.read(".claude/worktrees/w/guide.md"), "[a](/notes/a.md)\n")
 
     def test_unrelated_files_are_not_listed(self) -> None:
         move(self.root, "notes/sub/d.md", "archive/d.md")

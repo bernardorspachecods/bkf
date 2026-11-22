@@ -1,7 +1,8 @@
-"""Rewrite bundle-root-absolute Markdown link destinations after a file move.
+"""Rewrite outermost-root-absolute Markdown link destinations after a file move.
 
 rewrite_markdown and rewrite_html are pure text functions. apply_moves and
-planned_updates read and write the files of one bundle.
+planned_updates read and write every file under the outermost bundle root, in
+its one coordinate system.
 """
 
 import contextlib
@@ -13,7 +14,14 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 import generate_inventory
-from bkf_common import MAP_NAME, find_bundles, in_nested_bundle, is_bundle_root_map, read_text_preserving_newlines
+from bkf_common import (
+    MAP_NAME,
+    find_bundles,
+    is_bundle_root_map,
+    is_linked_worktree,
+    outermost_bundle_root,
+    read_text_preserving_newlines,
+)
 
 # A NUL marks characters that sit inside inline code, so no link pattern matches them.
 _MASK = "\x00"
@@ -201,41 +209,43 @@ def _retarget_html(value: str, old_path: str, new_path: str, moves: dict[str, st
 
 
 def find_outermost_bundle_root(cwd: Path) -> Path | None:
-    """Return the topmost directory at or above cwd whose MAP.md is a bundle root, or None.
+    """Return the outermost bundle root of the bundle that holds cwd, or None when there is none.
 
     The climb stops at the first directory holding `.git` (a folder, or a file in a linked worktree),
     so a worktree inside another checkout never resolves to that checkout's bundle.
     """
-    found = None
     for directory in (cwd, *cwd.parents):
         if is_bundle_root_map(directory / MAP_NAME):
-            found = directory
+            return outermost_bundle_root(directory)
         if (directory / ".git").exists():
-            break
-    return found
+            return None
+    return None
 
 
 _SKIPPED_DIRECTORIES = {".git", "node_modules"}
 
 
-def bundle_files(root: Path) -> list[str]:
-    """Return the bundle-relative paths of the Markdown and HTML files of root, outside nested bundles."""
+def bundle_files(top: Path) -> list[str]:
+    """Return the top-relative paths of every Markdown and HTML file under top, nested bundles included.
+
+    Linked git worktrees under top are skipped: they hold their own copies of the documents.
+    """
     found = []
-    for directory, directories, filenames in os.walk(root):
-        directories[:] = [name for name in directories if name not in _SKIPPED_DIRECTORIES]
+    for directory, directories, filenames in os.walk(top):
+        directories[:] = [
+            name for name in directories
+            if name not in _SKIPPED_DIRECTORIES and not is_linked_worktree(Path(directory) / name)
+        ]
         for filename in filenames:
-            if not filename.endswith((".md", ".html")):
-                continue
-            path = Path(directory) / filename
-            if not in_nested_bundle(root, path):
-                found.append(path.relative_to(root).as_posix())
+            if filename.endswith((".md", ".html")):
+                found.append((Path(directory) / filename).relative_to(top).as_posix())
     return sorted(found)
 
 
 def _rewritten_texts(texts: dict[str, str], moves: dict[str, str]) -> dict[str, str]:
     """Return the new text of each file whose links change, keyed by its current path.
 
-    texts maps each file's current (post-move) bundle-relative path to its content.
+    texts maps each file's current (post-move) top-relative path to its content.
     """
     previous = {new: old for old, new in moves.items()}
     changed = {}
@@ -251,100 +261,36 @@ def _rewritten_texts(texts: dict[str, str], moves: dict[str, str]) -> dict[str, 
     return changed
 
 
-def relative_to_bundle(path: str, bundle: str) -> str | None:
-    """Return a top-relative path in the coordinates of bundle ("" for the top), or None when it is outside."""
-    if not bundle:
-        return path
-    return path[len(bundle) + 1 :] if path.startswith(bundle + "/") else None
-
-
-def bundle_chain(top: Path) -> list[str]:
-    """Return top and every bundle nested below it, as top-relative paths ("" for top)."""
-    return [
-        "" if path == top else path.relative_to(top).as_posix() for path in find_bundles(top)
-    ]
-
-
-def owning_bundle(bundles: list[str], path: str) -> str:
-    """Return the deepest bundle of the chain that contains path."""
-    return max((bundle for bundle in bundles if relative_to_bundle(path, bundle) is not None), key=len)
-
-
-def bundle_moves(top: Path, moves: dict[str, str]) -> tuple[dict[str, dict[str, str]], list[tuple[str, str]]]:
-    """Return each bundle's moves in its own coordinates, and the moves that cross a bundle boundary.
-
-    moves maps old to new paths relative to top. A move applies to every bundle of
-    the chain that holds both its paths, including a bundle nested in that bundle;
-    a move whose two paths lie in different bundles is returned as crossing.
-    """
-    bundles = bundle_chain(top)
-    crossing = [(old, new) for old, new in moves.items() if owning_bundle(bundles, old) != owning_bundle(bundles, new)]
-    inside = {old: new for old, new in moves.items() if (old, new) not in crossing}
-    per_bundle = {}
-    for bundle in bundles:
-        local = {}
-        for old, new in inside.items():
-            local_old, local_new = relative_to_bundle(old, bundle), relative_to_bundle(new, bundle)
-            if local_old is not None and local_new is not None:
-                local[local_old] = local_new
-        if local:
-            per_bundle[bundle] = local
-    return per_bundle, crossing
-
-
-def join_bundle(bundle: str, rel: str) -> str:
-    return f"{bundle}/{rel}" if bundle else rel
-
-
 def planned_updates(top: Path, moves: dict[str, str]) -> list[str]:
-    """Return the sorted top-relative paths of the files that apply_chain would change, without writing.
+    """Return the sorted top-relative paths of the files that apply_moves would change, without writing.
 
-    Call it while the files are still at their old paths.
+    moves maps old to new paths relative to top. Call it while the files are still at their old paths.
     """
-    planned = []
-    for bundle, local in bundle_moves(top, moves)[0].items():
-        directory = top / bundle
-        texts = {
-            local.get(rel, rel): read_text_preserving_newlines(directory / rel)
-            for rel in bundle_files(directory)
-        }
-        planned += [join_bundle(bundle, rel) for rel in _rewritten_texts(texts, local)]
-    return sorted(planned)
+    texts = {
+        moves.get(rel, rel): read_text_preserving_newlines(top / rel) for rel in bundle_files(top)
+    }
+    return sorted(_rewritten_texts(texts, moves))
 
 
-def apply_chain(top: Path, moves: dict[str, str], write: bool) -> list[str]:
-    """Rewrite links in every bundle of the chain after files were moved on disk.
+def apply_moves(top: Path, moves: dict[str, str], write: bool) -> list[str]:
+    """Rewrite links in every Markdown and HTML file under top after files were moved on disk.
 
-    moves maps old to new paths relative to top, and the files must already be at
-    their new paths. Return the sorted top-relative paths of the files that changed,
-    or would change when write is false. Crossing moves are not applied.
+    moves maps each old top-relative file path to its new path, and the files must already be at
+    their new paths. Return the sorted paths of the files that changed, or would change when write is false.
     """
-    changed = []
-    for bundle, local in bundle_moves(top, moves)[0].items():
-        changed += [join_bundle(bundle, rel) for rel in apply_moves(top / bundle, local, write)]
+    texts = {rel: read_text_preserving_newlines(top / rel) for rel in bundle_files(top)}
+    changed = _rewritten_texts(texts, moves)
+    if write:
+        for rel, new in changed.items():
+            with (top / rel).open("w", encoding="utf-8", newline="") as target:
+                target.write(new)
     return sorted(changed)
 
 
 def refresh_inventories(top: Path) -> int:
-    """Regenerate the map inventories of every bundle of the chain; return the worst exit status."""
+    """Regenerate the map inventories of every bundle under top; return the worst exit status."""
     status = 0
     with contextlib.redirect_stdout(io.StringIO()):
-        for bundle in bundle_chain(top):
-            status = max(status, generate_inventory.process_bundle(top / bundle, None, False, True))
+        for bundle in find_bundles(top):
+            status = max(status, generate_inventory.process_bundle(bundle, None, False, True))
     return status
-
-
-def apply_moves(root: Path, moves: dict[str, str], write: bool) -> list[str]:
-    """Rewrite links in the bundle at root after files were moved on disk.
-
-    moves maps each old bundle-relative file path to its new path, and the files
-    must already be at their new paths. Return the sorted paths of the files that
-    changed, or would change when write is false.
-    """
-    texts = {rel: read_text_preserving_newlines(root / rel) for rel in bundle_files(root)}
-    changed = _rewritten_texts(texts, moves)
-    if write:
-        for rel, new in changed.items():
-            with (root / rel).open("w", encoding="utf-8", newline="") as target:
-                target.write(new)
-    return sorted(changed)

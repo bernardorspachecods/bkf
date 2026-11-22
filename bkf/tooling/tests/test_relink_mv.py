@@ -124,12 +124,17 @@ class MvTests(unittest.TestCase):
         self.assertIn("moved: notes/sub/d.md -> archive/d.md", out.splitlines())
         self.assertIn("[c](/archive/c.md)", (self.root / "guide.md").read_text(encoding="utf-8"))
 
-    def test_nested_bundle_is_not_touched(self) -> None:
+    def test_nested_bundle_link_to_moved_file_is_fixed(self) -> None:
         code, out, err = run(self.root, "notes/a.md", "archive/a.md")
 
         self.assertEqual(code, 0, err)
-        self.assertNotIn("inner/g.md", out)
-        self.assertEqual((self.root / "inner/g.md").read_bytes(), self.nested_before)
+        self.assertIn("updated: inner/g.md", out.splitlines())
+        self.assertIn("[x](/archive/a.md)", (self.root / "inner/g.md").read_text(encoding="utf-8"))
+        self.assertEqual(self.link_errors(), [])
+
+    def commit_fixture(self) -> None:
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "fixture")
 
     def link_errors(self) -> list[str]:
         validator = Validator(self.root)
@@ -137,6 +142,7 @@ class MvTests(unittest.TestCase):
         return [finding.path for finding in validator.findings if finding.code == "LINK_TARGET_MISSING"]
 
     def nested_move_fixture(self) -> None:
+        write(self.root, "inner/g.md", document("G.", "[x](/notes/a.md)\n[n](/inner/notes/a.md)\n"))
         write(self.root, "peek.md", document("Peek.", "[i](/inner/notes/a.md)\n"))
         git(self.root, "add", "-A")
         git(self.root, "commit", "-q", "-m", "peek")
@@ -148,7 +154,7 @@ class MvTests(unittest.TestCase):
 
         self.assertEqual(code, 0, err)
         self.assertIn("moved: inner/notes/a.md -> inner/notes/b.md", out.splitlines())
-        self.assertIn("[x](/notes/b.md)", (self.root / "inner/g.md").read_text(encoding="utf-8"))
+        self.assertIn("[n](/inner/notes/b.md)", (self.root / "inner/g.md").read_text(encoding="utf-8"))
         self.assertIn("[i](/inner/notes/b.md)", (self.root / "peek.md").read_text(encoding="utf-8"))
         self.assertEqual(self.link_errors(), [])
 
@@ -171,7 +177,7 @@ class MvTests(unittest.TestCase):
         code, out, err = run(self.root / "inner", "notes/a.md", "notes/b.md")
 
         self.assertEqual(code, 0, err)
-        self.assertIn("[x](/notes/b.md)", (self.root / "inner/g.md").read_text(encoding="utf-8"))
+        self.assertIn("[n](/inner/notes/b.md)", (self.root / "inner/g.md").read_text(encoding="utf-8"))
         self.assertIn("[i](/inner/notes/b.md)", (self.root / "peek.md").read_text(encoding="utf-8"))
         self.assertEqual(self.link_errors(), [])
 
@@ -191,11 +197,61 @@ class MvTests(unittest.TestCase):
         write(self.root, "notes/MAP.md", ROOT_MAP)
         self.assert_refused("--root", str(self.root / "notes"), "../guide.md", "archive.md", cwd=self.root / "notes")
 
-    def test_move_out_of_nested_bundle_is_refused(self) -> None:
-        self.assert_refused("inner/g.md", "notes/g.md")
+    def test_move_out_of_nested_bundle_fixes_links(self) -> None:
+        write(self.root, "peek.md", document("Peek.", "[g](/inner/g.md)\n"))
+        self.commit_fixture()
 
-    def test_move_into_nested_bundle_is_refused(self) -> None:
-        self.assert_refused("notes/a.md", "inner/a.md")
+        code, out, err = run(self.root, "inner/g.md", "notes/g.md")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("moved: inner/g.md -> notes/g.md", out.splitlines())
+        self.assertIn("[g](/notes/g.md)", (self.root / "peek.md").read_text(encoding="utf-8"))
+        self.assertEqual(self.link_errors(), [])
+
+    def test_move_into_nested_bundle_fixes_links(self) -> None:
+        code, out, err = run(self.root, "notes/a.md", "inner/a.md")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("[x](/inner/a.md)", (self.root / "inner/g.md").read_text(encoding="utf-8"))
+        self.assertIn("[a](/inner/a.md#sec)", (self.root / "guide.md").read_text(encoding="utf-8"))
+        self.assertEqual(self.link_errors(), [])
+
+    def test_file_moved_into_nested_bundle_and_back_keeps_links_valid(self) -> None:
+        self.assertEqual(run(self.root, "notes/a.md", "inner/a.md")[0], 0)
+        code, out, err = run(self.root, "inner/a.md", "notes/a.md")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("[x](/notes/a.md)", (self.root / "inner/g.md").read_text(encoding="utf-8"))
+        self.assertIn("[a](/notes/a.md#sec)", (self.root / "guide.md").read_text(encoding="utf-8"))
+        self.assertEqual(self.link_errors(), [])
+        self.assertEqual(inventory([str(self.root), "--check"]), 0)
+
+    def test_whole_nested_bundle_folder_moved_keeps_links_and_inventories(self) -> None:
+        write(self.root, "peek.md", document("Peek.", "[g](/inner/g.md)\n"))
+        self.commit_fixture()
+
+        code, out, err = run(self.root, "inner", "moved")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("[g](/moved/g.md)", (self.root / "peek.md").read_text(encoding="utf-8"))
+        self.assertIn("[x](/notes/a.md)", (self.root / "moved/g.md").read_text(encoding="utf-8"))
+        self.assertEqual(self.link_errors(), [])
+        self.assertEqual(inventory([str(self.root), "--check"]), 0)
+        self.assertEqual(inventory([str(self.root / "moved"), "--check"]), 0)
+        moved = Validator(self.root / "moved")
+        moved.validate()
+        self.assertEqual([f.code for f in moved.findings if f.code in ("LINK_TARGET_MISSING", "MAP_INVENTORY_STALE")], [])
+
+    def test_linked_worktree_inside_the_root_is_never_rewritten(self) -> None:
+        write(self.root, ".claude/worktrees/w/.git", "gitdir: elsewhere\n")
+        write(self.root, ".claude/worktrees/w/guide.md", document("Copy.", "[a](/notes/a.md)\n"))
+        before = (self.root / ".claude/worktrees/w/guide.md").read_bytes()
+
+        code, out, err = run(self.root, "notes/a.md", "archive/a.md")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("[a](/archive/a.md#sec)", (self.root / "guide.md").read_text(encoding="utf-8"))
+        self.assertEqual((self.root / ".claude/worktrees/w/guide.md").read_bytes(), before)
 
     def test_map_file_is_refused(self) -> None:
         self.assert_refused("MAP.md", "archive/MAP.md")

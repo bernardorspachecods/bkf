@@ -7,14 +7,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import io
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 from bkf_common import MAP_NAME, BKFInputError, is_bundle_root_map
-from relink import apply_chain, bundle_moves, find_outermost_bundle_root, planned_updates, refresh_inventories
+from relink import apply_moves, find_outermost_bundle_root, planned_updates, refresh_inventories
 
 
 class MoveRefused(Exception):
@@ -88,10 +87,6 @@ def _plan(root: Path, cwd: Path, source_arg: str, target_arg: str) -> tuple[str,
     moves = {}
     for old in tracked:
         moves[old] = target_rel + old[len(source_rel):]
-    _, crossing = bundle_moves(root, moves)
-    if crossing:
-        old, new = crossing[0]
-        raise MoveRefused(f"the move crosses a bundle boundary: {old} -> {new}")
     return source_rel, target_rel, moves, _missing_parents(root, target)
 
 
@@ -124,7 +119,7 @@ def _move(args: argparse.Namespace) -> int:
         _remove_dirs(missing)
         raise MoveRefused(result.stderr.strip() or "git mv failed")
 
-    changed = apply_chain(root, moves, True)
+    changed = apply_moves(root, moves, True)
     status = refresh_inventories(root)
     if status != 0:
         raise MoveRefused(f"the files were moved, but refreshing the inventories failed (exit {status})")

@@ -15,22 +15,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections import defaultdict
 from pathlib import Path
 
 from bkf_common import MAP_NAME, BKFInputError, is_bundle_root_map, read_text_preserving_newlines
-from relink import (
-    apply_chain,
-    bundle_chain,
-    bundle_files,
-    bundle_moves,
-    find_outermost_bundle_root,
-    markdown_link_paths,
-    owning_bundle,
-    refresh_inventories,
-    relative_to_bundle,
-    join_bundle,
-)
+from relink import apply_moves, bundle_files, find_outermost_bundle_root, markdown_link_paths, refresh_inventories
 
 
 class RelinkError(Exception):
@@ -122,8 +110,8 @@ def _detected(prefix: str, entries: list[tuple[str, list[str]]]) -> tuple[dict[s
     return moves, added
 
 
-def _bundle_relative(root: Path, value: str) -> str:
-    """Return value (relative to the root) normalized, refusing paths outside the bundle or inside nested bundles."""
+def _top_relative(root: Path, value: str) -> str:
+    """Return value (relative to the root) normalized, refusing a path outside the root."""
     target = os.path.normpath(os.path.join(root, value))
     try:
         rel = Path(target).relative_to(root).as_posix()
@@ -140,8 +128,8 @@ def _explicit(root: Path, pairs: list[str]) -> dict[str, str]:
         old, sep, new = pair.partition("=")
         if not sep or not old or not new:
             raise RelinkError(f"--map needs OLD=NEW: {pair}")
-        old_rel = _bundle_relative(root, old)
-        new_rel = _bundle_relative(root, new)
+        old_rel = _top_relative(root, old)
+        new_rel = _top_relative(root, new)
         if os.path.lexists(root / old_rel):
             raise RelinkError(f"--map OLD still exists: {old_rel}")
         if not (root / new_rel).is_file():
@@ -157,39 +145,25 @@ def _exists_in_bundle(root: Path, path: str) -> bool:
     return os.path.exists(target)
 
 
-def _candidates(top: Path, bundle: str, name: str, pool: set[str]) -> list[str]:
-    """Return the files of bundle, in its coordinates, that are new in this run and share the basename of name."""
-    new_here = {local for rel in pool if (local := relative_to_bundle(rel, bundle)) is not None}
+def _candidates(top: Path, name: str, pool: set[str]) -> list[str]:
+    """Return the files under top that are new in this run and share the basename of name."""
     base = posixpath.basename(name)
-    return sorted(rel for rel in bundle_files(top / bundle) if rel in new_here and posixpath.basename(rel) == base)
+    return sorted(rel for rel in bundle_files(top) if rel in pool and posixpath.basename(rel) == base)
 
 
-def _unresolved(
-    top: Path, per_bundle: dict[str, dict[str, str]], crossing: list[tuple[str, str]], pool: set[str]
-) -> dict[str, list[str]]:
-    """Return each Markdown link target still missing after the moves, in its link coordinates.
+def _unresolved(top: Path, moves: dict[str, str], pool: set[str]) -> dict[str, list[str]]:
+    """Return each Markdown link target still missing after the moves, in top coordinates, with its candidates.
 
-    A file that crossed a bundle boundary keeps the coordinates of the bundle it left. Each key is the
-    path as the link writes it; links in a nested bundle add "/" and " (in DIR/)". Each maps to the
-    candidate files of that bundle.
+    Call it before the links are rewritten: a link to a moved file's old path is not missing.
     """
-    chain = bundle_chain(top)
-    crossed = {new: owning_bundle(chain, old) for old, new in crossing}
-    sources = [(bundle, join_bundle(bundle, rel)) for bundle in chain for rel in bundle_files(top / bundle)]
-    sources = [(bundle, rel) for bundle, rel in sources if rel not in crossed]
-    sources += [(origin, new) for new, origin in crossed.items()]
-
     unresolved = {}
-    for bundle, rel in sources:
+    for rel in bundle_files(top):
         if not rel.endswith(".md"):
             continue
-        directory = top / bundle
-        moved = per_bundle.get(bundle, {})
         for path in markdown_link_paths(read_text_preserving_newlines(top / rel)):
-            if path in moved or _exists_in_bundle(directory, path):
+            if path in moves or _exists_in_bundle(top, path):
                 continue
-            key = f"/{path} (in {bundle}/)" if bundle else path
-            unresolved[key] = _candidates(top, bundle, path, pool)
+            unresolved[path] = _candidates(top, path, pool)
     return dict(sorted(unresolved.items()))
 
 
@@ -215,32 +189,28 @@ def _run(args: argparse.Namespace) -> int:
     try:
         detected, added = _detected(prefix, _staged_entries(top, args.since))
         moves = {**detected, **_explicit(top, args.map or [])}
-        per_bundle, crossing = bundle_moves(top, moves)
-        unresolved = _unresolved(top, per_bundle, crossing, {*moves.values(), *added, *_untracked(top)})
-        applied = per_bundle.get("", {})
-        changed = apply_chain(top, moves, write=not args.check)
+        unresolved = _unresolved(top, moves, {*moves.values(), *added, *_untracked(top)})
+        changed = apply_moves(top, moves, write=not args.check)
     except BKFInputError as exc:
         raise RelinkError(str(exc)) from None
 
-    if (applied or crossing) and not args.check:
+    if moves and not args.check:
         status = refresh_inventories(top)
         if status != 0:
             raise RelinkError(f"the links were updated, but refreshing the inventories failed (exit {status})")
 
     move_label, update_label = ("would relink:", "would update:") if args.check else ("relinked:", "updated:")
-    for old, new in sorted(applied.items()):
+    for old, new in sorted(moves.items()):
         print(f"{move_label} {old} -> {new}")
-    for old, new in sorted(crossing):
-        print(f"skipped: {old} -> {new} (crosses a bundle boundary)")
     for path in changed:
         print(f"{update_label} {path}")
     for path, candidates in unresolved.items():
         print(f"unresolved: {path}")
         if candidates:
             print(f"  candidates: {', '.join(candidates)}")
-    if not (applied or changed or unresolved or crossing):
+    if not (moves or changed or unresolved):
         print("nothing to relink")
-    return 1 if unresolved or crossing else 0
+    return 1 if unresolved else 0
 
 
 def main(argv: list[str] | None = None) -> int:

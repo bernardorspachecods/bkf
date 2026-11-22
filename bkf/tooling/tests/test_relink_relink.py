@@ -248,7 +248,7 @@ class RelinkTests(unittest.TestCase):
 
     def nested_fixture(self) -> None:
         write(self.root, "inner/dir/doc.md", document("Doc.", "# Doc\n"))
-        write(self.root, "inner/g.md", document("G.", "[d](/dir/doc.md)\n"))
+        write(self.root, "inner/g.md", document("G.", "[d](/inner/dir/doc.md)\n"))
         write(self.root, "guide.md", document("Guide.", "# Guide\n\n[d](/inner/dir/doc.md)\n"))
         self.commit("nested links")
         move(self.root, "inner/dir/doc.md", "inner/dir/new.md")
@@ -259,7 +259,7 @@ class RelinkTests(unittest.TestCase):
         code, out, err = run(self.root)
 
         self.assertEqual(code, 0, err)
-        self.assertIn("[d](/dir/new.md)", self.read("inner/g.md"))
+        self.assertIn("[d](/inner/dir/new.md)", self.read("inner/g.md"))
         self.assertIn("[d](/inner/dir/new.md)", self.read("guide.md"))
         self.assertEqual(self.link_errors(), [])
 
@@ -269,32 +269,70 @@ class RelinkTests(unittest.TestCase):
         code, out, err = run(self.root / "inner")
 
         self.assertEqual(code, 0, err)
-        self.assertIn("[d](/dir/new.md)", self.read("inner/g.md"))
+        self.assertIn("[d](/inner/dir/new.md)", self.read("inner/g.md"))
         self.assertIn("[d](/inner/dir/new.md)", self.read("guide.md"))
         self.assertEqual(self.link_errors(), [])
 
-    def test_root_at_nested_bundle_fixes_only_its_own_links(self) -> None:
+    def test_explicit_root_is_the_same_coordinate_base(self) -> None:
         self.nested_fixture()
-        guide_before = self.read("guide.md")
 
-        code, out, err = run(self.root, "--root", str(self.root / "inner"))
+        code, out, err = run(self.root / "inner", "--root", str(self.root))
 
         self.assertEqual(code, 0, err)
-        self.assertIn("[d](/dir/new.md)", self.read("inner/g.md"))
-        self.assertEqual(self.read("guide.md"), guide_before)
+        self.assertIn("[d](/inner/dir/new.md)", self.read("inner/g.md"))
+        self.assertEqual(self.link_errors(), [])
 
-    def test_move_crossing_a_bundle_boundary_is_skipped(self) -> None:
+    def test_move_across_a_bundle_boundary_is_relinked(self) -> None:
         move(self.root, "inner/g.md", "g.md")
 
         code, out, err = run(self.root)
 
-        self.assertEqual(code, 1, err)
-        self.assertIn("skipped: inner/g.md -> g.md (crosses a bundle boundary)", out.splitlines())
-        self.assertFalse(any(line.startswith("relinked:") for line in out.splitlines()), out)
+        self.assertEqual(code, 0, err)
+        self.assertIn("relinked: inner/g.md -> g.md", out.splitlines())
+        self.assertNotIn("skipped", out)
+        self.assertEqual(self.link_errors(), [])
+
+    def test_file_moved_by_hand_into_nested_bundle_is_relinked(self) -> None:
+        move(self.root, "notes/a.md", "inner/a.md")
+
+        code, out, err = run(self.root)
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("[a](/inner/a.md#sec)", self.read("guide.md"))
+        self.assertIn("[x](/inner/a.md)", self.read("inner/g.md"))
+        self.assertEqual(self.link_errors(), [])
+
+    def test_whole_nested_bundle_folder_moved_by_hand_keeps_both_bundles_conformant(self) -> None:
+        write(self.root, "peek.md", document("Peek.", "[g](/inner/g.md)\n"))
+        self.commit("peek")
+        move(self.root, "inner", "moved")
+
+        code, out, err = run(self.root)
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("[g](/moved/g.md)", self.read("peek.md"))
+        self.assertEqual(self.link_errors(), [])
+        for bundle in (self.root, self.root / "moved"):
+            validator = Validator(bundle)
+            validator.validate()
+            self.assertEqual(
+                [f.code for f in validator.findings if f.code in ("LINK_TARGET_MISSING", "MAP_INVENTORY_STALE")], [],
+            )
+
+    def test_linked_worktree_inside_the_root_is_never_rewritten(self) -> None:
+        write(self.root, ".claude/worktrees/w/.git", "gitdir: elsewhere\n")
+        write(self.root, ".claude/worktrees/w/guide.md", document("Copy.", "[a](/notes/a.md)\n"))
+        move(self.root, "notes/a.md", "archive/a.md")
+
+        code, out, err = run(self.root)
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("[a](/archive/a.md#sec)", self.read("guide.md"))
+        self.assertEqual(self.read(".claude/worktrees/w/guide.md"), document("Copy.", "[a](/notes/a.md)\n"))
 
     def test_nested_move_leaves_every_inventory_fresh(self) -> None:
         write(self.root, "inner/dir/zed.md", document("Zed.", "# Zed\n"))
-        write(self.root, "inner/g.md", document("G.", "[d](/dir/zed.md)\n"))
+        write(self.root, "inner/g.md", document("G.", "[d](/inner/dir/zed.md)\n"))
         self.assertEqual(inventory([str(self.root), "--write"]), 0)
         self.commit("fresh inventories")
         move(self.root, "inner/dir/zed.md", "inner/dir/alpha.md")
@@ -305,29 +343,27 @@ class RelinkTests(unittest.TestCase):
         self.assertEqual(inventory([str(self.root), "--check"]), 0)
         self.assertNotIn("MAP_INVENTORY_STALE", [finding.code for finding in self.findings()])
 
-    def test_crossing_move_reports_only_links_to_the_moved_file(self) -> None:
+    def test_move_across_boundary_relinks_only_links_to_the_moved_file(self) -> None:
         write(self.root, "inner/b.md", document("B.", "# B\n"))
-        write(self.root, "inner/c.md", document("C.", "[b](/b.md)\n[x](/x.md)\n"))
-        write(self.root, "inner/x.md", document("X.", "[b](/b.md)\n[c](/c.md)\n"))
+        write(self.root, "inner/c.md", document("C.", "[b](/inner/b.md)\n[x](/inner/x.md)\n"))
+        write(self.root, "inner/x.md", document("X.", "[b](/inner/b.md)\n[c](/inner/c.md)\n"))
         self.commit("linked nested documents")
         move(self.root, "inner/x.md", "y.md")
 
         code, out, err = run(self.root)
 
-        self.assertEqual(code, 1, err)
-        self.assertEqual(
-            out.splitlines(),
-            ["skipped: inner/x.md -> y.md (crosses a bundle boundary)", "unresolved: /x.md (in inner/)"],
-        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.splitlines(), ["relinked: inner/x.md -> y.md", "updated: inner/c.md"])
+        self.assertIn("[x](/y.md)", self.read("inner/c.md"))
 
-    def test_unresolved_link_in_nested_bundle_names_the_bundle(self) -> None:
+    def test_unresolved_link_in_nested_bundle_is_reported_in_top_coordinates(self) -> None:
         write(self.root, "inner/g.md", document("G.", "[gone](/gone.md)\n"))
         self.commit("broken")
 
         code, out, err = run(self.root)
 
         self.assertEqual(code, 1, err)
-        self.assertIn("unresolved: /gone.md (in inner/)", out.splitlines())
+        self.assertIn("unresolved: gone.md", out.splitlines())
 
 if __name__ == "__main__":
     unittest.main()

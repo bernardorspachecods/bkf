@@ -167,20 +167,21 @@ because it would not resolve from the skill. The block is replaced when the sour
 
 `bkf mv [--check] [--root DIR] <source> <target>` moves a tracked file or
 folder with `git mv`, then rewrites the links that point to it and regenerates
-the map inventories. `--check` lists the moves and the link updates without
-changing anything. `--root` names the bundle root; by default it is the outermost
-ancestor whose `MAP.md` is a bundle root. Each nested bundle is rewritten with its
-own link paths, so the outer bundle's links to a moved file in a nested bundle are
-fixed too.
+the map inventories of every bundle. `--check` lists the moves and the link
+updates without changing anything. `--root` names the top bundle root; by
+default it is the outermost ancestor whose `MAP.md` is a bundle root. Every
+link in every bundle resolves from that one root, and a file has one address,
+so nested bundles are rewritten in the same pass and a move may cross a bundle
+boundary or move a whole nested bundle.
 
-It rewrites bundle-root-absolute Markdown links and images to the moved files,
+It rewrites root-absolute Markdown links and images to the moved files,
 keeping their fragments, and relative `href` and `src` values in HTML, both the
 links to a moved file and the moved file's own. Each changed file is printed as
 `updated:`.
 
 It refuses, exit `1` with nothing changed, when the source is not tracked by
-git, the target exists or is outside the root, the move crosses a bundle
-boundary, or the source is a `MAP.md`. Exit `0` means the move and the updates
+git, the target exists or is outside the root, the target's parent is not a
+directory, or the source is a `MAP.md`. Exit `0` means the move and the updates
 are done.
 
 ## bkf relink
@@ -191,22 +192,19 @@ found by git rename detection between `REF` (default `HEAD`) and the working
 tree. Detection stages the working tree into a temporary copy of the index, so
 the real index is never touched.
 
-Each detected move is rewritten as `mv` rewrites links, and the inventories are
-regenerated. `--map OLD=NEW` adds an explicit move, with paths relative to the
-root, for a case detection cannot settle; `OLD` must no longer exist and `NEW`
-must be a file. `--check` prints `would relink:` and `would update:` lines
-without changing anything. The default root is the outermost bundle, and each
-nested bundle is checked with its own link paths, so the outer bundle's links to
-its nested files are fixed too. A move whose old and new paths lie in different
-bundles is printed as `skipped:` and exits `1`.
+Each detected move is rewritten as `mv` rewrites links, in one pass over the
+whole outermost root, nested bundles included, and the inventories of every
+bundle are regenerated. `--map OLD=NEW` adds an explicit move, with paths
+relative to the root, for a case detection cannot settle; `OLD` must no longer
+exist and `NEW` must be a file. `--check` prints `would relink:` and
+`would update:` lines without changing anything.
 
 A Markdown link that is still missing after the moves is printed as
-`unresolved: <path>` (nested bundles print `unresolved: /<path> (in DIR/)`),
-followed by `candidates:` when bundle files share its basename. Unresolved links are never rewritten. The agent asks the user which
-file is meant and reruns with `--map`.
+`unresolved: <path>`, with the root-relative path the link writes, followed by
+`candidates:` when root files share its basename. Unresolved links are never
+rewritten. The agent asks the user which file is meant and reruns with `--map`.
 
-Exit `0` means every link resolves and no move was skipped, `1` means some links are
-unresolved or a move was skipped, and
+Exit `0` means every link resolves, `1` means some links are unresolved, and
 `2` means the run could not start or the input was invalid, such as a missing
 git repository or a bad `--map` path. Nothing is changed on exit `2`.
 
