@@ -1,4 +1,4 @@
-"""Open an interactive Claude or Codex session in tmux, with its task card: the one way skills and the Agentic app start one."""
+"""Open an interactive Claude or Codex session in tmux, with its task card: the one way skills start one."""
 
 from __future__ import annotations
 

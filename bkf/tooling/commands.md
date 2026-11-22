@@ -746,7 +746,7 @@ writing either closed status. If the record has `snapshot: none`, save the text 
 The task store is machine-wide and holds the state of agent tasks: one folder
 per task under the state directory. `BKF_TASKS_DIR` overrides the folder;
 otherwise `$XDG_STATE_HOME/bkf/tasks`, else `~/.local/state/bkf/tasks`.
-Skills, `bkf launch`, `bkf merge`, and the Agentic app call these subcommands. An
+Skills, `bkf launch`, and `bkf merge` call these subcommands. An
 agent in a task's window runs `bkf task close` itself once its branch has landed.
 
 ```sh
@@ -1035,7 +1035,7 @@ Each recovery is an event in the queue: `lock-recovered`, `dropped-dormant`,
 **Status.** Read-only: it never changes the queue. The one-time store migration
 can run on its first read, as for every store read. `--repo DIR` picks a
 repository's queue; `--task ID` adds the task's place. With `--json` it prints
-one object, which the Agentic app reads (the field names are its contract):
+one object; the field names of that object are the contract of the command:
 
 ```json
 {"schema": 1, "store": "<abs>", "generation": 12,
@@ -1057,8 +1057,8 @@ head entry whose state is `turn`.
 
 ## bkf launch
 
-`bkf launch` opens an interactive Claude or Codex session for the skills and the
-Agentic app, and is the one way they start one. It composes the task store
+`bkf launch` opens an interactive Claude or Codex session for the skills, and is
+the one way they start one. It composes the task store
 (`bkf task`), the task worktree and the tmux layer. It writes no prompt text: it
 receives one. Not used by hand.
 
@@ -1126,7 +1126,7 @@ terminal shows the session. With `--json`, one object: `{"task", "session",
 
 **Session name.** `--session-name --dir D` prints the tmux session that the
 placement above uses for `D` (the session holding the repository's windows, else
-its repository session) and launches nothing. The Agentic app uses it to bring
+its repository session) and launches nothing. A caller can use it to bring
 that session's iTerm2 window forward before a launch.
 
 **Failure.** After the card exists, a failing step (worktree, window, start)

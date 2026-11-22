@@ -22,7 +22,6 @@ from harness.engine.run import RunError
 import plan_inputs
 import plan_rehearse
 import plan_board
-import plan_cards
 import plan_integration
 
 
@@ -95,12 +94,6 @@ class _UnitHooks(UnitHooks):
 
     def progress(self, text):
         self.ctx.progress(text)
-
-    def unit_started(self, unit, checkout):
-        plan_cards.unit_started(self.ctx.run, unit, checkout)
-
-    def unit_ended(self, unit, state, reason):
-        plan_cards.unit_ended(self.ctx.run, unit, state, reason)
 
     @contextmanager
     def around_implement(self, checkout, unit, base, brief):
@@ -249,10 +242,6 @@ class PlanWorkflow(Workflow):
                     "no .plan-run.json at HEAD: the bridge will run only gate commands unless an untracked copy "
                     "is in the checkout; commit it so changes to it are reviewed like code"
                 )
-        plan_cards.start_run(ctx.run)
-
-    def run_state(self, ctx, state, reason=""):
-        plan_cards.run_state(ctx.run, state, reason)
 
     def _consume_pending(self, ctx, goal):
         """Move the pending plan this run started from into the run, so one copy stays the current one."""

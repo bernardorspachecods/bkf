@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # End-to-end check of the agent CLI: bkf task, launch and hooks, the delegate scripts, the merge queue (bkf merge),
-# a plan run, the bkf suites, and (with AGENTIC_ROOT) the Agentic app's bkf client. No model is called and
+# a plan run, and the bkf suites. No model is called and
 # nothing is written under the real home, the user's task store or the user's tmux server: the run uses a
 # sandbox home, a temporary task store and a throwaway tmux server (tmux -L <unique>), killed on exit.
 # Usage: agent-skills/tests/e2e-agent-cli.sh
-#   AGENTIC_ROOT=<Agentic checkout>  also runs the app cases (the bkf contract and the build); without it they are SKIP.
 # Prints PASS <case>, FAIL <case>: <why> or SKIP <case>: <why>, one line per case. Exit 0 only when no case fails.
 set -uo pipefail
 
@@ -418,26 +417,6 @@ else
   case_delegate
   case_merge_queue
   case_plan
-
-  if [ -n "${AGENTIC_ROOT:-}" ] && [ -d "$AGENTIC_ROOT" ]; then
-    app_log=$work/app-contract.log
-    (cd "$AGENTIC_ROOT" && AGENTIC_BKF_LIVE="$work/bin/bkf" swift run AgenticFoundationRunner >"$app_log" 2>&1)
-    contract_rc=$?
-    live_lines=$(grep -c '^[A-Z]* bkf live' "$app_log")
-    live_bad=$(grep '^[A-Z]* bkf live' "$app_log" | grep -v '^PASS ' | head -3)
-    if [ "$contract_rc" -eq 0 ] && [ "$live_lines" -gt 0 ] && [ -z "$live_bad" ]; then
-      echo "PASS app contract"
-    else
-      echo "FAIL app contract: exit $contract_rc, $live_lines bkf live lines, not passing: ${live_bad:-none} (log $app_log)"
-      failed=1
-    fi
-    app_build_log=$work/app-build.log
-    (cd "$AGENTIC_ROOT" && scripts/check.sh >"$app_build_log" 2>&1)
-    if [ $? -eq 0 ]; then echo "PASS app build"; else echo "FAIL app build: $(tail -n 1 "$app_build_log") (log $app_build_log)"; failed=1; fi
-  else
-    skip "app contract" "set AGENTIC_ROOT to the Agentic checkout to run it"
-    skip "app build" "set AGENTIC_ROOT to the Agentic checkout to run it"
-  fi
 
   suite "bkf tooling tests" env PYTHONPATH=bkf/tooling "$py" -m unittest discover -s bkf/tooling/tests
   suite "harness tests" env PYTHONPATH=agent-skills/harness python3 -m unittest discover -s agent-skills/harness/tests

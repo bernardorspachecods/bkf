@@ -7,11 +7,11 @@
 1. **Begin:** `scripts/plan-unit.sh begin <brief> --dir <scratch>` before touching the code. Each unit's base is the state the previous one left.
 2. **Implement** as the user chose: you, under the [implementation guide](roles/agentic-work-implementation.md); a Claude subagent, whose prompt is the brief followed by that guide; or an agent you launch (see below). Do not commit, stage, stash or reset. **The implementer leaves the gate receipt as its last step:** `scripts/plan-unit.sh gate <brief> --dir <scratch>` (a Claude agent in its own shell; tell it the exact command), or `.plan-porteiro/ponte gate` for an agent launched with `DELEGATE_UNIT_DIR` (below). Do not run the gate commands yourself.
 3. **Check:** `scripts/plan-unit.sh check <brief> --dir <scratch> --review-model <model> [--review-backend codex|claude] [-r <effort>]`. `check` accepts a green receipt for the same tree and gate commands and does not run the gate again (`gate: pass (receipt, …)`); with no receipt, or a stale one, it runs the gate. Later checks resume the same reviewer.
-4. **Act on the exit code.** `0` pass: next unit. `1` back: read `problems:` in the output, fix it (or send it back to the implementer) and `check` again. `2` escalate, or the reviewer says the brief is wrong: stop and tell the user; if the brief changes, `begin --restart`. `3` the check itself failed (no base, missing model, no reviewer output): fix the cause and repeat. On pass or escalate, `check` closes the unit's task card.
+4. **Act on the exit code.** `0` pass: next unit. `1` back: read `problems:` in the output, fix it (or send it back to the implementer) and `check` again. `2` escalate, or the reviewer says the brief is wrong: stop and tell the user; if the brief changes, `begin --restart`. `3` the check itself failed (no base, missing model, no reviewer output): fix the cause and repeat.
 
 ## When you or the user review
 
-Run `check --gate-only`: it uses the receipt or runs the gate, and writes the diff (`patch:`), with no reviewer. After review, close the card with `scripts/plan-unit.sh close <brief> --dir <scratch> --as done|failed`: `done` deletes the card, `failed` leaves it failed. To record why it failed, pass `--note TEXT`.
+Run `check --gate-only`: it uses the receipt or runs the gate, and writes the diff (`patch:`), with no reviewer. Then decide on the diff yourself: the unit has no record beyond its scratch folder.
 
 ## Launching an implementer
 
@@ -21,9 +21,9 @@ A Claude implementer is always a subagent, never launched through a shell. The l
 
 - **Do not wait with a Monitor or by polling.** The background Bash call notifies you when the agent exits, and `check` reports each unit's end; a Monitor on a gate or an agent adds nothing and expires unseen.
 - Default: Codex `gpt-6-luna`, `high`; never `gpt-6.1-sol` unless the user says.
-- **Where it works.** In a run, launch with `DELEGATE_IN_PLACE=1` after `begin`, so `check` reads the agent's diff from the checkout. Without it the agent works in the worktree of its task card, `<repo>/.claude/worktrees/<slug>` on branch `task/<slug>` (`bkf task show` names both), which first runs the committed `.plan-run.json` setup; then run `begin` and `check` inside that worktree.
-- **Back rounds.** Relaunch under the same name with `DELEGATE_RERUN=1` to reuse the unit's card. Keep that name for every round.
-- **The receipt and card.** Set `DELEGATE_UNIT_DIR=<scratch>/<unit>` (the folder `begin` made) so `check` can find the card. For a brief with a gate, the launcher tells the agent to run `.plan-porteiro/ponte gate`, which runs the gate outside its sandbox and writes the receipt there.
+- **Where it works.** In a run, launch with `DELEGATE_IN_PLACE=1` after `begin`, so `check` reads the agent's diff from the checkout. Without it the agent works in its own worktree, `<run>/worktree` on a new branch `delegate/<name>` made from the base, which first runs the committed `.plan-run.json` setup; then run `begin` and `check` inside that worktree.
+- **Back rounds.** Relaunch under the same name with `DELEGATE_RERUN=1` to reuse the run folder and its worktree. Keep that name for every round.
+- **The receipt.** Set `DELEGATE_UNIT_DIR=<scratch>/<unit>` (the folder `begin` made) so the agent's receipt lands there. For a brief with a gate, the launcher tells the agent to run `.plan-porteiro/ponte gate`, which runs the gate outside its sandbox and writes the receipt there.
 - The agent gets only the brief and its guide: forbid git commands that change state in the brief. Do not commit or merge unless the user says so.
 
-The run folder is `~/.delegate-runs/<repo>/<name>/` (or `$DELEGATE_RUNS_DIR`): `task` (the id of the unit's card), `last-message.md`, `diffstat.txt`, `worktree`, `base`, logs `prepare.log` and `porteiro.log`. The state is the card: `bkf task show "$(cat <run>/task)"` shows `working` with the `paused` attention and the file count in its note when the agent finished and waits for you, `failed` (see `exit` or its note), or no card once a passed unit's card is closed. A silent agent is still working.
+The run folder is `~/.delegate-runs/<repo>/<name>/` (or `$DELEGATE_RUNS_DIR`): `base`, `worktree` (not made with `DELEGATE_IN_PLACE=1`), `last-message.md`, `diffstat.txt`, `exit` (the agent's exit status, written when it ends), logs `worktree.log`, `prepare.log` and `porteiro.log`. The state is the run folder: no `exit` yet means the agent is still working, and `exit` with `0` means it finished and `diffstat.txt` lists its changes. A silent agent is still working.

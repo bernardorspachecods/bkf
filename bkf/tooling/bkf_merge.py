@@ -2,7 +2,7 @@
 
 The queue is per repository and held in the task store (merge_store.py). A session enters it, waits for its
 turn, merges the target into its branch, verifies the result, and lands it; the agent runs the merge, the
-checks and any conflict resolution itself. `status` reads the queue for the Agentic app and never changes it.
+checks and any conflict resolution itself. `status` reads the queue for callers that show it, and never changes it.
 """
 
 from __future__ import annotations

@@ -2,9 +2,10 @@
 # Run one Codex agent task in a prepared git worktree and record the results.
 # Usage: [DELEGATE_IN_PLACE=1] delegate-run.sh <name> <brief-file> [base-ref] [model] [effort]
 # DELEGATE_IN_PLACE=1 runs in the main checkout instead of a new worktree.
-# The run's state is its task card (bkf task): the run folder names it in `task`; `bkf task show "$(cat <run>/task)"` shows it.
-# DELEGATE_RERUN=1 reuses the run's card unless it is missing; a rerun starts the card again.
-# DELEGATE_UNIT_DIR=<unit folder> records the card id and lets `ponte gate` write the receipt there.
+# Without DELEGATE_IN_PLACE the agent works in <run>/worktree, on a new branch delegate/<name> made from the base.
+# The run folder is the record: base, diffstat.txt, last-message.md and exit (the agent's exit status).
+# DELEGATE_RERUN=1 relaunches an existing run folder; the worktree is reused when it is there.
+# DELEGATE_UNIT_DIR=<unit folder> lets `ponte gate` write the receipt there.
 # New worktrees run the repository's committed .plan-run.json setup; its bridge can run allowed pnpm scripts.
 # Codex only: a Claude implementer is a subagent (git tag agentic-work-claude-launcher has the launcher with a Claude backend).
 # Without a model and effort: gpt-6-luna and high.
@@ -28,8 +29,8 @@ runs="${DELEGATE_RUNS_DIR:-$HOME/.delegate-runs}/${repo_name}/${name}"
 
 progress() { printf '[delegate] %s · %s\n' "$name" "$*" >&2 || true; }
 
-if [[ -e "$runs/task" && -z "${DELEGATE_RERUN:-}" ]]; then
-  printf 'Error: run folder already has a task card: %s\nSet DELEGATE_RERUN=1 to relaunch it.\n' "$runs" >&2
+if [[ -e "$runs/base" && -z "${DELEGATE_RERUN:-}" ]]; then
+  printf 'Error: run folder already exists: %s\nSet DELEGATE_RERUN=1 to relaunch it.\n' "$runs" >&2
   exit 1
 fi
 
@@ -44,41 +45,6 @@ cat >>"$runs/brief.md" <<ROLE
 Open and follow the role guide: $roles/agentic-work-implementation.md (read-only). It says how to work inside the brief and what to verify before you hand over.
 ROLE
 
-task_id=
-if [ -s "$runs/task" ]; then
-  task_id=$(cat "$runs/task") || progress "warning: could not read the task card id"
-fi
-if [ -n "$task_id" ]; then
-  if previous_card=$(bkf task show "$task_id" --json 2>&1); then
-    :
-  elif [ "$previous_card" = "bkf task: no task $task_id" ]; then
-    task_id=
-  else
-    progress "warning: could not show task card $task_id: $previous_card"
-  fi
-fi
-if [ -z "$task_id" ]; then
-  if ! task_id=$(bkf task new --repo "$repo" --title "$name" --kind unit --body-file "$brief"); then
-    progress "warning: could not create the task card"
-    task_id=
-  fi
-fi
-if [ -n "$task_id" ]; then
-  printf '%s\n' "$task_id" >"$runs/task" || progress "warning: could not save the run's task card id"
-  if [ -n "${DELEGATE_UNIT_DIR:-}" ]; then
-    { mkdir -p "$DELEGATE_UNIT_DIR" && printf '%s\n' "$task_id" >"$DELEGATE_UNIT_DIR/task"; } \
-      || progress "warning: could not save the unit's task card id"
-  fi
-elif [ -n "${DELEGATE_UNIT_DIR:-}" ]; then
-  rm -f "$DELEGATE_UNIT_DIR/task" || progress "warning: could not clear the unit's previous task card id"
-fi
-
-start_card() {
-  [ -n "$task_id" ] || return 0
-  bkf task start "$task_id" --run-dir "$runs" --agent codex --model "$model" --effort "$effort" "$@" >/dev/null \
-    || progress "warning: could not start the task card"
-}
-
 if [ -n "${DELEGATE_IN_PLACE:-}" ]; then
   # Run in the main checkout; snapshot its current state (tracked files) as the diff base.
   worktree="$repo"
@@ -86,26 +52,27 @@ if [ -n "${DELEGATE_IN_PLACE:-}" ]; then
   base=${base:-$(git -C "$repo" rev-parse HEAD)}
   echo "$base" >"$runs/base"
   git -C "$repo" status --short >"$runs/status-before.txt"
-  start_card --worktree "$worktree"
 else
-  # The card's worktree comes from bkf task and is reused on relaunch.
   echo "$base" >"$runs/base"
-  start_card
-  if [ -z "$task_id" ]; then
-    printf 'Error: the delegate worktree needs a task card.\n' >&2
-    printf '%s\n' "$runs"
-    exit 1
+  worktree="$runs/worktree"
+  created=
+  if [ ! -d "$worktree" ]; then
+    if git -C "$repo" show-ref --verify --quiet "refs/heads/delegate/$name"; then
+      git -C "$repo" worktree add "$worktree" "delegate/$name" >"$runs/worktree.log" 2>&1 || {
+        printf 'Error: the delegate worktree could not be made; see %s/worktree.log\n' "$runs" >&2
+        printf '%s\n' "$runs"
+        exit 1
+      }
+    else
+      git -C "$repo" worktree add -b "delegate/$name" "$worktree" "$base" >"$runs/worktree.log" 2>&1 || {
+        printf 'Error: the delegate worktree could not be made; see %s/worktree.log\n' "$runs" >&2
+        printf '%s\n' "$runs"
+        exit 1
+      }
+    fi
+    created=1
   fi
-  if ! prepared=$(bkf task worktree "$task_id" --base "$base" --json); then
-    bkf task fail "$task_id" --note worktree-failed >/dev/null || progress "warning: could not mark the task card failed"
-    printf 'Error: the delegate worktree could not be made; see the card %s\n' "$task_id" >&2
-    printf '%s\n' "$runs"
-    exit 1
-  fi
-  worktree=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["path"])' <<<"$prepared")
-  created=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["created"])' <<<"$prepared")
-  if [ "$created" = True ] && ! harness prepare --run "$runs" --repo "$repo" --tree "$worktree" >"$runs/prepare.log" 2>&1; then
-    bkf task fail "$task_id" --note prepare-failed >/dev/null || progress "warning: could not mark the task card failed"
+  if [ -n "$created" ] && ! harness prepare --run "$runs" --repo "$repo" --tree "$worktree" >"$runs/prepare.log" 2>&1; then
     printf 'Error: preparing the delegate worktree failed; see %s/prepare.log\n' "$runs" >&2
     printf '%s\n' "$runs"
     exit 1
@@ -153,8 +120,7 @@ Run the checks named in the brief this way before you finish, and fix what fails
 BRIDGE
 fi
 
-echo "$worktree" >"$runs/worktree"
-
+rm -f "$runs/exit"
 if [ -n "${DELEGATE_IN_PLACE:-}" ]; then
   progress "a correr (no lugar)"
 else
@@ -165,6 +131,7 @@ set +e
 agent_run "$worktree" "$runs/brief.md" "$runs/run" workspace-write
 code=$?
 set -e
+echo "$code" >"$runs/exit"
 for f in events.jsonl stderr.log last-message.md; do
   [ ! -e "$runs/run.$f" ] || mv "$runs/run.$f" "$runs/$f"
 done
@@ -186,15 +153,8 @@ if [ "$code" -eq 0 ]; then
   else
     changed=$(git -C "$worktree" diff --name-only -z "$base" | tr -cd '\000' | wc -c | tr -d '[:space:]') || changed=0
   fi
-  # The delegate's changes stay uncommitted, so they never join the merge queue: the card waits for its owner, paused.
-  if [ -n "$task_id" ]; then
-    bkf task attention "$task_id" --set paused --note "$changed files changed" >/dev/null || progress "warning: could not mark the task card waiting for its owner"
-  fi
   progress "concluído · $changed ficheiros"
 else
-  if [ -n "$task_id" ]; then
-    bkf task fail "$task_id" --exit "$code" >/dev/null || progress "warning: could not mark the task card failed"
-  fi
   progress "falhou · exit=$code"
 fi
 

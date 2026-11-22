@@ -11,7 +11,7 @@ HELP_GROUPS = (
     "after editing documents",
     "session start and lookup",
     "install",
-    "called by skills and the app",
+    "called by skills and sessions",
 )
 
 COMMANDS = {
@@ -73,19 +73,19 @@ COMMANDS = {
         "bkf_task",
         "Record and read the state of agent tasks",
         "not by hand, except 'bkf task close' inside a task's window once its branch has landed",
-        "called by skills and the app",
+        "called by skills and sessions",
     ),
     "merge": (
         "bkf_merge",
         "Queue a session's branch to land on the target, one at a time",
-        "called by sessions when their card is to be merged, and by the Agentic app; not by hand",
-        "called by skills and the app",
+        "called by sessions when their card is to be merged, and by skills; not by hand",
+        "called by skills and sessions",
     ),
     "launch": (
         "bkf_launch",
         "Open an interactive agent session in tmux, with its task card",
-        "called by the handoff skill and the Agentic app; not by hand",
-        "called by skills and the app",
+        "called by the handoff skill and skills that start a session; not by hand",
+        "called by skills and sessions",
     ),
 }
 

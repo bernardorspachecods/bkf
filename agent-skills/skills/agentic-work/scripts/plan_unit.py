@@ -68,33 +68,6 @@ def _brief_commands(brief):
     return plan_inputs.gate_commands([str(brief)])
 
 
-def _close_card(unit_dir, status, note=None):
-    card = unit_dir / "task"
-    try:
-        task_id = card.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        return
-    except (OSError, UnicodeError) as error:
-        print("plan-unit: warning: cannot read task card id: {0}".format(error), file=sys.stderr)
-        return
-    if not task_id:
-        return
-    action = "close" if status == "done" else "fail"
-    command = ["bkf", "task", action, task_id]
-    if action == "fail" and note is not None:
-        command += ["--note", note]
-    try:
-        subprocess.run(command, capture_output=True, text=True, errors="replace", check=True)
-    except subprocess.CalledProcessError as error:
-        lines = error.stderr.strip().splitlines()
-        reason = lines[0] if lines else "exit {0}".format(error.returncode)
-    except OSError as error:
-        reason = str(error)
-    else:
-        return
-    print("plan-unit: warning: bkf task {0} {1} failed: {2}".format(action, task_id, reason), file=sys.stderr)
-
-
 def begin(args):
     brief = Path(args.brief)
     if not brief.is_file() or brief.stat().st_size == 0:
@@ -214,33 +187,19 @@ def check(args):
     if result.verdict is None:
         print(result.reason)
         return ERROR
-    code = _finish(unit_dir.name, number, patch, gate_text, result.verdict, round_dir / "problems.md")
-    if code == PASS:
-        _close_card(unit_dir, "done")
-    elif code == ESCALATE:
-        _close_card(unit_dir, "failed", note="escalated")
-    return code
-
-
-def close(args):
-    _close_card(_unit_dir(args), args.status, note=args.note)
-    return PASS
+    return _finish(unit_dir.name, number, patch, gate_text, result.verdict, round_dir / "problems.md")
 
 
 def _parser():
     parser = argparse.ArgumentParser(prog="plan-unit.sh", description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("begin", "check", "gate", "close"):
+    for name in ("begin", "check", "gate"):
         sub = commands.add_parser(name)
         sub.add_argument("brief")
         sub.add_argument("--dir", required=True, help="folder that holds the unit's files (diffs, gate logs, reviews)")
         sub.add_argument("--unit", help="unit name (default: the brief's file name without extension)")
         if name == "begin":
             sub.add_argument("--restart", action="store_true", help="start an already begun unit over")
-        elif name == "close":
-            sub.add_argument("--as", dest="status", choices=("done", "failed"), required=True,
-                             help="close the task card after a manual review")
-            sub.add_argument("--note", help="record a note when closing as failed")
         elif name == "check":
             sub.add_argument("--review-model", help="the reviewer's model")
             sub.add_argument("--review-backend", choices=("codex", "claude"),
@@ -253,7 +212,7 @@ def _parser():
 
 def main(argv=None):
     args = _parser().parse_args(argv)
-    handlers = {"begin": begin, "gate": gate, "check": check, "close": close}
+    handlers = {"begin": begin, "gate": gate, "check": check}
     try:
         return handlers[args.command](args)
     except RunError as error:
