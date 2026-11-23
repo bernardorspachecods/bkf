@@ -1,0 +1,5 @@
+interface:
+  display_name: "Before Context Loss"
+  short_description: "Check the documents and suggest a message before compacting or ending"
+policy:
+  allow_implicit_invocation: false
