@@ -345,9 +345,9 @@ the [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks).
 
 ## bkf hooks
 
-`bkf hooks install [--write] [--only modes|orient|check|log|rules|task|guard|audit|tabname|sources] [--home PATH]` and
-`bkf hooks status [--only modes|orient|check|log|rules|task|guard|audit|tabname|sources] [--home PATH]`
-manage ten hook groups. Registration targets Claude Code
+`bkf hooks install [--write] [--only modes|orient|check|log|rules|task|guard|audit|tabname|sources|context] [--context-warn PCT] [--context-compact PCT] [--context-window TOKENS] [--home PATH]` and
+`bkf hooks status [--only modes|orient|check|log|rules|task|guard|audit|tabname|sources|context] [--home PATH]`
+manage eleven hook groups. Registration targets Claude Code
 (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`). The `sources`
 group targets Claude Code only. A tool whose folder is missing is skipped.
 
@@ -603,6 +603,25 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
     to stderr and allow the tool call or stop to proceed. Codex has no
     `WebFetch` or `WebSearch` hook points. In Codex, use `bkf search` and
     `bkf sources` directly.
+
+- **context** registers Claude Code `PostToolUse`, `UserPromptSubmit` and
+  `SessionStart` hooks. At the configured warning percentage it tells the
+  agent to write a continuation note in `~/.agent-hooks/continue/`. After
+  compaction, the next session start resumes from that note and moves it to
+  the `continue/used/` archive. If the note is missing after a warning, it
+  sends a `systemMessage`. Subagent tool calls are ignored. `--context-warn PCT`,
+  `--context-compact PCT` and `--context-window TOKENS` set the warning and
+  compaction percentages and the context window; defaults are 40, 55 and
+  200000. Percentages must be 1–99, warn must be below compact, and the window
+  must be at least 1000. These values are merged into
+  `~/.agent-hooks/context.json`. The group sets `autoCompactEnabled: true`,
+  `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and
+  `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` in `~/.claude/settings.json`, and adds
+  `Write(~/.agent-hooks/continue/**)` and `Edit(~/.agent-hooks/continue/**)`
+  to `permissions.allow`. Claude Code applies the percentage to the window
+  minus the space it reserves for output, so compaction fires somewhat earlier
+  than `compact_percent` of `window_tokens` (about 99k rather than 110k with
+  the defaults).
 
 `install` previews by default and prints one line per script and registration
 as `ok`, `missing`, or `differs`; `--write` applies it. Other settings and

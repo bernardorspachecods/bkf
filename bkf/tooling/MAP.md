@@ -54,7 +54,8 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/bkf/tooling/bk
 - [hook_events.py](/bkf/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, gives the agent the resulting warnings with its next prompt, and dispatches the `log`, `guard`, `audit`, and `sources` hooks.
 - [session_number.py](/bkf/tooling/session_number.py) — Chooses the `<repo><N>` name (`bkf1`, `bkf2`) that the `tabname` hook gives an interactive Claude session on its first prompt.
 - [task_session.py](/bkf/tooling/task_session.py) — Links interactive Claude sessions to cards in the task store: creates and owns implicit session cards, safely backfills an explicit task's missing current UUID, and names implicit cards from their first prompt.
-- [bkf_hooks.py](/bkf/tooling/bkf_hooks.py) — Previews, installs, and reports the nine hook groups (modes, orient, check, log, rules, guard, audit, tabname, sources) for Claude Code and Codex.
+- [bkf_hooks.py](/bkf/tooling/bkf_hooks.py) — Previews, installs, and reports the eleven hook groups (modes, orient, check, log, rules, task, guard, audit, tabname, sources, context) for Claude Code and Codex.
+- [context_hook.py](/bkf/tooling/context_hook.py) — Warns before context compaction and restores the session continuation note after compaction.
 - [default_rules.txt](/bkf/tooling/default_rules.txt) — Holds the default standing rules that `bkf hooks install --write` copies to `~/.agent-hooks/rules.md` when that file is missing.
 - [agent_modes.py](/bkf/tooling/agent_modes.py) — Implements the `w:`, `t:` and `g:` prompt-prefix hook and the `git stash` block, copied to the user's home on install.
 - [bkf_cli.py](/bkf/tooling/bkf_cli.py) — Dispatches the installed `bkf` command to the focused tooling modules.

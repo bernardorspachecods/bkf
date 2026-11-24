@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import agent_modes
+import context_hook
 
 
 SCRIPT_NAME = "mode.py"
-HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "task", "guard", "audit", "tabname", "sources")
+HOOK_NAMES = ("modes", "orient", "check", "log", "rules", "task", "guard", "audit", "tabname", "sources", "context")
 EDIT_TOOLS = "Edit|Write|NotebookEdit|MultiEdit|apply_patch"
 TIMEOUT = 10
 RULES_LIMIT = 4000
@@ -59,6 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--write", action="store_true", help="apply the install (the default is a preview)")
     parser.add_argument("--only", choices=HOOK_NAMES, help="act on one hook group instead of all of them")
     parser.add_argument("--home", type=Path, help="home directory to act on (defaults to the real one)")
+    parser.add_argument("--context-warn", type=int, metavar="PCT", help="context warning threshold (1–99)")
+    parser.add_argument("--context-compact", type=int, metavar="PCT", help="context compaction threshold (1–99)")
+    parser.add_argument("--context-window", type=int, metavar="TOKENS", help="context window size (at least 1000)")
     return parser
 
 
@@ -111,6 +115,10 @@ def registrations(home: Path, only: str | None) -> list[Registration]:
             matcher = "WebFetch"
         timeout = 60 if event == "PostToolUse" else TIMEOUT
         wanted.append(Registration("sources", event, matcher, sources, sources_owner, timeout, claude_only=True))
+    context = f"{bkf_command(home)} hooks run context"
+    context_owner = re.compile(r"(^|/)bkf hooks run context$")
+    for event in ("PostToolUse", "UserPromptSubmit", "SessionStart"):
+        wanted.append(Registration("context", event, None, context, context_owner, claude_only=True))
     return [item for item in wanted if only in (None, item.hook)]
 
 
@@ -284,7 +292,7 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
             message = None
         return str(message or "systemMessage")
 
-    if registration.hook in {"check", "log", "guard", "audit", "tabname", "sources"}:
+    if registration.hook in {"check", "log", "guard", "audit", "tabname", "sources", "context"}:
         if result.stdout.strip() != '{"probe":"ok"}':
             return "no probe answer (stale install?)" if not result.stdout.strip() else "unexpected probe answer"
         if result.stderr:
@@ -294,7 +302,13 @@ def _probe_command(command: str, registration: Registration, home: Path) -> str 
     return None
 
 
-def report(home: Path, only: str | None, *, probe: bool = False) -> tuple[list[str], list[tuple[Target, Path, dict]], bool]:
+def report(
+    home: Path,
+    only: str | None,
+    *,
+    probe: bool = False,
+    context_values: dict[str, int] | None = None,
+) -> tuple[list[str], list[tuple[Target, Path, dict]], bool]:
     """Return report lines, the configs that need changes, and whether everything is current."""
     lines: list[str] = []
     pending: list[tuple[Target, Path, dict]] = []
@@ -329,6 +343,43 @@ def report(home: Path, only: str | None, *, probe: bool = False) -> tuple[list[s
             if state != "ok":
                 apply_registration(config, registration)
                 changed = True
+        if target.name == "claude" and context_values is not None:
+            expected = {
+                "autoCompactEnabled": True,
+                "env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": str(context_values["compact_percent"]),
+                "env.CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(context_values["window_tokens"]),
+            }
+            for key, value in expected.items():
+                if key.startswith("env."):
+                    env_key = key[4:]
+                    env = config.setdefault("env", {})
+                    actual = env.get(env_key)
+                    if actual != value:
+                        state = "differs"
+                        env[env_key] = value
+                        changed = True
+                    else:
+                        state = "ok"
+                else:
+                    actual = config.get(key)
+                    if actual != value:
+                        state = "differs"
+                        config[key] = value
+                        changed = True
+                    else:
+                        state = "ok"
+                current &= state == "ok"
+                lines.append(f"{state:<8} claude  setting           {key} = {value}")
+
+            permissions = config.setdefault("permissions", {})
+            allow = permissions.setdefault("allow", [])
+            for rule in ("Write(~/.agent-hooks/continue/**)", "Edit(~/.agent-hooks/continue/**)"):
+                state = "ok" if rule in allow else "missing"
+                if state != "ok":
+                    allow.append(rule)
+                    changed = True
+                current &= state == "ok"
+                lines.append(f"{state:<8} claude  permission        {rule}")
         if changed:
             pending.append((target, path, config))
     return lines, pending, current
@@ -362,8 +413,38 @@ def main(argv: list[str] | None = None) -> int:
                 print(text, file=sys.stderr)
             return 0
     home = (args.home or Path.home()).expanduser().resolve()
+    supplied_context = {
+        key: value
+        for key, value in (
+            ("warn_percent", args.context_warn),
+            ("compact_percent", args.context_compact),
+            ("window_tokens", args.context_window),
+        )
+        if value is not None
+    }
+    if supplied_context and args.only not in (None, "context"):
+        print("bkf hooks: --context-* options require --only context or all groups", file=sys.stderr)
+        return 2
+    context_values = context_hook.load_config(home)
+    context_values.update(supplied_context)
+    if not 1 <= context_values["warn_percent"] <= 99:
+        print("bkf hooks: context warn percentage must be between 1 and 99", file=sys.stderr)
+        return 2
+    if not 1 <= context_values["compact_percent"] <= 99:
+        print("bkf hooks: context compact percentage must be between 1 and 99", file=sys.stderr)
+        return 2
+    if context_values["warn_percent"] >= context_values["compact_percent"]:
+        print("bkf hooks: context warn percentage must be below compact percentage", file=sys.stderr)
+        return 2
+    if context_values["window_tokens"] < 1000:
+        print("bkf hooks: context window must be at least 1000 tokens", file=sys.stderr)
+        return 2
     try:
-        lines, pending, current = report(home, args.only, probe=args.action == "status")
+        context_installed = args.only in (None, "context")
+        lines, pending, current = report(
+            home, args.only, probe=args.action == "status",
+            context_values=context_values if context_installed else None,
+        )
         if args.only in (None, "rules"):
             lines.append(rules_file_status(home))
     except (OSError, ValueError) as exc:
@@ -374,15 +455,27 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(lines))
         return 0 if current else 1
 
+    context_path = home / ".agent-hooks" / "context.json"
+    context_config_pending = False
+    if supplied_context:
+        try:
+            existing_context = json.loads(context_path.read_text(encoding="utf-8")) if context_path.exists() else {}
+            if not isinstance(existing_context, dict):
+                existing_context = {}
+        except (OSError, UnicodeError, ValueError):
+            existing_context = {}
+        new_context = dict(existing_context)
+        new_context.update(supplied_context)
+        context_config_pending = new_context != existing_context
     copy_script = args.only in (None, "modes") and script_state(home) != "ok"
     copy_rules = args.only in (None, "rules") and not rules_file(home).exists()
-    changes = bool(pending) or copy_script or copy_rules
+    changes = bool(pending) or copy_script or copy_rules or context_config_pending
     print("\n".join(lines))
     if not changes:
         print("\nnothing to do")
         if args.action == "install" and args.write:
             try:
-                probe_lines, _, _ = report(home, args.only, probe=True)
+                probe_lines, _, _ = report(home, args.only, probe=True, context_values=context_values if context_installed else None)
             except (OSError, ValueError) as exc:
                 print(f"bkf hooks: {exc}", file=sys.stderr)
                 return 1
@@ -401,11 +494,13 @@ def main(argv: list[str] | None = None) -> int:
     if copy_rules:
         rules_file(home).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(default_rules(), rules_file(home))
+    if context_config_pending:
+        write_json(context_path, new_context)
     for _, path, config in pending:
         write_json(path, config)
     print("\napplied")
     try:
-        probe_lines, _, _ = report(home, args.only, probe=True)
+        probe_lines, _, _ = report(home, args.only, probe=True, context_values=context_values if context_installed else None)
     except (OSError, ValueError) as exc:
         print(f"bkf hooks: {exc}", file=sys.stderr)
         return 1

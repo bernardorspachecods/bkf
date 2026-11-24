@@ -126,7 +126,7 @@ class HooksTest(unittest.TestCase):
             if directory == ".claude":
                 expected_events.update({"PostToolUseFailure", "SubagentStop", "PermissionRequest", "StopFailure", "SessionEnd"})
             self.assertEqual(set(hooks), expected_events)
-            self.assertEqual(len(hooks["UserPromptSubmit"]), 6)
+            self.assertEqual(len(hooks["UserPromptSubmit"]), 7 if directory == ".claude" else 6)
             self.assertEqual(hooks["UserPromptSubmit"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["UserPromptSubmit"][5]["hooks"][0]["command"], f"{self.command} hooks run task")
             self.assertEqual(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], "python3 " + str((self.home / ".agent-hooks" / "mode.py").resolve()))
@@ -137,7 +137,7 @@ class HooksTest(unittest.TestCase):
             self.assertEqual(hooks["PreToolUse"][1]["matcher"], "Read|Bash")
             self.assertEqual(hooks["PreToolUse"][1]["hooks"][0]["command"], f"{self.command} hooks run guard")
             self.assertEqual(hooks["SessionStart"][0]["hooks"][0]["command"], f"{self.command} orient")
-            self.assertEqual(len(hooks["SessionStart"]), 5)
+            self.assertEqual(len(hooks["SessionStart"]), 6 if directory == ".claude" else 5)
             self.assertEqual(hooks["SessionStart"][4]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["Stop"][2]["hooks"][0]["command"], f"{self.command} hooks run tabname")
             self.assertEqual(hooks["Stop"][3]["hooks"][0]["command"], f"{self.command} hooks run task")
@@ -319,7 +319,7 @@ class HooksTest(unittest.TestCase):
         config = json.loads(once)
         self.assertEqual(config["theme"], "dark")
         self.assertIn(other, config["hooks"]["SessionStart"][0]["hooks"])
-        self.assertEqual(len(config["hooks"]["SessionStart"]), 6)
+        self.assertEqual(len(config["hooks"]["SessionStart"]), 7)
         code, output = run("install", "--write", "--home", self.home)
         self.assertIn("nothing to do", output)
         self.assertEqual(settings.read_text(), once)
@@ -328,6 +328,90 @@ class HooksTest(unittest.TestCase):
         run("install", "--write", "--only", "orient", "--home", self.home)
         self.assertEqual(set(self.config(".claude", "settings.json")["hooks"]), {"SessionStart"})
         self.assertFalse((self.home / ".agent-hooks").exists())
+
+    def test_context_is_registered_for_claude_only(self) -> None:
+        self.assertIn("context", bkf_hooks.HOOK_NAMES)
+        code, output = run("install", "--write", "--only", "context", "--home", self.home)
+        self.assertEqual(code, 0, output)
+        claude = self.config(".claude", "settings.json")["hooks"]
+        for event in ("PostToolUse", "UserPromptSubmit", "SessionStart"):
+            group = claude[event][0]
+            self.assertNotIn("matcher", group)
+            self.assertEqual(group["hooks"][0]["command"], f"{self.command} hooks run context")
+        self.assertFalse((self.home / ".codex" / "hooks.json").exists())
+        self.assertEqual(run("status", "--only", "context", "--home", self.home)[0], 0)
+
+    def test_context_options_merge_config_and_preserve_other_settings(self) -> None:
+        context_path = self.home / ".agent-hooks" / "context.json"
+        context_path.parent.mkdir()
+        context_path.write_text(json.dumps({"window_tokens": 240000, "custom": "kept", "warn_percent": 30}))
+        settings_path = self.home / ".claude" / "settings.json"
+        kept = {"theme": "dark", "env": {"OTHER": "value"}, "permissions": {"allow": ["Read(*)"]}}
+        settings_path.write_text(json.dumps(kept))
+        code, output = run(
+            "install", "--write", "--only", "context", "--context-compact", 60,
+            "--context-warn", 35, "--home", self.home,
+        )
+        self.assertEqual(code, 0, output)
+        context = json.loads(context_path.read_text())
+        self.assertEqual(context, {"window_tokens": 240000, "custom": "kept", "warn_percent": 35, "compact_percent": 60})
+        settings = json.loads(settings_path.read_text())
+        self.assertEqual(settings["theme"], "dark")
+        self.assertEqual(settings["env"], {
+            "OTHER": "value", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60",
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "240000",
+        })
+        self.assertTrue(settings["autoCompactEnabled"])
+        allow = settings["permissions"]["allow"]
+        self.assertEqual(allow, ["Read(*)", "Write(~/.agent-hooks/continue/**)", "Edit(~/.agent-hooks/continue/**)"])
+        self.assertEqual(run("status", "--only", "context", "--home", self.home)[0], 0)
+
+    def test_context_preview_reports_changes_without_writing(self) -> None:
+        code, output = run("install", "--only", "context", "--context-compact", 60, "--home", self.home)
+        self.assertEqual(code, 0)
+        self.assertIn("preview only", output)
+        self.assertIn("differs  claude  setting", output)
+        self.assertFalse((self.home / ".agent-hooks" / "context.json").exists())
+        self.assertFalse((self.home / ".claude" / "settings.json").exists())
+
+    def test_context_options_reject_invalid_values_and_other_groups(self) -> None:
+        cases = (
+            ("--context-warn", 0),
+            ("--context-compact", 100),
+            ("--context-window", 999),
+            ("--context-warn", 60, "--context-compact", 60),
+            ("--only", "orient", "--context-warn", 30),
+        )
+        for options in cases:
+            with self.subTest(options=options):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    code = bkf_hooks.main(["install", *map(str, options), "--home", str(self.home)])
+                self.assertEqual(code, 2)
+                self.assertIn("bkf hooks:", stderr.getvalue())
+        self.assertFalse((self.home / ".agent-hooks" / "context.json").exists())
+
+    def test_context_install_without_options_preserves_user_config(self) -> None:
+        path = self.home / ".agent-hooks" / "context.json"
+        path.parent.mkdir()
+        path.write_text('{"warn_percent": 30, "compact_percent": 50, "window_tokens": 180000, "extra": true}\n')
+        original = path.read_text()
+        run("install", "--write", "--only", "context", "--home", self.home)
+        self.assertEqual(path.read_text(), original)
+        code, output = run("install", "--write", "--only", "context", "--home", self.home)
+        self.assertIn("nothing to do", output)
+        self.assertEqual(code, 0)
+        self.assertEqual(path.read_text(), original)
+
+    def test_context_status_reports_differing_settings(self) -> None:
+        run("install", "--write", "--only", "context", "--home", self.home)
+        settings_path = self.home / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text())
+        settings["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = "70"
+        settings_path.write_text(json.dumps(settings))
+        code, output = run("status", "--only", "context", "--home", self.home)
+        self.assertEqual(code, 1)
+        self.assertIn("differs  claude  setting           env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = 55", output)
 
     def test_only_guard_registers_read_and_bash_pre_tool_use(self) -> None:
         run("install", "--write", "--only", "guard", "--home", self.home)

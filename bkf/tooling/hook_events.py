@@ -26,7 +26,7 @@ AUDIT_PREFIX = re.compile(r"^\s*bkf\s*:", re.IGNORECASE)
 REPORT_DIR = Path.home() / ".agent-hooks" / "reports"
 PASTE_TAG = re.compile(r"^[ \t]*</?pasted_content\b[^>\n]*>[ \t]*\n?|</?pasted_content\b[^>\n]*>", re.MULTILINE)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$|^\*\*\* Move to: (.+)$", re.MULTILINE)
-EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit", "warnings", "tabname", "sources"}
+EVENTS = {"record", "snapshot", "last", "log", "stop", "guard", "audit", "warnings", "tabname", "sources", "context"}
 TITLE_TAIL_BYTES = 2_000_000
 TAB_NAME_LIMIT = 80
 
@@ -63,6 +63,8 @@ def _probe(event: str) -> None:
         importlib.import_module("audit")
     elif event == "sources":
         importlib.import_module("source_hooks")
+    elif event == "context":
+        importlib.import_module("context_hook")
     elif event == "stop":
         for module in ("generate_inventory", "validate_bundle", "bkf_common", "navigation_map"):
             importlib.import_module(module)
@@ -526,6 +528,10 @@ def main(argv: list[str]) -> int:
             output = stop(data)
         elif event == "sources":
             from source_hooks import handle
+
+            output = handle(data)
+        elif event == "context":
+            from context_hook import handle
 
             output = handle(data)
         elif event == "guard":
