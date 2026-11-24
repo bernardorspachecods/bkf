@@ -11,12 +11,14 @@ failed.
 
 `worktree` begins a unit in a prepared, detached worktree based on the main checkout's current files. `gate` and
 `check` use that worktree from any directory. `integrate` three-way merges its changes into the main checkout's
-working files, saving the prior tree in `pre-integration` and any conflicting paths in `conflicts.txt`. It exits 0
-for a clean merge, 1 for conflicts, or 3 on error. `discard` removes the worktree and keeps the unit's evidence.
+working files, saving the prior tree in `pre-integration`, joined paths in `joined.txt`, and any remaining
+conflicting paths in `conflicts.txt`. It exits 0 for a clean merge, 1 for conflicts, or 3 on error.
+`discard` removes the worktree and keeps the unit's evidence.
 """
 import argparse
 import fcntl
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -112,9 +114,9 @@ def begin(args):
     return PASS
 
 
-def _git(checkout, *args, exits=(0,), data=None):
+def _git(checkout, *args, exits=(0,), data=None, env=None):
     result = subprocess.run(
-        ["git", "-C", os.fspath(checkout), *args], input=data, capture_output=True, check=False,
+        ["git", "-C", os.fspath(checkout), *args], input=data, capture_output=True, check=False, env=env,
     )
     if result.returncode not in exits:
         raise RunError("git {0} failed: {1}".format(args[0], os.fsdecode(result.stderr).strip()))
@@ -163,6 +165,110 @@ def _unit_checkout(unit_dir):
 
 def _paths(output):
     return [os.fsdecode(path) for path in output.split(b"\0") if path]
+
+
+_CONFLICT_MARKER = re.compile(rb"<<<<<<< |\|{7} |>>>>>>> |=======\r?$")
+
+
+def _check_integration_paths(checkout, paths):
+    marked = []
+    for name in paths:
+        path = checkout / name
+        if path.is_file() and path.resolve() == path:
+            with path.open("rb") as source:
+                if any(_CONFLICT_MARKER.match(line) for line in source):
+                    marked.append(name)
+    if marked:
+        raise RunError("resolve conflict markers before integrating:\n" + "\n".join(marked))
+
+
+def _conflict_hunks(ours, base, theirs):
+    # Git can append :path to its labels when a side renamed a file.
+    def label(revision):
+        return re.escape(revision.encode("ascii")) + rb"(?::[^\r\n]*)?\r?\n"
+
+    return re.compile(
+        rb"^(?P<opening><+) " + label(ours)
+        + rb"(?P<main>.*?)^\|+ " + label(base)
+        + rb"(?P<rest>.*?)^>+ " + label(theirs),
+        re.MULTILINE | re.DOTALL,
+    )
+
+
+def _rewrite_conflict_hunks(contents, hunks, unit):
+    joined = False
+    remaining = False
+
+    def replace(hunk):
+        nonlocal joined, remaining
+        newline = b"\r\n" if hunk[0].endswith(b"\r\n") else b"\n"
+        separator = b"=" * len(hunk["opening"])
+        rest = hunk["rest"]
+        first_line, _, unit_lines = rest.partition(b"\n")
+        # A second separator could make the first one part of the base text.
+        if first_line in (separator, separator + b"\r") and not re.search(
+            rb"^" + separator + rb"\r?$", unit_lines, re.MULTILINE
+        ):
+            start = hunk.start()
+            while start:
+                previous = contents.rfind(b"\n", 0, start - 1) + 1
+                if contents[previous:start].strip(b" \t\r\n"):
+                    break
+                start = previous
+            joined = True
+            return hunk["main"] + contents[start:hunk.start()] + unit_lines
+        remaining = True
+        return (b"<<<<<<< main checkout" + newline + hunk["main"]
+                + b"||||||| base" + newline + rest + b">>>>>>> " + unit + newline)
+
+    return hunks.sub(replace, contents), joined, remaining
+
+
+def _non_content_conflicts(messages):
+    # merge-tree -z reports each message as a path count, its paths, a stable type, and the text.
+    fields = iter(messages.split(b"\0"))
+    conflicts = set()
+    for count in fields:
+        if not count:
+            break
+        paths = [next(fields) for _ in range(int(count))]
+        kind = next(fields)
+        next(fields)
+        if kind.startswith(b"CONFLICT ") and kind != b"CONFLICT (contents)":
+            conflicts.update(paths)
+    return conflicts
+
+
+def _rewrite_merge_tree(checkout, tree, conflicts, messages, hunks, unit):
+    if not conflicts:
+        return tree, conflicts, []
+    entries = _git(checkout, "--literal-pathspecs", "ls-tree", "-r", "-z", tree, "--", *conflicts).stdout
+    structural = _non_content_conflicts(messages)
+    joined, resolved, updates = set(), set(), []
+    for entry in entries.split(b"\0"):
+        if not entry:
+            continue
+        header, path = entry.split(b"\t", 1)
+        mode, kind, object_id = header.split()
+        name = os.fsdecode(path)
+        if name not in conflicts or kind != b"blob" or mode not in (b"100644", b"100755"):
+            continue
+        original = _git(checkout, "cat-file", "blob", object_id.decode("ascii")).stdout
+        rewritten, did_join, remaining = _rewrite_conflict_hunks(original, hunks, unit)
+        if did_join:
+            joined.add(name)
+            if not remaining and path not in structural:
+                resolved.add(name)
+        if rewritten != original:
+            blob = _git(checkout, "hash-object", "-w", "--stdin", data=rewritten).stdout.strip()
+            updates.append(mode + b" " + blob + b"\t" + path + b"\0")
+    if updates:
+        with tempfile.TemporaryDirectory(prefix="plan-unit-index.") as temporary:
+            env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / "index"))
+            _git(checkout, "read-tree", tree, env=env)
+            _git(checkout, "update-index", "-z", "--index-info", data=b"".join(updates), env=env)
+            tree = _git(checkout, "write-tree", env=env).stdout.decode("ascii").strip()
+    return tree, [path for path in conflicts if path not in resolved], [path for path in conflicts if path in joined]
 
 
 def _file_stat(path):
@@ -252,38 +358,52 @@ def _integrate(checkout, unit_dir):
     ours = snapshot_commit(checkout)
     before = _revision(checkout, ours + "^{tree}")
     theirs = snapshot_commit(tree)
-    merge = _git(checkout, "merge-tree", "--write-tree", "--merge-base=" + base,
+    merge = _git(checkout, "-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree", "--merge-base=" + base,
                  "--name-only", "-z", ours, theirs, exits=(0, 1))
     merged, _, details = merge.stdout.partition(b"\0")
     after = merged.decode("ascii")
-    conflicts = _paths(details.partition(b"\0\0")[0]) if merge.returncode else []
+    conflict_paths, _, messages = (b"\0" + details).partition(b"\0\0")
+    conflicts = _paths(conflict_paths) if merge.returncode else []
+    unlisted_conflict = merge.returncode == 1 and not conflicts
     diff = ("diff", "--no-renames", "--no-ext-diff", "--no-textconv")
     paths = _paths(_git(checkout, *diff, "--name-only", "-z", before, after, "--").stdout)
+    _check_integration_paths(checkout, paths)
+    rewritten, conflicts, joined = _rewrite_merge_tree(
+        checkout, after, conflicts, messages, _conflict_hunks(ours, base, theirs), os.fsencode(unit_dir.name),
+    )
+    if rewritten != after:
+        updated_paths = _paths(_git(checkout, *diff, "--name-only", "-z", before, rewritten, "--").stdout)
+        _check_integration_paths(checkout, sorted(set(updated_paths).difference(paths)))
+        paths = updated_paths
     patch = _git(checkout, *diff, "--binary", "--src-prefix=a/", "--dst-prefix=b/",
-                 before, after, "--").stdout
+                 before, rewritten, "--").stdout
 
-    conflict_file = unit_dir / "conflicts.txt"
+    evidence = {pre_integration: before.encode("ascii") + b"\n"}
+    for filename, names in (("conflicts.txt", conflicts), ("joined.txt", joined)):
+        if names:
+            evidence[unit_dir / filename] = b"".join(os.fsencode(path) + b"\n" for path in names)
     try:
-        pre_integration.write_text(before + "\n", encoding="utf-8")
-        if conflicts:
-            conflict_file.write_bytes(b"".join(os.fsencode(path) + b"\n" for path in conflicts))
+        for file, contents in evidence.items():
+            file.write_bytes(contents)
         if patch:
             _apply_integration_patch(checkout, paths, patch)
     except (OSError, RunError):
-        pre_integration.unlink(missing_ok=True)
-        if conflicts:
-            conflict_file.unlink(missing_ok=True)
+        for file in evidence:
+            file.unlink(missing_ok=True)
         raise
 
-    if merge.returncode:
+    if conflicts or unlisted_conflict:
         print("conflicts:")
         for path in conflicts:
             print(path)
-        return BACK
-    print("integrated: {0} file(s)".format(len(paths)))
-    for path in paths:
-        print(path)
-    return PASS
+    else:
+        print("integrated: {0} file(s)".format(len(paths)))
+        for path in paths:
+            print(path)
+    if joined:
+        print("joined:")
+        print("\n".join(joined))
+    return BACK if conflicts or unlisted_conflict else PASS
 
 
 def integrate(args):
@@ -423,6 +543,7 @@ def _parser():
         sub = commands.add_parser(name, help=description, description=description)
         if name == "integrate":
             sub.epilog = ("Saves the main checkout's prior tree in pre-integration. "
+                          "Lists joined insertions in joined.txt. "
                           "Exits 0 for a clean merge, 1 with paths in conflicts.txt for conflicts, "
                           "or 3 on error. Run from the checkout that created the unit.")
         sub.add_argument("brief")

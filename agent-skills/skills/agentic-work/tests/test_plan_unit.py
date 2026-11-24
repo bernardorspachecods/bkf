@@ -402,9 +402,29 @@ class PlanUnitTests(unittest.TestCase):
         before_last = (last.parent / "pre-integration").read_text().strip()
         self.assertEqual(self.git("show", before_last + ":seed.txt").splitlines()[0], "unit one")
 
+    def test_two_units_append_functions_with_the_files_blank_line_spacing(self):
+        self.write_brief()
+        original = "def original():\n    pass\n\n\n"
+        first_function = "def first():\n    pass\n"
+        second_function = "def second():\n    pass\n"
+        (self.repo / "text.py").write_text(original)
+        first = self.worktree(unit="first")
+        second = self.worktree(unit="second")
+        (first / "text.py").write_text(original + first_function)
+        (second / "text.py").write_text(original + second_function)
+
+        result = self.unit_command("integrate", "--unit", "first")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.unit_command("integrate", "--unit", "second")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["integrated: 1 file(s)", "text.py", "joined:", "text.py"])
+        self.assertEqual((self.repo / "text.py").read_text(), original + first_function + "\n\n" + second_function)
+        self.assertEqual((second.parent / "joined.txt").read_text(), "text.py\n")
+        self.assertFalse((second.parent / "conflicts.txt").exists())
+
     def test_conflict_preserves_index_and_keeps_the_pre_integration_tree_readable(self):
         self.write_brief()
-        tree = self.worktree()
+        tree = self.worktree(unit="change-seed")
         (tree / "seed.txt").write_text("from unit\n")
         (tree / "other.txt").write_text("also from unit\n")
         self.implement("staged seed\n")
@@ -414,12 +434,13 @@ class PlanUnitTests(unittest.TestCase):
         index_before = index.read_bytes()
         head_before = self.git("rev-parse", "HEAD")
 
-        result = self.unit_command("integrate")
+        result = self.unit_command("integrate", "--unit", "change-seed")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ["conflicts:", "seed.txt"])
         self.assertEqual((tree.parent / "conflicts.txt").read_text(), "seed.txt\n")
         conflicted = (self.repo / "seed.txt").read_text()
-        self.assertRegex(conflicted, r"(?s)<<<<<<< .*\nfrom main\n=======\nfrom unit\n>>>>>>> ")
+        self.assertRegex(conflicted, r"\A<<<<<<< main checkout\nfrom main\n\|{7} .*\nseed\n"
+                         r"=======\nfrom unit\n>>>>>>> change-seed\n\Z")
         self.assertEqual((self.repo / "other.txt").read_text(), "also from unit\n")
         self.assertEqual(index.read_bytes(), index_before)
         self.assertEqual(self.git("rev-parse", "HEAD"), head_before)
@@ -429,6 +450,72 @@ class PlanUnitTests(unittest.TestCase):
         before = (tree.parent / "pre-integration").read_text().strip()
         patch = self.git("diff", before, "--", "seed.txt")
         self.assertIn("-from main\n+resolved seed\n", patch)
+
+    def test_third_unit_is_refused_while_a_file_it_would_write_has_markers(self):
+        self.write_brief()
+        for unit in ("first", "second", "third"):
+            tree = self.worktree(unit=unit)
+            (tree / "seed.txt").write_text(unit + "\n")
+        (tree / "also.txt").write_text("new file\n")
+        self.assertEqual(self.unit_command("integrate", "--unit", "first").returncode, 0)
+        self.assertEqual(self.unit_command("integrate", "--unit", "second").returncode, 1)
+        seed = self.repo / "seed.txt"
+        conflicted = seed.read_bytes()
+        index = self.repo / ".git" / "index"
+        index_before = index.read_bytes()
+        head_before = self.git("rev-parse", "HEAD")
+        unit_files = set(tree.parent.iterdir())
+
+        result = self.unit_command("integrate", "--unit", "third")
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertIn("seed.txt", result.stderr)
+        self.assertEqual(seed.read_bytes(), conflicted)
+        self.assertFalse((self.repo / "also.txt").exists())
+        self.assertEqual(index.read_bytes(), index_before)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head_before)
+        self.assertEqual(set(tree.parent.iterdir()), unit_files)
+
+    def test_only_files_the_integration_would_write_are_checked_for_markers(self):
+        self.write_brief()
+        markers = ("<<<<<<< main checkout\n", "||||||| base\n", "=======\n", ">>>>>>> earlier unit\n")
+        for number, marker in enumerate(markers):
+            with self.subTest(marker=marker):
+                unit = "marker-" + str(number)
+                nearby = "other-" + str(number) + ".txt"
+                (self.repo / nearby).write_text("======= heading\nA line with <<<<<<< inside it\n")
+                self.implement(marker)
+                tree = self.worktree(unit=unit)
+                (tree / "seed.txt").write_text("replacement\n")
+                blocked = self.unit_command("integrate", "--unit", unit)
+                self.assertEqual(blocked.returncode, 3, blocked.stdout)
+                self.assertIn("seed.txt", blocked.stderr)
+                self.assertEqual((self.repo / "seed.txt").read_text(), marker)
+
+                (tree / "seed.txt").write_text(marker)
+                (tree / nearby).write_text("new content\n")
+                integrated = self.unit_command("integrate", "--unit", unit)
+                self.assertEqual(integrated.returncode, 0, integrated.stderr)
+                self.assertEqual((self.repo / "seed.txt").read_text(), marker)
+                self.assertEqual((self.repo / nearby).read_text(), "new content\n")
+
+    def test_joined_insertion_and_real_conflict_in_the_same_file(self):
+        self.write_brief()
+        unchanged = "line two\nline three\nlast line\n\n"
+        self.implement("original\n" + unchanged)
+        tree = self.worktree(unit="mixed")
+        self.implement("from main\n" + unchanged + "main insertion\n")
+        (tree / "seed.txt").write_text("from unit\n" + unchanged + "unit insertion\n")
+
+        result = self.unit_command("integrate", "--unit", "mixed")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["conflicts:", "seed.txt", "joined:", "seed.txt"])
+        self.assertEqual((tree.parent / "conflicts.txt").read_text(), "seed.txt\n")
+        self.assertEqual((tree.parent / "joined.txt").read_text(), "seed.txt\n")
+        self.assertEqual(
+            (self.repo / "seed.txt").read_text(),
+            "<<<<<<< main checkout\nfrom main\n||||||| base\noriginal\n=======\nfrom unit\n>>>>>>> mixed\n"
+            + unchanged + "main insertion\n\nunit insertion\n",
+        )
 
     def test_integrate_adds_and_deletes_files(self):
         self.write_brief()
