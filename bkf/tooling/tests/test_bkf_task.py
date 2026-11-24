@@ -110,6 +110,82 @@ class BkfTaskTests(unittest.TestCase):
         status, _, _ = self.run_task("new", "--repo", str(self.repo), "--title", "x", "--kind", "bogus")
         self.assertEqual(status, 2)
 
+    # edit
+
+    def test_edit_title_only_preserves_other_fields_and_creation_order(self) -> None:
+        first = self.new("first", "--kind", "unit", "--source", "source")
+        second = self.new("second")
+        before = task_store.read(self.store, first).to_json()
+        order_before = [task.id for task in task_store.list_tasks(self.store).tasks]
+        self.assertEqual(self.run_task("edit", first, "--title", "changed")[0], 0)
+        after = task_store.read(self.store, first).to_json()
+        expected = dict(before, title="changed", updated=after["updated"])
+        self.assertEqual(after, expected)
+        self.assertEqual([task.id for task in task_store.list_tasks(self.store).tasks], order_before)
+
+    def test_edit_body_only_reads_a_file_and_preserves_other_fields(self) -> None:
+        task_id = self.new("prompt")
+        before = task_store.read(self.store, task_id).to_json()
+        body_file = self.root / "replacement.md"
+        body_file.write_text("new prompt\n", encoding="utf-8")
+        status, output, error = self.run_task("edit", task_id, "--body-file", str(body_file))
+        self.assertEqual((status, output, error), (0, f"{task_id}\n", ""))
+        after = task_store.read(self.store, task_id).to_json()
+        self.assertEqual(after, dict(before, body="new prompt\n", updated=after["updated"]))
+
+    def test_edit_title_and_body_and_json_confirmation(self) -> None:
+        task_id = self.new("before")
+        body_file = self.root / "replacement.md"
+        body_file.write_text("body", encoding="utf-8")
+        status, output, error = self.run_task("edit", task_id, "--title", "after", "--body-file", str(body_file), "--json")
+        self.assertEqual((status, error), (0, ""))
+        data = json.loads(output)
+        self.assertEqual((data["id"], data["title"], data["body"]), (task_id, "after", "body"))
+
+    def test_edit_uses_bkf_task_when_id_is_omitted(self) -> None:
+        task_id = self.new("before")
+        with patch.dict(os.environ, {"BKF_TASK": task_id}):
+            self.assertEqual(self.run_task("edit", "--title", "after")[0], 0)
+        self.assertEqual(task_store.read(self.store, task_id).title, "after")
+
+    def test_edit_refuses_a_task_that_is_not_todo_or_has_session_or_worktree(self) -> None:
+        for status in ("working", "to-merge", "failed"):
+            with self.subTest(status=status):
+                task_id = self.new(status)
+                task_store.update(self.store, task_id, lambda task: setattr(task, "status", status))
+                self.assertRefused(*self.run_task("edit", task_id, "--title", "changed"), "only todo tasks")
+
+        task_id = self.new("session")
+        task_store.update(
+            self.store, task_id,
+            lambda task: setattr(task, "session", {key: None for key in task_store.SESSION_KEYS}),
+        )
+        self.assertRefused(*self.run_task("edit", task_id, "--title", "changed"), "session or worktree")
+
+        task_id = self.new("worktree")
+        task_store.update(
+            self.store, task_id,
+            lambda task: setattr(task, "worktree", {"path": "/tmp/w", "branch": None, "head": None}),
+        )
+        self.assertRefused(*self.run_task("edit", task_id, "--title", "changed"), "session or worktree")
+
+    def test_edit_unknown_task_is_refused(self) -> None:
+        self.assertRefused(*self.run_task("edit", "t20000101-000000-0000", "--title", "x"), "no task")
+
+    def test_edit_without_changes_is_a_usage_error(self) -> None:
+        self.assertEqual(self.run_task("edit", "t20000101-000000-0000")[0], 2)
+
+    def test_edit_empty_title_is_refused_without_changing_task(self) -> None:
+        task_id = self.new("keep")
+        before = self.card_bytes(task_id)
+        self.assertRefused(*self.run_task("edit", task_id, "--title", "  "), "title is empty")
+        self.assertEqual(self.card_bytes(task_id), before)
+
+    def test_edit_body_file_dash_reads_standard_input(self) -> None:
+        task_id = self.new("prompt")
+        self.assertEqual(self.run_task("edit", task_id, "--body-file", "-", stdin="stdin body")[0], 0)
+        self.assertEqual(task_store.read(self.store, task_id).body, "stdin body")
+
     # list
 
     def test_list_prints_one_line_per_task_and_filters_combine(self) -> None:
