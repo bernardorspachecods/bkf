@@ -11,8 +11,9 @@ failed.
 
 `worktree` begins a unit in a prepared, detached worktree based on the main checkout's current files. `gate` and
 `check` use that worktree from any directory. `integrate` three-way merges its changes into the main checkout's
-working files, saving the prior tree in `pre-integration`, joined paths in `joined.txt`, and any remaining
-conflicting paths in `conflicts.txt`. It exits 0 for a clean merge, 1 for conflicts, or 3 on error.
+working files, saving the prior tree in `pre-integration`, joined paths in `joined.txt`, any remaining conflicting
+paths in `conflicts.txt`, and the marked merge tree in `marked` when conflicts remain. It exits 0 for a clean merge,
+1 for conflicts, or 3 on error.
 `discard` removes the worktree and keeps the unit's evidence.
 """
 import argparse
@@ -382,6 +383,8 @@ def _integrate(checkout, unit_dir):
     for filename, names in (("conflicts.txt", conflicts), ("joined.txt", joined)):
         if names:
             evidence[unit_dir / filename] = b"".join(os.fsencode(path) + b"\n" for path in names)
+    if conflicts or unlisted_conflict:
+        evidence[unit_dir / "marked"] = rewritten.encode("ascii") + b"\n"
     try:
         for file, contents in evidence.items():
             file.write_bytes(contents)
@@ -543,6 +546,7 @@ def _parser():
         sub = commands.add_parser(name, help=description, description=description)
         if name == "integrate":
             sub.epilog = ("Saves the main checkout's prior tree in pre-integration. "
+                          "Saves the marked merge tree in marked when conflicts remain. "
                           "Lists joined insertions in joined.txt. "
                           "Exits 0 for a clean merge, 1 with paths in conflicts.txt for conflicts, "
                           "or 3 on error. Run from the checkout that created the unit.")

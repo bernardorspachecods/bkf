@@ -396,6 +396,7 @@ class PlanUnitTests(unittest.TestCase):
             result = self.unit_command("integrate", "--unit", unit)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.splitlines(), ["integrated: 1 file(s)", "seed.txt"])
+            self.assertFalse((self.out / unit / "marked").exists())
         self.assertEqual(
             (self.repo / "seed.txt").read_text(), "unit one\n2\n3\n4\nmain edit\n6\n7\n8\nunit two\n"
         )
@@ -446,10 +447,15 @@ class PlanUnitTests(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), head_before)
         self.assertEqual(self.git("show", ":seed.txt"), "staged seed\n")
 
+        marked = (tree.parent / "marked").read_text().strip()
+        self.assertNotEqual(marked, (tree.parent / "pre-integration").read_text().strip())
+        self.git("cat-file", "-e", marked + "^{tree}")
         self.implement("resolved seed\n")
-        before = (tree.parent / "pre-integration").read_text().strip()
-        patch = self.git("diff", before, "--", "seed.txt")
-        self.assertIn("-from main\n+resolved seed\n", patch)
+        conflicts = (tree.parent / "conflicts.txt").read_text().splitlines()
+        patch = self.git("diff", marked, "--", *conflicts)
+        changed = [line for line in patch.splitlines()
+                   if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
+        self.assertEqual(changed, ["-" + line for line in conflicted.splitlines()] + ["+resolved seed"])
 
     def test_third_unit_is_refused_while_a_file_it_would_write_has_markers(self):
         self.write_brief()
@@ -510,6 +516,8 @@ class PlanUnitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ["conflicts:", "seed.txt", "joined:", "seed.txt"])
         self.assertEqual((tree.parent / "conflicts.txt").read_text(), "seed.txt\n")
+        marked = (tree.parent / "marked").read_text().strip()
+        self.git("cat-file", "-e", marked + "^{tree}")
         self.assertEqual((tree.parent / "joined.txt").read_text(), "seed.txt\n")
         self.assertEqual(
             (self.repo / "seed.txt").read_text(),
