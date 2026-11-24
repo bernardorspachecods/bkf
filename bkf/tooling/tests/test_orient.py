@@ -42,6 +42,27 @@ def run(*args: object) -> subprocess.CompletedProcess[str]:
 
 
 class OrientTests(unittest.TestCase):
+    def test_linked_worktree_orients_from_its_own_bundle_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory) / "checkout"
+            (checkout / ".git").mkdir(parents=True)
+            (checkout / "MAP.md").write_text(map_text(root=True, description="Outer bundle."), encoding="utf-8")
+            (checkout / "outer.md").write_text(document("Outer", "Outer guide."), encoding="utf-8")
+            worktree = checkout / ".claude" / "worktrees" / "feature"
+            library = worktree / "library"
+            library.mkdir(parents=True)
+            (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/feature\n", encoding="utf-8")
+            (worktree / "MAP.md").write_text(map_text(root=True, description="Worktree bundle."), encoding="utf-8")
+            (library / "guide.md").write_text(document("Guide", "Worktree guide."), encoding="utf-8")
+
+            result = run("--cwd", worktree)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("orientation (from .)", result.stdout)
+        self.assertIn("/MAP.md\n  /library/guide.md  Worktree guide.", result.stdout)
+        self.assertNotIn("Outer bundle.", result.stdout)
+        self.assertNotIn("outer.md", result.stdout)
+
     def test_root_cwd_prints_root_map_and_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

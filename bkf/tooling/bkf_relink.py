@@ -17,8 +17,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from bkf_common import MAP_NAME, BKFInputError, is_bundle_root_map, read_text_preserving_newlines
-from relink import apply_moves, bundle_files, find_outermost_bundle_root, markdown_link_paths, refresh_inventories
+from bkf_common import (
+    MAP_NAME,
+    BKFInputError,
+    find_outermost_bundle_root,
+    is_bundle_root_map,
+    read_text_preserving_newlines,
+)
+from relink import apply_moves, bundle_files, markdown_link_paths, refresh_inventories
 
 
 class RelinkError(Exception):

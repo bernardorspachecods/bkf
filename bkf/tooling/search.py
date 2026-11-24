@@ -65,17 +65,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _bundle_root(cwd: Path, is_bundle_root_map) -> Path | None:
-    candidates = [
-        directory
-        for directory in cwd.parents
-        if (directory / "MAP.md").is_file() and is_bundle_root_map(directory / "MAP.md")
-    ]
-    if cwd.is_dir() and (cwd / "MAP.md").is_file() and is_bundle_root_map(cwd / "MAP.md"):
-        candidates.append(cwd)
-    return min(candidates, key=lambda directory: len(directory.parts)) if candidates else None
-
-
 def _sections(body: str, path: str, description: str, tags: tuple[str, ...] = ()) -> list[Section]:
     """Split Markdown into heading sections, ignoring headings inside fences."""
     lines = body.splitlines()
@@ -351,10 +340,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        from bkf_common import is_bundle_root_map
+        from bkf_common import find_outermost_bundle_root
 
         cwd = (args.cwd or Path.cwd()).resolve()
-        root = _bundle_root(cwd, is_bundle_root_map)
+        root = find_outermost_bundle_root(cwd)
         if root is None:
             raise ValueError(f"no BKF bundle contains {cwd}")
         scope = None

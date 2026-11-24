@@ -18,17 +18,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _bundle_root(cwd: Path, is_bundle_root_map) -> Path | None:
-    roots = [
-        directory
-        for directory in cwd.parents
-        if (directory / "MAP.md").is_file() and is_bundle_root_map(directory / "MAP.md")
-    ]
-    if (cwd / "MAP.md").is_file() and is_bundle_root_map(cwd / "MAP.md"):
-        roots.append(cwd)
-    return min(roots, key=lambda directory: len(directory.parts)) if roots else None
-
-
 def _nearest_bundle_root(directory: Path, is_bundle_root_map) -> Path:
     for candidate in [directory, *directory.parents]:
         if (candidate / "MAP.md").is_file() and is_bundle_root_map(candidate / "MAP.md"):
@@ -74,9 +63,9 @@ def _render(root: Path, cwd: Path, map_paths: list[Path], entries_by_map: list[l
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        from bkf_common import MAP_NAME, inventory_entries, is_bundle_root_map
+        from bkf_common import MAP_NAME, find_outermost_bundle_root, inventory_entries, is_bundle_root_map
         cwd = (args.cwd or Path.cwd()).resolve()
-        root = _bundle_root(cwd, is_bundle_root_map)
+        root = find_outermost_bundle_root(cwd)
         if root is None:
             return 0
 

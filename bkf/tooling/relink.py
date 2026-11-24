@@ -18,6 +18,7 @@ import generate_inventory
 from bkf_common import (
     MAP_NAME,
     find_bundles,
+    find_outermost_bundle_root,
     is_bundle_root_map,
     is_linked_worktree,
     outermost_bundle_root,
@@ -258,20 +259,6 @@ def _retarget_html(value: str, old_path: str, new_path: str, moves: dict[str, st
     relative = os.path.relpath(new_target, new_dir or ".").replace(os.sep, "/")
     new = quote(relative, safe="/") + suffix
     return value if new == value else new
-
-
-def find_outermost_bundle_root(cwd: Path) -> Path | None:
-    """Return the outermost bundle root of the bundle that holds cwd, or None when there is none.
-
-    The climb stops at the first directory holding `.git` (a folder, or a file in a linked worktree),
-    so a worktree inside another checkout never resolves to that checkout's bundle.
-    """
-    for directory in (cwd, *cwd.parents):
-        if is_bundle_root_map(directory / MAP_NAME):
-            return outermost_bundle_root(directory)
-        if (directory / ".git").exists():
-            return None
-    return None
 
 
 _SKIPPED_DIRECTORIES = {".git", "node_modules"}

@@ -12,8 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from bkf_common import MAP_NAME, BKFInputError, is_bundle_root_map
-from relink import apply_moves, find_outermost_bundle_root, planned_updates, refresh_inventories
+from bkf_common import MAP_NAME, BKFInputError, find_outermost_bundle_root, is_bundle_root_map
+from relink import apply_moves, planned_updates, refresh_inventories
 
 
 class MoveRefused(Exception):
