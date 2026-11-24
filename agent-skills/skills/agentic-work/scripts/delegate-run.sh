@@ -3,7 +3,7 @@
 # Usage: [DELEGATE_IN_PLACE=1] delegate-run.sh <name> <brief-file> [base-ref] [model] [effort]
 # DELEGATE_IN_PLACE=1 runs in the main checkout instead of a new worktree.
 # Without DELEGATE_IN_PLACE the agent works in <run>/worktree, on a new branch delegate/<name> made from the base.
-# The run folder is the record: base, diffstat.txt, last-message.md and exit (the agent's exit status).
+# The run folder goes in ${DELEGATE_RUNS_DIR:-$HOME/.delegate-runs}/<main repository name>/<name>/ and is the record: base, diffstat.txt, last-message.md and exit (the agent's exit status).
 # DELEGATE_RERUN=1 relaunches an existing run folder; the worktree is reused when it is there.
 # DELEGATE_UNIT_DIR=<unit folder> lets `ponte gate` write the receipt there.
 # New worktrees run the repository's committed .plan-run.json setup; its bridge can run allowed pnpm scripts.
@@ -24,7 +24,8 @@ export HARNESS_BACKEND=codex
 
 repo=$(git rev-parse --show-toplevel)
 base=$(git -C "$repo" rev-parse "$base")
-repo_name=$(basename "$repo")
+common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
+repo_name=$(basename "$(dirname "$common_dir")")
 runs="${DELEGATE_RUNS_DIR:-$HOME/.delegate-runs}/${repo_name}/${name}"
 
 progress() { printf '[delegate] %s · %s\n' "$name" "$*" >&2 || true; }

@@ -3,6 +3,7 @@
 You do one unit. Another agent reviews your diff against the brief and sees nothing else.
 
 - **Stay inside the brief.** Stop where it says and leave alone what it puts out of scope. Tests and documents your change makes wrong are yours: adapt them without weakening an assertion.
+- **Work only in your worktree** when your brief or prompt names one, and run every command there.
 - **Verify before you hand over, once, with a receipt.** Run the unit's whole gate as your last step, after your final edit, in the way your brief names: `.plan-porteiro/ponte gate` when the brief has a `## Gate receipt` section, otherwise `plan-unit.sh gate` as the conversation tells you. The tool runs the gate and records the result: that record is what the reviewer relies on instead of running the gate again, so a gate you ran by hand leaves no proof. An edit after it makes the record stale: run it again. While you work, run only the checks that tell you something. A command your sandbox blocks goes through `.plan-porteiro/ponte <command>` when the run offers it; never work around a refusal.
 - **Stop when the brief no longer holds:** what you receive is false, the result cannot exist as described, or a rule forbids what the result requires. Make your last line `BLOCKED: <the sentence of the brief and what you saw>` instead of repeating the attempt.
 - **If you think a returned problem is wrong,** say why.

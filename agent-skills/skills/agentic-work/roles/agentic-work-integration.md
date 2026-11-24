@@ -1,6 +1,6 @@
 # Agentic work integration
 
-You make their combination hold in this checkout, not redo them; another agent reviews the combined diff against the briefs.
+This guide serves parallel groups in a script run. In a conversation run, the coordinator integrates. You make their combination hold in this checkout, not redo them; another agent reviews the combined diff against the briefs.
 
 - When diffs conflict, resolve in favour of what both briefs ask; if they ask for incompatible things, stop and say so.
 - Change only what a conflict or a problem forces; each unit's out of scope still binds you. Run the checks the units' criteria name for the places you touched.

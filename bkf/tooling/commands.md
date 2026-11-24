@@ -24,6 +24,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Search the documents | [bkf search](#bkf-search) |
 | Register, reopen, close, or check researched sources | [bkf sources](#bkf-sources) |
 | Record, read, or change agent tasks | [bkf task](#bkf-task) |
+| Edit a task's title or prompt | [bkf task edit](#bkf-task-edit) |
 | Read the text of a task's tmux window | [bkf task output](#bkf-task) |
 | Send text to a task's tmux window | [bkf task send](#bkf-task) |
 | Open an agent session in tmux with its task card | [bkf launch](#bkf-launch) |
@@ -833,6 +834,7 @@ agent in a task's window runs `bkf task close` itself once its branch has landed
 
 ```sh
 bkf task new --repo DIR --title T [--body-file F|-] [--source S] [--kind K] [--parent ID | --no-parent] [--json]
+bkf task edit [ID] [--title TEXT] [--body-file F|-] [--json]
 bkf task list [--repo DIR] [--status S]... [--kind K] [--parent ID] [--json]
 bkf task show [ID] [--json]
 bkf task output [ID] [--lines N]
@@ -906,6 +908,17 @@ sets `merge-failed` with the reason as the note.
 the repository identity, so linked worktrees share one. `--body-file -` reads
 standard input. `--parent` defaults to `$BKF_TASK` when that is set;
 `--no-parent` makes the task without a parent.
+
+### bkf task edit
+
+Edits the title, body (the task prompt), or both on an existing task. At least
+one of `--title` or `--body-file` is required; an empty title is refused.
+`--body-file -` reads standard input. The id defaults to `$BKF_TASK`, as it
+does for `show`. The task must still be `todo` and have no session or worktree;
+once work has started, its agent has already received the old prompt. A refusal
+prints one `bkf task: ` line to standard error and exits `1`. On success, it
+prints the id, or the updated task JSON with `--json`. Only the selected title
+and body change, along with the store's `updated` timestamp.
 
 **Start.** An option object is recorded only when at least one of its options
 is given, and its other keys stay null. A `working` card may start again (a
@@ -1145,16 +1158,18 @@ the one way they start one. It composes the task store
 receives one. Not used by hand.
 
 ```sh
-bkf launch <claude|codex> --dir D [--prompt-file F|-] [--model M] [--effort E] [--reviewer R] [--name N] [--permission-mode P] [--window W] [--delegated] [--task ID | --no-task | [--title T] [--kind K] [--parent ID | --no-parent] [--body-file F]] [--worktree auto|none] [--size COLSxROWS] [--no-attach] [--json]
+bkf launch <claude|codex> --dir D [--prompt-file F|-] [--model M] [--effort E] [--reviewer R] [--name N] [--permission-mode P] [--remote-control] [--window W] [--delegated] [--task ID | --no-task | [--title T] [--kind K] [--parent ID | --no-parent] [--body-file F]] [--worktree auto|none] [--size COLSxROWS] [--no-attach] [--json]
 bkf launch --session-name --dir D
 ```
 
 **Request.** Checked before anything is written. The agent must be `claude` or
-`codex` and on `PATH`. `--name` and `--permission-mode` are claude only. `--dir`
-is a folder, and `--prompt-file` exists when it is a path. `--task` names a task
-whose status is `todo` or `failed`. `--name`, `--permission-mode` with codex, and
-the card options with `--task` or `--no-task` are usage errors, as is `--worktree
-auto` with `--no-task`.
+`codex` and on `PATH`. `--name`, `--permission-mode`, and `--remote-control` are
+claude only. `--remote-control` takes no value and adds that flag to Claude's
+command. `--dir` is a folder, and `--prompt-file` exists when it is a path.
+`--task` names a task whose status is `todo` or `failed`. `--name`,
+`--permission-mode`, or `--remote-control` with codex, and the card options with
+`--task` or `--no-task` are usage errors, as is `--worktree auto` with
+`--no-task`.
 
 **Card.** `--task ID` launches on that card. `--no-task` makes none. Otherwise a
 new card is created: its repository is the identity of `--dir`, its kind is
@@ -1175,7 +1190,7 @@ window reads that copy. Without a card, a path is used as an absolute path, and
 standard input is saved to a new temporary file that is kept. Without
 `--prompt-file` the session starts with no first message.
 
-**Command.** Claude: `claude [--name N] [--permission-mode P] [--model M] [--effort E] "$(cat '<prompt>')"`.
+**Command.** Claude: `claude [--name N] [--permission-mode P] [--remote-control] [--model M] [--effort E] "$(cat '<prompt>')"`.
 Codex: `codex [-m M] [-c 'model_reasoning_effort="E"'] "$(cat '<prompt>')"`. Each
 value is shell-quoted. The prompt is expanded by the window's shell, because a
 typed line of tens of KB overflows the terminal.

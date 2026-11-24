@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     parent.add_argument("--no-parent", action="store_true", help="create the task without a parent")
     new.add_argument("--json", action="store_true", help="print the task JSON instead of its id")
 
+    edit = commands.add_parser("edit", help="edit the title or body of an untouched todo task")
+    edit.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
+    edit.add_argument("--title")
+    edit.add_argument("--body-file", metavar="F", help="read the new body from F (or - for standard input)")
+    edit.add_argument("--json", action="store_true", help="print the task JSON instead of its id")
+
     list_ = commands.add_parser("list", help="list tasks, filtered")
     list_.add_argument("--repo", metavar="DIR", help="only tasks of the repository holding DIR")
     list_.add_argument("--status", action="append", choices=STATUSES, help="only this status (repeatable)")
@@ -269,6 +275,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "attention" and args.clear and args.note is not None:
         parser.error("--note goes with --set, not --clear")
+    if args.command == "edit" and args.title is None and args.body_file is None:
+        parser.error("edit requires --title and/or --body-file")
     store = task_store.store_dir()
     try:
         if args.command == "new":
@@ -276,6 +284,12 @@ def main(argv: list[str] | None = None) -> int:
             task = task_store.create(
                 store, repo=task_store.repo_identity(args.repo), title=args.title, kind=args.kind,
                 body=_body(args.body_file), source=args.source, parent=parent,
+            )
+            _emit_task(task, args.json)
+        elif args.command == "edit":
+            task = task_store.edit(
+                store, _task_id(args.id), title=args.title,
+                body=_body(args.body_file) if args.body_file is not None else None,
             )
             _emit_task(task, args.json)
         elif args.command == "list":

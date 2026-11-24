@@ -60,8 +60,9 @@ printf '# Brief\n\nMake made.txt.\n' >"$work/brief.md"
 run() { # <name> [env assignments...]; runs the script inside the repo, with the brief in $BRIEF_FILE (default $work/brief.md)
   local name=$1; shift
   local brief=${BRIEF_FILE:-$work/brief.md}
+  local repo=${RUN_REPO:-$work/repo}
   rm -f "$work/$name.agent-ran" "$work/$name.prompt" "$work/$name.prepared" "$work/$name.base.seen"
-  (cd "$work/repo" && env -u DELEGATE_IN_PLACE -u DELEGATE_RERUN -u HARNESS_BRIDGE_BASE_FILE \
+  (cd "$repo" && env -u DELEGATE_IN_PLACE -u DELEGATE_RERUN -u HARNESS_BRIDGE_BASE_FILE \
     -u HARNESS_BRIDGE_LOG -u HARNESS_BRIDGE_UNIT -u DELEGATE_UNIT_DIR -u HARNESS_BRIDGE_RECEIPT_DIR \
     -u HARNESS_BRIDGE_GATE_BRIEF -u BKF_TASK PATH="$work/bin:$PATH" DELEGATE_RUNS_DIR="$work/runs" FAKE_MODEL="$work/model.txt" \
     FAKE_RUN_MARKER="$work/$name.agent-ran" FAKE_PROMPT="$work/$name.prompt" \
@@ -92,6 +93,18 @@ check "in place: the default Codex model is used" '[ "$(cat "$work/model.txt")" 
 check "in place: the script prints the run folder" '[ "$(tail -1 "$work/out.txt")" = "$runs" ]'
 check "role: the agent's prompt points to the implementation guide" 'grep -q "role guide: .*/roles/agentic-work-implementation.md" "$work/inplace.prompt"'
 rm "$work/repo/made.txt"
+
+# In-place from a linked worktree: the run folder uses the main repository name, while the agent stays in the linked worktree.
+mkdir -p "$work/linked-tree"
+git -C "$work/repo" worktree add --detach "$work/linked-tree/worktree" HEAD >/dev/null
+linked_repo=$work/linked-tree/worktree
+RUN_REPO="$linked_repo" run linked-inplace DELEGATE_IN_PLACE=1; code=$?
+linked_runs=$work/runs/repo/linked-inplace
+check "linked worktree in place: exits 0" '[ $code -eq 0 ]'
+check "linked worktree in place: the run folder uses the main repository name" '[ -d "$linked_runs" ] && [ ! -e "$work/runs/worktree/linked-inplace" ]'
+check "linked worktree in place: the agent works in the linked worktree" '[ -f "$linked_repo/made.txt" ] && [ ! -e "$work/repo/made.txt" ]'
+check "linked worktree in place: the run folder records its exit" '[ "$(cat "$linked_runs/exit")" = 0 ]'
+rm "$linked_repo/made.txt"
 
 # A second launch with the same name is refused until DELEGATE_RERUN=1.
 run inplace DELEGATE_IN_PLACE=1; code=$?
@@ -205,4 +218,5 @@ check "no unit folder: the brief has no gate receipt section" '! grep -q "Gate r
 check "no unit folder: no bridge is started" 'grep -qx "no bridge" "$work/gatedoff.ponte"'
 
 git -C "$work/repo" worktree remove --force "$wt" >/dev/null 2>&1
+git -C "$work/repo" worktree remove --force "$linked_repo" >/dev/null 2>&1
 exit "$fail"

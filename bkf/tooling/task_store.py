@@ -265,6 +265,24 @@ def update(
     return task
 
 
+def edit(store: Path, task_id: str, *, title: str | None = None, body: str | None = None) -> Task:
+    """Replace a todo task's title and/or body through the store's locked atomic update path."""
+    def change(task: Task) -> None:
+        if task.status != "todo":
+            raise InvalidValue(f"task {task.id} is {task.status}; only todo tasks can be edited")
+        if task.session or task.worktree:
+            raise InvalidValue(f"task {task.id} has a session or worktree and cannot be edited")
+        if title is not None:
+            normalized = _normalize_title(title)
+            if not normalized:
+                raise InvalidValue("the title is empty")
+            task.title = normalized
+        if body is not None:
+            task.body = body
+
+    return update(store, task_id, change)
+
+
 def write_prompt(store: Path, task_id: str, text: str) -> None:
     store = Path(store)
     _ensure_migrated(store)
