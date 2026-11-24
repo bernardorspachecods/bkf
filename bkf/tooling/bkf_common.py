@@ -193,6 +193,16 @@ def outermost_bundle_root(bundle_root: Path) -> Path:
     return outermost
 
 
+def find_outermost_bundle_root(cwd: Path) -> Path | None:
+    """Return the outermost bundle root holding cwd, stopping at its nearest git boundary."""
+    for directory in (cwd, *cwd.parents):
+        if is_bundle_root_map(directory / MAP_NAME):
+            return outermost_bundle_root(directory)
+        if (directory / ".git").exists():
+            return None
+    return None
+
+
 def is_linked_worktree(directory: Path) -> bool:
     """Return whether `directory` is the root of a linked git worktree (its `.git` is a file)."""
     return (directory / ".git").is_file()

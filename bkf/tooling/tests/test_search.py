@@ -108,6 +108,29 @@ class PreviewTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def test_linked_worktree_uses_its_bundle_and_finds_uncommitted_documents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory) / "checkout"
+            (checkout / ".git").mkdir(parents=True)
+            make_bundle(checkout)
+            (checkout / "outer.md").write_text(document("Outer", "worktreeword"), encoding="utf-8")
+            worktree = checkout / ".claude" / "worktrees" / "feature"
+            library = worktree / "library"
+            library.mkdir(parents=True)
+            (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/feature\n", encoding="utf-8")
+            make_bundle(worktree)
+            (library / "tracked.md").write_text(document("Inner", "worktreeword"), encoding="utf-8")
+            (library / "uncommitted.md").write_text(document("Draft", "draftworktreeword"), encoding="utf-8")
+
+            result = run(worktree, "worktreeword")
+            scoped = run(worktree, "draftworktreeword", "--path", "library")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("/library/tracked.md", result.stdout)
+        self.assertNotIn("outer.md", result.stdout)
+        self.assertEqual(scoped.returncode, 0, scoped.stderr)
+        self.assertIn("/library/uncommitted.md", scoped.stdout)
+
     def test_heading_match_ranks_above_body_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
