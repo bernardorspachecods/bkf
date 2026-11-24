@@ -21,6 +21,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Search the documents | [bkf search](#bkf-search) |
 | Register, reopen, close, or check researched sources | [bkf sources](#bkf-sources) |
 | Record, read, or change agent tasks | [bkf task](#bkf-task) |
+| Edit a task's title or prompt | [bkf task edit](#bkf-task-edit) |
 | Read the text of a task's tmux window | [bkf task output](#bkf-task) |
 | Send text to a task's tmux window | [bkf task send](#bkf-task) |
 | Open an agent session in tmux with its task card | [bkf launch](#bkf-launch) |
@@ -747,6 +748,7 @@ agent in a task's window runs `bkf task close` itself once its branch has landed
 
 ```sh
 bkf task new --repo DIR --title T [--body-file F|-] [--source S] [--kind K] [--parent ID | --no-parent] [--json]
+bkf task edit [ID] [--title TEXT] [--body-file F|-] [--json]
 bkf task list [--repo DIR] [--status S]... [--kind K] [--parent ID] [--json]
 bkf task show [ID] [--json]
 bkf task output [ID] [--lines N]
@@ -820,6 +822,17 @@ sets `merge-failed` with the reason as the note.
 the repository identity, so linked worktrees share one. `--body-file -` reads
 standard input. `--parent` defaults to `$BKF_TASK` when that is set;
 `--no-parent` makes the task without a parent.
+
+### bkf task edit
+
+Edits the title, body (the task prompt), or both on an existing task. At least
+one of `--title` or `--body-file` is required; an empty title is refused.
+`--body-file -` reads standard input. The id defaults to `$BKF_TASK`, as it
+does for `show`. The task must still be `todo` and have no session or worktree;
+once work has started, its agent has already received the old prompt. A refusal
+prints one `bkf task: ` line to standard error and exits `1`. On success, it
+prints the id, or the updated task JSON with `--json`. Only the selected title
+and body change, along with the store's `updated` timestamp.
 
 **Start.** An option object is recorded only when at least one of its options
 is given, and its other keys stay null. A `working` card may start again (a
