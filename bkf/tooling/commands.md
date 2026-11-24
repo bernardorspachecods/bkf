@@ -1108,16 +1108,18 @@ the one way they start one. It composes the task store
 receives one. Not used by hand.
 
 ```sh
-bkf launch <claude|codex> --dir D [--prompt-file F|-] [--model M] [--effort E] [--reviewer R] [--name N] [--permission-mode P] [--window W] [--delegated] [--task ID | --no-task | [--title T] [--kind K] [--parent ID | --no-parent] [--body-file F]] [--worktree auto|none] [--size COLSxROWS] [--no-attach] [--json]
+bkf launch <claude|codex> --dir D [--prompt-file F|-] [--model M] [--effort E] [--reviewer R] [--name N] [--permission-mode P] [--remote-control] [--window W] [--delegated] [--task ID | --no-task | [--title T] [--kind K] [--parent ID | --no-parent] [--body-file F]] [--worktree auto|none] [--size COLSxROWS] [--no-attach] [--json]
 bkf launch --session-name --dir D
 ```
 
 **Request.** Checked before anything is written. The agent must be `claude` or
-`codex` and on `PATH`. `--name` and `--permission-mode` are claude only. `--dir`
-is a folder, and `--prompt-file` exists when it is a path. `--task` names a task
-whose status is `todo` or `failed`. `--name`, `--permission-mode` with codex, and
-the card options with `--task` or `--no-task` are usage errors, as is `--worktree
-auto` with `--no-task`.
+`codex` and on `PATH`. `--name`, `--permission-mode`, and `--remote-control` are
+claude only. `--remote-control` takes no value and adds that flag to Claude's
+command. `--dir` is a folder, and `--prompt-file` exists when it is a path.
+`--task` names a task whose status is `todo` or `failed`. `--name`,
+`--permission-mode`, or `--remote-control` with codex, and the card options with
+`--task` or `--no-task` are usage errors, as is `--worktree auto` with
+`--no-task`.
 
 **Card.** `--task ID` launches on that card. `--no-task` makes none. Otherwise a
 new card is created: its repository is the identity of `--dir`, its kind is
@@ -1138,7 +1140,7 @@ window reads that copy. Without a card, a path is used as an absolute path, and
 standard input is saved to a new temporary file that is kept. Without
 `--prompt-file` the session starts with no first message.
 
-**Command.** Claude: `claude [--name N] [--permission-mode P] [--model M] [--effort E] "$(cat '<prompt>')"`.
+**Command.** Claude: `claude [--name N] [--permission-mode P] [--remote-control] [--model M] [--effort E] "$(cat '<prompt>')"`.
 Codex: `codex [-m M] [-c 'model_reasoning_effort="E"'] "$(cat '<prompt>')"`. Each
 value is shell-quoted. The prompt is expanded by the window's shell, because a
 typed line of tens of KB overflows the terminal.

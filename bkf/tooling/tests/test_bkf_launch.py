@@ -162,6 +162,13 @@ class LaunchTests(unittest.TestCase):
     def test_claude_command_without_a_prompt(self) -> None:
         self.assertEqual(self.launch("claude", "--dir", str(self.plain), "--no-task")[0], 0)
         self.assertEqual(self.command(), "claude")
+        self.assertNotIn("--remote-control", self.command())
+
+    def test_remote_control_is_placed_before_model(self) -> None:
+        status, _, error = self.launch("claude", "--dir", str(self.plain), "--no-task",
+                                       "--permission-mode", "plan", "--remote-control", "--model", "opus")
+        self.assertEqual((status, error), (0, ""))
+        self.assertEqual(self.command(), "claude --permission-mode plan --remote-control --model opus")
 
     def test_codex_command(self) -> None:
         prompt = self.write("p.md", "Hello\n")
@@ -184,10 +191,12 @@ class LaunchTests(unittest.TestCase):
         self.assertIn(shlex.quote(str(self.root / "rel.md")), self.command())
 
     def test_claude_only_options_are_usage_errors_for_codex(self) -> None:
-        for arguments in (("--name", "n"), ("--permission-mode", "plan")):
+        for arguments in (("--name", "n"), ("--permission-mode", "plan"), ("--remote-control",)):
             with self.subTest(arguments=arguments):
-                status, _, _ = self.launch("codex", "--dir", str(self.plain), "--no-task", *arguments)
+                status, _, error = self.launch("codex", "--dir", str(self.plain), "--no-task", *arguments)
                 self.assertEqual(status, 2)
+                if arguments == ("--remote-control",):
+                    self.assertIn("--remote-control works only with claude", error)
         self.assertEqual(self.windows.calls, [])
 
     # Title, kind, parent and body of a new card.
@@ -356,6 +365,7 @@ class LaunchTests(unittest.TestCase):
             ("nope", "--dir", str(self.plain), "--title", "t"),
             ("claude", "--title", "t"),
             ("--session-name", "--dir", str(self.plain), "--model", "m"),
+            ("--session-name", "--dir", str(self.plain), "--remote-control"),
         ]
         for arguments in cases:
             with self.subTest(arguments=arguments):

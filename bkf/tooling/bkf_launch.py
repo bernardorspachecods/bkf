@@ -34,7 +34,7 @@ LAUNCHABLE = ("todo", "failed")
 SIZE = re.compile(r"([1-9][0-9]*)x([1-9][0-9]*)")
 # Options that only a launch takes; --session-name refuses each one it is given.
 LAUNCH_ONLY = (
-    "agent", "prompt_file", "model", "effort", "reviewer", "name", "permission_mode", "window",
+    "agent", "prompt_file", "model", "effort", "reviewer", "name", "permission_mode", "remote_control", "window",
     "delegated", "task", "no_task", "title", "kind", "parent", "no_parent", "body_file", "worktree",
     "no_attach", "size", "json",
 )
@@ -59,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reviewer", metavar="R", help="recorded on the card only; changes nothing in the command")
     parser.add_argument("--name", metavar="N", help="claude only: the session name")
     parser.add_argument("--permission-mode", dest="permission_mode", metavar="P", help="claude only")
+    parser.add_argument("--remote-control", dest="remote_control", action="store_true", help="claude only")
     parser.add_argument("--window", metavar="W", help="the tmux window name")
     parser.add_argument("--delegated", action="store_true", help="set BKF_DELEGATED=1 in the window")
 
@@ -102,7 +103,8 @@ def _check(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.agent is None:
         parser.error("an agent is required: claude or codex")
     if args.agent != "claude":
-        for flag, name in (("--name", "name"), ("--permission-mode", "permission_mode")):
+        for flag, name in (("--name", "name"), ("--permission-mode", "permission_mode"),
+                           ("--remote-control", "remote_control")):
             if _given(getattr(args, name)):
                 parser.error(f"{flag} works only with claude")
     if args.task is not None or args.no_task:
@@ -326,6 +328,8 @@ def _command(args: argparse.Namespace, prompt_path: str | None, session_id: str 
             parts += ["--name", quote(args.name)]
         if args.permission_mode is not None:
             parts += ["--permission-mode", quote(args.permission_mode)]
+        if args.remote_control:
+            parts += ["--remote-control"]
         if args.model is not None:
             parts += ["--model", quote(args.model)]
         if args.effort is not None:
