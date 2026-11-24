@@ -56,13 +56,25 @@ def create_tree(run_path, repo, branch=None, commit="HEAD"):
     """Add the run's worktree at ``commit``: on a new ``branch``, or detached when no branch is given."""
     run_path = Path(run_path)
     tree = tree_path(run_path)
+    add_worktree(repo, tree, branch, commit)
+    if branch:
+        (run_path / "branch").write_text(branch + "\n", encoding="utf-8")
+    return tree
+
+
+def add_worktree(repo, tree, branch=None, commit="HEAD"):
+    """Add a worktree at the given path."""
     command = ["worktree", "add", "-b", branch] if branch else ["worktree", "add", "--detach"]
     result = _git(repo, command + [os.fspath(tree), commit])
     if result.returncode != 0:
         raise RunError("cannot create the worktree at {0}: {1}".format(commit, result.stderr.strip()))
-    if branch:
-        (run_path / "branch").write_text(branch + "\n", encoding="utf-8")
-    return tree
+
+
+def remove_worktree(repo, tree):
+    """Remove the worktree and its Git registration, or report Git's error."""
+    result = _git(repo, ["worktree", "remove", "--force", os.fspath(tree)])
+    if result.returncode != 0:
+        raise RunError("cannot remove the worktree {0}: {1}".format(tree, result.stderr.strip()))
 
 
 def remove_tree(run_path, repo, delete_branch=False):

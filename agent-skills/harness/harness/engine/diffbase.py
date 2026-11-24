@@ -98,12 +98,16 @@ def snapshot_commit(checkout):
 def snapshot_base(directory, checkout):
     """Write the tree id and its format marker to a round directory."""
     try:
-        tree = snapshot_tree(checkout)
-        directory = Path(directory)
-        (directory / "base").write_text("{0}\n".format(tree), encoding="utf-8")
-        (directory / "base-format").write_text("tree\n", encoding="utf-8")
+        write_base(directory, snapshot_tree(checkout))
     except (OSError, RunError) as error:
         raise RunError("cannot snapshot the checkout {0}".format(checkout)) from error
+
+
+def write_base(directory, tree):
+    """Save an already captured tree as the base for review patches."""
+    directory = Path(directory)
+    (directory / "base").write_text("{0}\n".format(tree), encoding="utf-8")
+    (directory / "base-format").write_text("tree\n", encoding="utf-8")
 
 
 def make_patch(base_dir, out_file, checkout):

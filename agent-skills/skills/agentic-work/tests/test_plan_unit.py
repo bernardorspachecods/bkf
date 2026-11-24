@@ -65,10 +65,24 @@ class PlanUnitTests(unittest.TestCase):
             text += "\n```gate\n{0}\n```\n".format(gate)
         self.brief.write_text(text, encoding="utf-8")
 
-    def plan_unit(self, *args):
+    def plan_unit(self, *args, cwd=None):
         return subprocess.run(
-            [str(SCRIPT)] + list(args), cwd=str(self.repo), env=self.env, capture_output=True, text=True
+            [str(SCRIPT)] + list(args), cwd=cwd or self.repo, env=self.env, capture_output=True, text=True
         )
+
+    def git(self, *args, cwd=None):
+        return subprocess.check_output(["git", *args], cwd=cwd or self.repo).decode("utf-8")
+
+    def unit_command(self, command, *extra, cwd=None):
+        return self.plan_unit(command, str(self.brief), "--dir", str(self.out), *extra, cwd=cwd)
+
+    def worktree(self, *extra, unit=None):
+        options = ("--unit", unit) if unit else ()
+        result = self.unit_command("worktree", *options, *extra)
+        tree = (self.out / (unit or "unit") / "worktree").resolve()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("worktree: {0}".format(tree), result.stdout.splitlines())
+        return tree
 
     def begin(self, *extra):
         result = self.plan_unit("begin", str(self.brief), "--dir", str(self.out), *extra)
@@ -318,6 +332,197 @@ class PlanUnitTests(unittest.TestCase):
         result = self.gate()
         self.assertEqual((result.returncode, result.stdout.strip()), (0, "receipt: none (no gate commands)"), result.stderr)
         self.assertFalse(self.receipt().exists())
+
+    def test_worktree_base_includes_uncommitted_and_untracked_files(self):
+        self.write_brief()
+        self.implement("working seed\n")
+        (self.repo / "untracked.txt").write_text("untracked\n")
+        (self.repo / ".gitignore").write_text("ignored.txt\n")
+        (self.repo / "ignored.txt").write_text("ignored\n")
+
+        tree = self.worktree()
+        self.assertEqual(self.git("branch", "--show-current", cwd=tree), "")
+        self.assertEqual((tree / "seed.txt").read_text(), "working seed\n")
+        self.assertEqual((tree / "untracked.txt").read_text(), "untracked\n")
+        self.assertFalse((tree / "ignored.txt").exists())
+        base = (tree.parent / "base").read_text().strip()
+        self.assertEqual(self.git("rev-parse", "HEAD^{tree}", cwd=tree).strip(), base)
+        self.assertEqual(self.git("show", base + ":seed.txt"), "working seed\n")
+
+    def test_worktree_runs_the_committed_setup(self):
+        self.write_brief()
+        config = self.repo / ".plan-run.json"
+        config.write_text(json.dumps({"worktree": {
+            "copy": ["local.txt"],
+            "prepare": ["test -f local.txt && echo prepared > prepared.txt"],
+        }}))
+        (self.repo / ".gitignore").write_text("local.txt\nprepared.txt\n")
+        self.git("add", ".plan-run.json", ".gitignore")
+        self.git("commit", "-qm", "declare setup")
+        config.write_text('{}')
+        (self.repo / "local.txt").write_text("local\n")
+
+        tree = self.worktree()
+        self.assertEqual((tree / "local.txt").read_text(), "local\n")
+        self.assertEqual((tree / "prepared.txt").read_text(), "prepared\n")
+        self.assertEqual((tree / ".plan-run.json").read_text(), '{}')
+
+    def test_gate_and_check_use_the_worktree_from_outside_the_repo(self):
+        self.write_brief(gate=self.counted_gate("grep -q unit-change seed.txt"))
+        tree = self.worktree()
+        self.implement("main change\n")
+        (tree / "seed.txt").write_text("unit-change\n")
+        gate = self.unit_command("gate", cwd=self.state)
+        self.assertEqual(gate.returncode, 0, gate.stderr)
+        checked = self.unit_command("check", "--gate-only", cwd=self.state)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        self.assertIn("gate: pass (receipt, 1 command(s))", checked.stdout)
+        self.assertEqual(self.runs(), 1)
+        patch = (tree.parent / "rounds" / "1" / "diff.patch").read_text()
+        self.assertIn("+unit-change", patch)
+        self.assertNotIn("main change", patch)
+
+    def test_two_units_merge_different_lines_into_current_main_checkout(self):
+        self.write_brief()
+        self.implement("first\n2\n3\n4\n5\n6\n7\n8\nlast\n")
+        first = self.worktree(unit="first")
+        last = self.worktree(unit="last")
+        for tree, old, new in ((first, "first", "unit one"), (last, "last", "unit two")):
+            path = tree / "seed.txt"
+            path.write_text(path.read_text().replace(old, new))
+        self.implement((self.repo / "seed.txt").read_text().replace("5\n", "main edit\n"))
+
+        for unit in ("first", "last"):
+            result = self.unit_command("integrate", "--unit", unit)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), ["integrated: 1 file(s)", "seed.txt"])
+        self.assertEqual(
+            (self.repo / "seed.txt").read_text(), "unit one\n2\n3\n4\nmain edit\n6\n7\n8\nunit two\n"
+        )
+        before_last = (last.parent / "pre-integration").read_text().strip()
+        self.assertEqual(self.git("show", before_last + ":seed.txt").splitlines()[0], "unit one")
+
+    def test_conflict_preserves_index_and_keeps_the_pre_integration_tree_readable(self):
+        self.write_brief()
+        tree = self.worktree()
+        (tree / "seed.txt").write_text("from unit\n")
+        (tree / "other.txt").write_text("also from unit\n")
+        self.implement("staged seed\n")
+        self.git("add", "seed.txt")
+        self.implement("from main\n")
+        index = self.repo / ".git" / "index"
+        index_before = index.read_bytes()
+        head_before = self.git("rev-parse", "HEAD")
+
+        result = self.unit_command("integrate")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["conflicts:", "seed.txt"])
+        self.assertEqual((tree.parent / "conflicts.txt").read_text(), "seed.txt\n")
+        conflicted = (self.repo / "seed.txt").read_text()
+        self.assertRegex(conflicted, r"(?s)<<<<<<< .*\nfrom main\n=======\nfrom unit\n>>>>>>> ")
+        self.assertEqual((self.repo / "other.txt").read_text(), "also from unit\n")
+        self.assertEqual(index.read_bytes(), index_before)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head_before)
+        self.assertEqual(self.git("show", ":seed.txt"), "staged seed\n")
+
+        self.implement("resolved seed\n")
+        before = (tree.parent / "pre-integration").read_text().strip()
+        patch = self.git("diff", before, "--", "seed.txt")
+        self.assertIn("-from main\n+resolved seed\n", patch)
+
+    def test_integrate_adds_and_deletes_files(self):
+        self.write_brief()
+        tree = self.worktree()
+        contents = b"\x00\xff\x03"
+        (tree / "new file.bin").write_bytes(contents)
+        (tree / "seed.txt").unlink()
+
+        result = self.unit_command("integrate")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["integrated: 2 file(s)", "new file.bin", "seed.txt"])
+        self.assertEqual((self.repo / "new file.bin").read_bytes(), contents)
+        self.assertFalse((self.repo / "seed.txt").exists())
+        self.assertEqual(self.git("show", ":seed.txt"), "seed\n")
+
+    def test_integrate_twice_is_refused(self):
+        self.write_brief()
+        tree = self.worktree()
+        (tree / "seed.txt").write_text("first edit\n")
+        first = self.unit_command("integrate")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        before = (tree.parent / "pre-integration").read_bytes()
+        (tree / "seed.txt").write_text("second edit\n")
+        again = self.unit_command("integrate")
+        self.assertEqual(again.returncode, 3, again.stdout)
+        self.assertIn("already integrated", again.stderr)
+        self.assertEqual((self.repo / "seed.txt").read_text(), "first edit\n")
+        self.assertEqual((tree.parent / "pre-integration").read_bytes(), before)
+
+    def test_integrate_refuses_a_unit_without_a_worktree(self):
+        self.write_brief()
+        not_begun = self.unit_command("integrate")
+        self.assertEqual(not_begun.returncode, 3)
+        self.assertIn("run begin first", not_begun.stderr)
+        self.begin()
+        in_place = self.unit_command("integrate")
+        self.assertEqual(in_place.returncode, 3)
+        self.assertIn("no worktree", in_place.stderr)
+
+    def test_apply_write_failure_rolls_back_main_and_allows_retry(self):
+        self.write_brief()
+        directory = self.repo / "folder"
+        directory.mkdir()
+        (directory / "nested.txt").write_text("original nested\n")
+        tree = self.worktree()
+        (tree / "seed.txt").write_text("unit seed\n")
+        (tree / "folder" / "nested.txt").write_text("unit nested\n")
+        directory.chmod(0o555)
+        try:
+            if os.access(directory, os.W_OK):
+                self.skipTest("test user can write to a read-only directory")
+            failed = self.unit_command("integrate")
+        finally:
+            directory.chmod(0o755)
+        self.assertEqual(failed.returncode, 3, failed.stdout)
+        self.assertIn("git apply failed", failed.stderr)
+        self.assertEqual((self.repo / "seed.txt").read_text(), "seed\n")
+        self.assertEqual((directory / "nested.txt").read_text(), "original nested\n")
+        self.assertFalse((tree.parent / "pre-integration").exists())
+        retried = self.unit_command("integrate")
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertEqual((directory / "nested.txt").read_text(), "unit nested\n")
+
+    def test_discard_removes_a_dirty_worktree_and_keeps_evidence(self):
+        self.write_brief()
+        tree = self.worktree()
+        (tree / "seed.txt").write_text("unit edit\n")
+        checked = self.unit_command("check", "--gate-only")
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        base = (tree.parent / "base").read_bytes()
+
+        result = self.unit_command("discard", cwd=self.state)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(tree.exists())
+        self.assertNotIn("worktree " + str(tree), self.git("worktree", "list", "--porcelain"))
+        self.assertEqual((tree.parent / "base").read_bytes(), base)
+        self.assertIn("+unit edit", (tree.parent / "rounds" / "1" / "diff.patch").read_text())
+
+    def test_worktree_restart_replaces_the_worktree_and_evidence(self):
+        self.write_brief()
+        tree = self.worktree()
+        (tree / "old edit.txt").write_text("discard me\n")
+        old_evidence = tree.parent / "status.log"
+        old_evidence.touch()
+        refused = self.unit_command("worktree")
+        self.assertEqual(refused.returncode, 3)
+        self.assertTrue((tree / "old edit.txt").is_file())
+
+        self.implement("fresh main state\n")
+        self.assertEqual(self.worktree("--restart"), tree)
+        self.assertFalse(old_evidence.exists())
+        self.assertFalse((tree / "old edit.txt").exists())
+        self.assertEqual((tree / "seed.txt").read_text(), "fresh main state\n")
+        self.assertEqual(self.git("worktree", "list", "--porcelain").count("worktree " + str(tree) + "\n"), 1)
 
 
 if __name__ == "__main__":
