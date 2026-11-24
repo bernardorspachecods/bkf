@@ -377,6 +377,113 @@ class TagSearchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("tag-vocabulary.yaml", result.stderr)
 
+    def test_attached_text_is_indexed_as_located_passages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "search.yaml").write_text(
+                'attached_text:\n  - documents: "*.md"\n    text: "{stem}.txt"\n'
+                '    locator:\n      pattern: "^PAGE (?P<page>[0-9]+)$"\n'
+                '      labels:\n        - label: "Page {page}"\n', encoding="utf-8"
+            )
+            (root / "guide.md").write_text(document("Guide", "Section searchablewords."), encoding="utf-8")
+            prefix = " ".join(f"opening{n}" for n in range(25))
+            located = " ".join(f"located{n}" for n in range(25)) + " passageonlyword"
+            (root / "guide.txt").write_text(f"{prefix}\nPAGE 7\n{located}\n", encoding="utf-8")
+
+            located_result = run(root, "passageonlyword")
+            prefix_result = run(root, "opening3")
+            section_result = run(root, "searchablewords")
+
+        self.assertIn("/guide.md § Page 7", located_result.stdout)
+        self.assertIn("passageonlyword", located_result.stdout)
+        self.assertIn("/guide.md § (text)", prefix_result.stdout)
+        self.assertIn("/guide.md", section_result.stdout)
+
+    def test_attached_passage_filters_and_heading_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "search.yaml").write_text(
+                'attached_text:\n  - documents: "**/*.md"\n    text: "{stem}.txt"\n', encoding="utf-8"
+            )
+            (root / "sub").mkdir()
+            (root / "sub" / "guide.md").write_text(
+                document("Guide", "Section text.", tags="alpha"), encoding="utf-8"
+            )
+            (root / "sub" / "guide.txt").write_text(" ".join(f"sidecar{n}" for n in range(25)) + " filterword", encoding="utf-8")
+
+            unfiltered = run(root, "filterword")
+            path_filtered = run(root, "filterword", "--path", "sub")
+            tag_filtered = run(root, "filterword", "--tag", "alpha")
+            tag_excluded = run(root, "filterword", "--tag", "beta")
+            heading_filtered = run(root, "filterword", "--heading", "Guide")
+
+        self.assertIn("/sub/guide.md § (text)", unfiltered.stdout)
+        self.assertIn("/sub/guide.md § (text)", path_filtered.stdout)
+        self.assertIn("/sub/guide.md § (text)", tag_filtered.stdout)
+        self.assertEqual(tag_excluded.stdout, "no sections match\n")
+        self.assertEqual(heading_filtered.stdout, "no sections match\n")
+
+    def test_attached_text_tag_query_only_boosts_document_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "search.yaml").write_text(
+                'attached_text:\n  - documents: "*.md"\n    text: "{stem}.txt"\n', encoding="utf-8"
+            )
+            (root / "guide.md").write_text(document("Guide", "ordinary section words.", tags="zebra"), encoding="utf-8")
+            (root / "guide.txt").write_text(" ".join(f"passage{n}" for n in range(25)), encoding="utf-8")
+
+            result = run(root, "zebra", "--limit", "10")
+
+        self.assertIn("/guide.md § Guide", result.stdout.splitlines()[0])
+        self.assertNotIn("§ (text)", result.stdout)
+
+    def test_missing_sidecar_keeps_document_sections_searchable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "search.yaml").write_text(
+                'attached_text:\n  - documents: "*.md"\n    text: "{stem}.txt"\n', encoding="utf-8"
+            )
+            (root / "guide.md").write_text(document("Guide", "sectiononlyword"), encoding="utf-8")
+
+            result = run(root, "sectiononlyword")
+
+        self.assertIn("/guide.md", result.stdout)
+        self.assertNotIn("§ (text)", result.stdout)
+
+    def test_gitignored_attached_sidecar_is_indexed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            make_bundle(root)
+            (root / ".gitignore").write_text("*.txt\n", encoding="utf-8")
+            (root / "search.yaml").write_text(
+                'attached_text:\n  - documents: "*.md"\n    text: "{stem}.txt"\n', encoding="utf-8"
+            )
+            (root / "guide.md").write_text(document("Guide", "nothing relevant."), encoding="utf-8")
+            (root / "guide.txt").write_text(
+                " ".join(f"ignored{n}" for n in range(25)) + " ignoredsidecarword", encoding="utf-8"
+            )
+
+            result = run(root, "ignoredsidecarword")
+
+        self.assertIn("/guide.md § (text)", result.stdout)
+
+    def test_invalid_search_config_fails_search(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "search.yaml").write_text("attached_text: nope\n", encoding="utf-8")
+            (root / "guide.md").write_text(document("Guide", "searchable."), encoding="utf-8")
+
+            result = run(root, "searchable")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("search.yaml", result.stderr)
+
 
 class FilterTests(unittest.TestCase):
     def make(self, root: Path) -> None:

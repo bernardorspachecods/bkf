@@ -16,6 +16,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Move a file or folder and fix every link to it | [bkf mv](#bkf-mv) |
 | Fix links after files were moved by hand | [bkf relink](#bkf-relink) |
 | Check or write the skill catalog | [bkf skills](#bkf-skills) |
+| Configure attached-text search | [search.yaml](#searchyaml) |
 | Record an idea or feedback entry | [bkf log](#bkf-log) |
 | Print the format update documents a bundle needs | [bkf updates](#bkf-updates) |
 | Migrate bundles written before the current format version | [bkf upgrade](#bkf-upgrade) |
@@ -105,6 +106,8 @@ in the [specification](/bkf/format/format-specification.md#6-conformance) and th
 - A bundle with a `tag-vocabulary.yaml` gets `TAG_VOCABULARY_INVALID` for an
   unusable file and `TAG_UNKNOWN` for each tag that is not a canonical tag
   ([frontmatter profiles](/bkf/format/frontmatter-profiles.md#tag-vocabulary)).
+- A bundle with a `search.yaml` gets `SEARCH_CONFIG_INVALID` for an unusable
+  file (see [`search.yaml`](#searchyaml)).
 - A [notes file](/bkf/format/format-specification.md#35-notes-files) with a `bkf`
   field is `NOTES_TRACKED`, and a link to one from a document or a map is
   `NOTES_LINKED`; both are errors. The validator reads only a notes file's
@@ -654,9 +657,13 @@ document metadata follow the
 [membership rules](/bkf/format/format-specification.md#12-discovery-membership-and-composition) and
 [frontmatter profiles](/bkf/format/frontmatter-profiles.md).
 
-Tags are indexed for every section of a document, so a query word that is a
-tag ranks that document's sections. Queries that match no tag rank as they would
-without tags. When a bundle has a
+Documents declared in a bundle's `search.yaml` are also indexed from their
+attached text, with each passage shown under its locator label.
+
+Tags are indexed for every document section, so a query word that is a tag
+ranks that document's sections. Text passages are not tag-indexed, though
+`--tag` still filters them by their document's tags. Queries that match no tag
+rank as they would without tags. When a bundle has a
 [`tag-vocabulary.yaml`](/bkf/format/frontmatter-profiles.md#tag-vocabulary) and the
 query contains a canonical tag or any of its synonyms (case-insensitive; a
 multi-word synonym matches a contiguous run of words, stopwords included), the
@@ -685,6 +692,63 @@ Agents should search before writing or moving a rule to see where it already
 lives. Exit `0` means results or no matches; `2` means the query has no
 searchable words or `--path` is outside the bundle; `1` reports a search failure. `--debug` adds a traceback to
 failures.
+
+### search.yaml
+
+An optional `search.yaml` at the bundle root configures attached plain-text
+files for `bkf search`. The file is read from disk each time search runs. A
+sidecar may be gitignored, so a clone can have valid configuration without the
+sidecar files. Validation checks the configuration only; it does not check
+whether document patterns match files or whether sidecars exist.
+
+The top level is a mapping. It accepts `attached_text`, a list defaulting to
+`[]`, and `embeddings`, an optional mapping reserved for the future hybrid
+search mode. Unknown keys are errors. YAML duplicate keys and invalid YAML are
+errors.
+
+Each `attached_text` item is a mapping with these keys:
+
+- `documents`: required non-empty string pattern for bundle-relative document
+  paths. Patterns use `*` and `?` within one path segment and `**` across
+  segments. Validation does not require a pattern to match a document.
+- `text`: required non-empty relative sidecar path. It cannot be absolute or
+  contain `..`. `{stem}` may stand for the matched document's filename stem;
+  it is the only supported placeholder. The sidecar is looked for beside the
+  document, with `{stem}` replaced by that filename stem.
+- `locator`: optional mapping that recognizes marker lines in the sidecar. It
+  has a required `pattern` regex string and a required non-empty `labels` list.
+  The regex must compile and contain at least one named group; `label` is a
+  reserved group name. Each label rule has a required `label` string, which may
+  use only named groups from the pattern, and an optional `when` mapping from
+  named groups to regex strings. Each condition regex must compile and name a
+  group from the pattern. Markers match whole lines. Rules with `when` are
+  tried in order; only the last rule may omit `when`, and it must omit it as
+  the fallback. The first matching `documents` entry is used.
+- `chunk`: optional mapping with `words` and `stride`, defaulting to `220` and
+  `160`. Both must be positive integers, and `stride` must not exceed `words`.
+  The sidecar is cut into passages of `words` words, starting every `stride`
+  words, and a passage never crosses a marker line, so each passage has one
+  locator. Text before the first marker has none.
+
+For example, this configuration recognizes markers such as
+`=== pdf 7 | printed iv ===`. It labels a positive decimal printed page or a
+lowercase Roman page using `p. {printed}`; other printed values use `pdf {pdf}`:
+
+```yaml
+attached_text:
+  - documents: "library/papers/*.md"
+    text: "{stem}.txt"
+    locator:
+      pattern: '^=== pdf (?P<pdf>\d+) \| printed (?P<printed>\S+) ===$'
+      labels:
+        - when:
+            printed: '^([1-9]\d*|[ivxlc]+)$'
+          label: "p. {printed}"
+        - label: "pdf {pdf}"
+    chunk:
+      words: 220
+      stride: 160
+```
 
 ## bkf sources
 

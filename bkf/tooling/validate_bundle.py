@@ -23,6 +23,7 @@ from bkf_common import (
     MAP_NAME,
     ParsedMarkdown,
     README_NAME,
+    SEARCH_CONFIG_NAME,
     TAG_VOCABULARY_NAME,
     body_size,
     canonical_tag,
@@ -40,6 +41,7 @@ from bkf_common import (
     render_inventory_entry,
     tracking_state,
 )
+from search_attached import load_search_config
 from navigation_map import GUIDANCE, WARNING_CODES, map_problems
 
 
@@ -119,6 +121,7 @@ class Validator:
         self._check_version(version, root_map)
 
         self._load_tag_vocabulary()
+        self._load_search_config()
         self._validate_documents()
         self._validate_agent_instructions_size()
         self._validate_notes_files()
@@ -143,6 +146,12 @@ class Validator:
             self._tag_vocabulary = load_tag_vocabulary(self.root)
         except BKFInputError as exc:
             self.error("TAG_VOCABULARY_INVALID", self.root / TAG_VOCABULARY_NAME, str(exc))
+
+    def _load_search_config(self) -> None:
+        try:
+            load_search_config(self.root)
+        except BKFInputError as exc:
+            self.error("SEARCH_CONFIG_INVALID", self.root / SEARCH_CONFIG_NAME, str(exc))
 
     def _validate_tag_vocabulary(self, path: Path, tags: list[str]) -> None:
         vocabulary = self._tag_vocabulary

@@ -46,6 +46,12 @@ class Section:
     title: str = ""
     tags: tuple[str, ...] = ()
     preview: str = ""
+    kind: str = "section"
+    locator: dict | None = None
+    start: int | None = None
+    end: int | None = None
+    document_title: str = ""
+    context: str = ""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,11 +99,14 @@ def _sections(body: str, path: str, description: str, tags: tuple[str, ...] = ()
     if heading_rows and heading_rows[0][0] > 0:
         prefix = "\n".join(lines[: heading_rows[0][0]]).strip()
         if prefix:
-            sections.append(Section(path, first_heading or "(top)", description, prefix, first_heading or "(top)", tags))
+            sections.append(Section(
+                path, first_heading or "(top)", description, prefix, first_heading or "(top)", tags,
+                document_title=first_heading or "",
+            ))
     elif not heading_rows:
         text = "\n".join(lines).strip()
         if text:
-            sections.append(Section(path, "(top)", description, text, "(top)", tags))
+            sections.append(Section(path, "(top)", description, text, "(top)", tags, document_title=""))
 
     trail: list[tuple[int, str]] = []
     for offset, (line_index, level, title) in enumerate(heading_rows):
@@ -106,7 +115,7 @@ def _sections(body: str, path: str, description: str, tags: tuple[str, ...] = ()
         label = " > ".join(item for _, item in trail)
         next_line = heading_rows[offset + 1][0] if offset + 1 < len(heading_rows) else len(lines)
         text = "\n".join(lines[line_index + 1 : next_line]).strip()
-        sections.append(Section(path, label, description, text, title, tags))
+        sections.append(Section(path, label, description, text, title, tags, document_title=first_heading or ""))
     return sections
 
 
@@ -134,6 +143,7 @@ def _collect_sections(
     on_document_error: Callable[[str], None] | None = None,
 ) -> list[Section]:
     from bkf_common import BKFInputError, canonical_tag, is_root_nonmember, parse_markdown, tracking_state
+    from search_attached import attached_text_for, load_search_config, read_attached_text, text_passages
 
     vocabularies = vocabularies or {}
     result: list[Section] = []
@@ -141,6 +151,7 @@ def _collect_sections(
         if any(part.startswith(".") for part in bundle.relative_to(root).parts):
             continue
         required = _resolve_required_tags(required_tags or [], vocabularies.get(bundle), canonical_tag)
+        search_config = load_search_config(bundle)
         for directory, directories, filenames in os.walk(bundle):
             directory_path = Path(directory)
             directories[:] = sorted(
@@ -186,7 +197,26 @@ def _collect_sections(
                     continue
                 if required and not required <= {tag.casefold() for tag in tags}:
                     continue
-                result.extend(_sections(parsed.body, relative, " ".join(description.split()), tags))
+                normalized_description = " ".join(description.split())
+                document_sections = _sections(parsed.body, relative, normalized_description, tags)
+                result.extend(document_sections)
+                if search_config is None:
+                    continue
+                attached = attached_text_for(search_config, bundle, path)
+                if attached is None:
+                    continue
+                sidecar_path, entry = attached
+                sidecar_text = read_attached_text(sidecar_path)
+                document_title = document_sections[0].document_title if document_sections else ""
+                context = ". ".join(part for part in (document_title, normalized_description) if part)
+                for passage in text_passages(sidecar_text, entry):
+                    label = passage.locator.get("label") if passage.locator else None
+                    heading = label if isinstance(label, str) else "(text)"
+                    result.append(Section(
+                        relative, heading, normalized_description, passage.text, heading, tags,
+                        kind="text", locator=passage.locator, start=passage.start, end=passage.end,
+                        document_title=document_title, context=context,
+                    ))
     return result
 
 
@@ -238,11 +268,12 @@ def _search(
         connection.execute("CREATE VIRTUAL TABLE section_tags USING fts5(tags, tokenize='porter unicode61')")
         connection.executemany(
             "INSERT INTO sections(path, heading, description, body) VALUES (?, ?, ?, ?)",
-            ((section.path, section.heading, section.description, section.body) for section in sections),
+            ((section.path, section.heading, section.context if section.kind == "text" else section.description, section.body)
+             for section in sections),
         )
         connection.executemany(
             "INSERT INTO section_tags(tags) VALUES (?)",
-            ((" ".join(section.tags),) for section in sections),
+            ((" ".join(section.tags) if section.kind == "section" else "",) for section in sections),
         )
         query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases or []])
         ranks: dict[int, float] = {}
@@ -325,7 +356,7 @@ def search_bundle(
     )
     if heading is not None:
         heading = heading.strip().casefold()
-        sections = [section for section in sections if section.title.casefold() == heading]
+        sections = [section for section in sections if section.kind == "section" and section.title.casefold() == heading]
     return _search(sections, terms, limit, _expansions(question, vocabularies), unique_paths=unique_paths)
 
 
