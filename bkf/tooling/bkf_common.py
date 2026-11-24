@@ -16,6 +16,7 @@ from ruamel.yaml.error import YAMLError
 MAP_NAME = "MAP.md"
 README_NAME = "readme.md"
 TAG_VOCABULARY_NAME = "tag-vocabulary.yaml"
+SEARCH_CONFIG_NAME = "search.yaml"
 NOTES_NAME_RE = re.compile(r"notes(?:[2-9]|[1-9][0-9]+)?\.md")
 
 
