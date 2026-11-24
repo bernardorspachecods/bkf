@@ -612,7 +612,7 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   sends a `systemMessage`. Subagent tool calls are ignored. `--context-warn PCT`,
   `--context-compact PCT` and `--context-window TOKENS` set the warning and
   compaction percentages and the context window; defaults are 40, 55 and
-  200000. Percentages must be 1–99, warn must be below compact, and the window
+  1000000 (the 1M window of Opus and Sonnet). Percentages must be 1–99, warn must be below compact, and the window
   must be at least 1000. These values are merged into
   `~/.agent-hooks/context.json`. The group sets `autoCompactEnabled: true`,
   `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and
@@ -620,8 +620,10 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   `Write(~/.agent-hooks/continue/**)` and `Edit(~/.agent-hooks/continue/**)`
   to `permissions.allow`. Claude Code applies the percentage to the window
   minus the space it reserves for output, so compaction fires somewhat earlier
-  than `compact_percent` of `window_tokens` (about 99k rather than 110k with
-  the defaults).
+  than `compact_percent` of `window_tokens` (about 539k rather than 550k with
+  the defaults). The window must match the sessions' real context window: the
+  hook measures against it and Claude Code compacts against it, so a smaller
+  value makes every larger session look full.
 
 `install` previews by default and prints one line per script and registration
 as `ok`, `missing`, or `differs`; `--write` applies it. Other settings and
