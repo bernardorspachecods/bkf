@@ -11,7 +11,7 @@ import hook_events
 
 DEFAULT_WARN_PERCENT = 40
 DEFAULT_COMPACT_PERCENT = 55
-DEFAULT_WINDOW_TOKENS = 200_000
+DEFAULT_WINDOW_TOKENS = 1_000_000
 TITLE_TAIL_BYTES = hook_events.TITLE_TAIL_BYTES
 
 
@@ -147,7 +147,7 @@ def handle(data: dict, home: Path | None = None) -> dict | None:
     continuation = _context_path(home, session_id)
     message = (
         f"Context is at {round(percent)}% of the window. This session will be compacted automatically at "
-        f"{config['compact_percent']}%. At the next safe point (not in the middle of an edit), read "
+        f"about {config['compact_percent']}%. At the next safe point (not in the middle of an edit), read "
         "~/.claude/skills/before-context-loss/SKILL.md and follow its automatic mode: write to documents what the work "
         f"needs to continue, then write the continuation message to {continuation} (absolute path), overwriting it if "
         "the work changes later. Then carry on with the task; do not ask the user to compact."

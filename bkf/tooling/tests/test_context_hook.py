@@ -39,7 +39,7 @@ class ContextHookTest(unittest.TestCase):
 
     def test_config_defaults_and_overrides_independently(self) -> None:
         self.assertEqual(context_hook.load_config(self.home), {
-            "warn_percent": 40, "compact_percent": 55, "window_tokens": 200_000,
+            "warn_percent": 40, "compact_percent": 55, "window_tokens": 1_000_000,
         })
         config = self.home / ".agent-hooks" / "context.json"
         config.parent.mkdir(parents=True)
@@ -49,9 +49,9 @@ class ContextHookTest(unittest.TestCase):
         })
 
     def test_below_threshold_is_silent_and_threshold_warns_once(self) -> None:
-        self.write_transcript(self.assistant(79_999))
+        self.write_transcript(self.assistant(399_999))
         self.assertIsNone(self.warning())
-        self.write_transcript(self.assistant(80_000))
+        self.write_transcript(self.assistant(400_000))
         output = self.warning()
         self.assertEqual(output["hookSpecificOutput"]["hookEventName"], "PostToolUse")
         message = output["hookSpecificOutput"]["additionalContext"]
@@ -61,7 +61,7 @@ class ContextHookTest(unittest.TestCase):
         self.assertIsNone(self.warning())
 
     def test_usage_adds_cache_tokens_and_subagent_is_ignored(self) -> None:
-        self.write_transcript(self.assistant(60_000, cache_creation_input_tokens=10_000, cache_read_input_tokens=10_000))
+        self.write_transcript(self.assistant(300_000, cache_creation_input_tokens=50_000, cache_read_input_tokens=50_000))
         self.assertIsNone(self.warning(agent_id="subagent"))
         self.assertFalse((self.home / ".agent-hooks" / "state").exists())
         output = self.warning()
@@ -69,16 +69,16 @@ class ContextHookTest(unittest.TestCase):
 
     def test_sidechain_and_precompact_assistant_are_ignored(self) -> None:
         self.write_transcript(
-            self.assistant(150_000),
+            self.assistant(750_000),
             {"type": "system", "subtype": "compact_boundary"},
-            {**self.assistant(180_000), "isSidechain": True},
+            {**self.assistant(900_000), "isSidechain": True},
         )
         self.assertIsNone(self.warning())
         self.write_transcript(
-            self.assistant(150_000),
+            self.assistant(750_000),
             {"type": "system", "subtype": "compact_boundary"},
-            {**self.assistant(70_000), "isSidechain": True},
-            self.assistant(80_000),
+            {**self.assistant(350_000), "isSidechain": True},
+            self.assistant(400_000),
         )
         self.assertIsNotNone(self.warning())
 
