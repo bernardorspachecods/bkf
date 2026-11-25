@@ -185,8 +185,8 @@ def load_search_config(bundle_root: Path) -> SearchConfig | None:
         if not isinstance(model, str) or not model.strip():
             raise _fail("embeddings.model", "must be a non-empty string")
         mode = raw_embeddings.get("mode", "lexical")
-        if not isinstance(mode, str) or mode not in {"lexical", "hybrid"}:
-            raise _fail("embeddings.mode", "must be `lexical` or `hybrid`")
+        if not isinstance(mode, str) or mode not in {"lexical", "vector", "hybrid"}:
+            raise _fail("embeddings.mode", "must be `lexical`, `vector`, or `hybrid`")
         embeddings = EmbeddingsConfig(model.strip(), mode)
     return SearchConfig(tuple(entries), embeddings)
 

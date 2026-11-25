@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from navigation_map import MAP_HEADING
+from search_attached import embeddings_config
 
 
 OUTPUT_LIMIT = 4000
@@ -88,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="only documents carrying this tag; repeat to require several",
     )
     parser.add_argument("--debug", action="store_true", help="print a traceback when search fails")
+    parser.add_argument("--mode", choices=("lexical", "vector", "hybrid"), help="ranking mode")
     parser.add_argument("--json", action="store_true", help="print document hits as JSON")
     parser.add_argument("--full", action="store_true", help="show each matching passage in full")
     parser.add_argument("--passages", choices=("all", "sections", "text"), default="all",
@@ -689,11 +691,23 @@ def _persistent_search(
 def rank_passages(
     root: Path, question: str, *, scope: Path | None = None, heading: str | None = None,
     tags: list[str] | None = None, passages: str = "all", depth: int | None = None,
-    on_document_error=None, heading_weight: float = 20.0,
+    on_document_error=None, heading_weight: float = 20.0, mode: str = "lexical",
 ) -> list[RankedPassage]:
     """Every matching passage (or the best depth), best first, filters applied, synonym expansion included."""
     if passages not in {"all", "sections", "text"}:
         raise ValueError("passages must be all, sections, or text")
+    if mode not in {"lexical", "vector", "hybrid"}:
+        raise ValueError("mode must be lexical, vector, or hybrid")
+    if mode == "vector":
+        return vector_rank(root, question, scope=scope, heading=heading, tags=tags, passages=passages,
+                           depth=depth, on_document_error=on_document_error)
+    if mode == "hybrid":
+        lexical = rank_passages(root, question, scope=scope, heading=heading, tags=tags,
+                                passages=passages, depth=150, on_document_error=on_document_error,
+                                heading_weight=heading_weight, mode="lexical")
+        dense = vector_rank(root, question, scope=scope, heading=heading, tags=tags, passages=passages,
+                            depth=150, on_document_error=on_document_error)
+        return _reciprocal_rank_fusion(lexical, dense, depth=depth)
     terms = _query_terms(question)
     if not terms:
         return []
@@ -714,6 +728,29 @@ def rank_passages(
             sections = [s for s in sections if s.kind == "section" and s.title.casefold() == wanted]
         indexed = _search(sections, terms, None, phrases, include_previews=False, heading_weight=heading_weight)
     ranked = [RankedPassage(section, -score) for section, score in indexed]
+    return ranked if depth is None else ranked[:depth]
+
+
+def _passage_key(hit: RankedPassage) -> tuple:
+    section = hit.section
+    return (section.path, section.kind, section.heading, section.start, section.end, section.body)
+
+
+def _reciprocal_rank_fusion(
+    lexical: list[RankedPassage], vector: list[RankedPassage], *, depth: int | None = None,
+) -> list[RankedPassage]:
+    """Fuse two ranked passage lists with zero-based RRF; lexical order breaks ties."""
+    fused: dict[tuple, list] = {}
+    for order, ranking in enumerate((lexical, vector)):
+        for rank, hit in enumerate(ranking[:150]):
+            key = _passage_key(hit)
+            row = fused.setdefault(key, [hit, 0.0, None, None])
+            row[1] += 1 / (60 + rank)
+            row[2 if order == 0 else 3] = rank
+    rows = list(fused.values())
+    rows.sort(key=lambda row: (-row[1], row[2] if row[2] is not None else float("inf"),
+                               row[3] if row[3] is not None else float("inf")))
+    ranked = [RankedPassage(row[0].section, row[1]) for row in rows]
     return ranked if depth is None else ranked[:depth]
 
 
@@ -982,8 +1019,9 @@ def main(argv: list[str] | None = None) -> int:
             if not scope.is_relative_to(root):
                 print(f"bkf search: --path is outside the bundle: {args.path}", file=sys.stderr)
                 return 2
+        mode = args.mode or embeddings_config(root).mode
         ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
-                               passages=args.passages)
+                               passages=args.passages, mode=mode)
         hits = group_documents(ranked, limit=args.limit)
         if not args.full:
             from bkf_common import find_bundles

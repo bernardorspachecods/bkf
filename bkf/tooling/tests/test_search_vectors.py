@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 import builtins
+import io
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 import search
@@ -87,6 +89,54 @@ class VectorSearchTests(unittest.TestCase):
         result = search.vector_rank(self.root, "orchard", heading="Alpha", tags=["red"])
         self.assertEqual([hit.section.title for hit in result], ["Alpha"])
         self.assertEqual(load_search_config(self.root).embeddings.mode, "hybrid")
+
+    def test_config_accepts_vector_mode(self) -> None:
+        (self.root / "search.yaml").write_text("embeddings: {mode: vector}\n", encoding="utf-8")
+        self.assertEqual(embeddings_config(self.root).mode, "vector")
+
+    def test_rrf_exact_scores_order_and_lexical_ties(self) -> None:
+        def hit(name: str) -> search.RankedPassage:
+            section = search.Section(f"/{name}.md", name, "", f"body {name}", name)
+            return search.RankedPassage(section, 0.0)
+
+        lexical = [hit("a"), hit("b")]
+        vector = [hit("b"), hit("c")]
+
+        fused = search._reciprocal_rank_fusion(lexical, vector)
+
+        self.assertEqual([row.section.title for row in fused], ["b", "a", "c"])
+        self.assertEqual([row.score for row in fused], [1 / 61 + 1 / 60, 1 / 60, 1 / 61])
+        # Equal RRF scores use lexical rank first; a precedes vector-only c.
+        tied = search._reciprocal_rank_fusion([hit("a"), hit("b")], [hit("c")])
+        self.assertEqual([row.section.title for row in tied], ["a", "c", "b"])
+
+    def test_cli_uses_config_default_and_explicit_mode_override(self) -> None:
+        (self.root / "search.yaml").write_text("embeddings: {mode: hybrid}\n", encoding="utf-8")
+        output = io.StringIO()
+        with patch.object(search, "rank_passages", return_value=[]) as rank, redirect_stdout(output):
+            self.assertEqual(search.main(["question", "--cwd", str(self.root)]), 0)
+        self.assertEqual(rank.call_args.kwargs["mode"], "hybrid")
+
+        output = io.StringIO()
+        with patch.object(search, "rank_passages", return_value=[]) as rank, redirect_stdout(output):
+            self.assertEqual(search.main(["question", "--cwd", str(self.root), "--mode", "lexical"]), 0)
+        self.assertEqual(rank.call_args.kwargs["mode"], "lexical")
+
+    def test_cli_missing_fastembed_is_one_line_and_lexical_does_not_embed(self) -> None:
+        from contextlib import redirect_stderr
+
+        (self.root / "search.yaml").write_text("embeddings: {mode: hybrid}\n", encoding="utf-8")
+        stderr = io.StringIO()
+        failure = BKFInputError("vector search requires fastembed; install it with: install-command")
+        with patch.object(search, "_embedder", side_effect=failure), redirect_stderr(stderr):
+            self.assertEqual(search.main(["question", "--cwd", str(self.root)]), 1)
+        self.assertEqual(stderr.getvalue(), "bkf search: vector search requires fastembed; install it with: install-command\n")
+
+        stderr = io.StringIO()
+        with patch.object(search, "_embedder", side_effect=AssertionError("must not embed")), \
+                redirect_stderr(stderr), redirect_stdout(io.StringIO()):
+            self.assertEqual(search.main(["question", "--cwd", str(self.root), "--mode", "lexical"]), 0)
+        self.assertEqual(stderr.getvalue(), "")
 
     def test_missing_fastembed_has_install_message(self) -> None:
         self.embed_patch.stop()

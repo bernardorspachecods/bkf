@@ -647,9 +647,17 @@ one-time review of new hooks, so run `/hooks` in Codex after the first install.
 ## bkf search
 
 `bkf search QUERY... [--cwd PATH] [--limit N] [--path PATH] [--heading TEXT]
-[--tag TAG]... [--passages all|sections|text] [--json] [--full] [--debug]` searches passages in
+[--tag TAG]... [--passages all|sections|text] [--mode lexical|vector|hybrid]
+[--json] [--full] [--debug]` searches passages in
 the outermost bundle containing the selected directory, including nested
 bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
+Lexical mode finds exact words and phrases; vector mode ranks by meaning, and
+hybrid mode combines lexical and vector rankings with Reciprocal Rank Fusion.
+Use hybrid for questions and lexical for exact lookups of a claim, phrase, or
+identifier. Without `--mode`, search uses `embeddings.mode` from the outermost
+bundle's `search.yaml`, defaulting to lexical when that setting is absent.
+Vector and hybrid modes require the optional `fastembed` extra; install it with
+`uv tool install --editable ./bkf/tooling --with fastembed --reinstall`.
 Search uses a persistent SQLite index outside the repository: `$BKF_SEARCH_CACHE`
 when set, otherwise `${XDG_CACHE_HOME:-~/.cache}/bkf/search/`, with one file
 per resolved bundle root. Each call re-indexes only documents whose Markdown,
@@ -725,8 +733,8 @@ The top level is a mapping. It accepts `attached_text`, a list defaulting to
 duplicate keys and invalid YAML are errors.
 
 `embeddings` accepts `model`, a non-empty model name defaulting to
-`BAAI/bge-small-en-v1.5`, and `mode`, either `lexical` (the default) or
-`hybrid`. The model is selected from the outermost bundle root's configuration.
+`BAAI/bge-small-en-v1.5`, and `mode`, one of `lexical` (the default), `vector`,
+or `hybrid`. The model is selected from the outermost bundle root's configuration.
 `mode` sets the default for `--mode` when that search option is available.
 
 Each `attached_text` item is a mapping with these keys:
