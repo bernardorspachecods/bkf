@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,7 @@ from pathlib import Path
 TOOLING = Path(__file__).resolve().parents[1]
 CLI = TOOLING / "bkf_cli.py"
 sys.path.insert(0, str(TOOLING))
+_SEARCH_CACHE = tempfile.TemporaryDirectory()
 from bkf_common import is_notes_file
 from validate_bundle import SUPPORTED_VERSION
 
@@ -32,6 +34,7 @@ def bkf(*arguments: object) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         text=True,
+        env={**os.environ, "BKF_SEARCH_CACHE": _SEARCH_CACHE.name},
     )
 
 

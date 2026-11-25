@@ -99,6 +99,7 @@ conventions below:
 | `notes.md`, `notes<N>.md` | Bundle root only | Optional non-member files holding the user's private notes; agents do not read them unless the user asks. A name pattern, not one name. See §3.5. |
 | `ext-schema.yaml` | Bundle root only | Optional non-member JSON Schema that validates the `ext` frontmatter field of generic documents. Required when any document uses `ext`. See the [frontmatter profiles](/bkf/format/frontmatter-profiles.md#repo-specific-fields-ext). |
 | `tag-vocabulary.yaml` | Bundle root only | Optional non-member file that lists the bundle's canonical tags with their synonyms. When present, the `tags` of every tracked document MUST be canonical tags. See the [frontmatter profiles](/bkf/format/frontmatter-profiles.md#tag-vocabulary). |
+| `search.yaml` | Bundle root only | Optional non-member file that configures `bkf search`: which documents have attached plain-text files, how their locator markers read, and (later) embeddings. See [`bkf search` in the commands document](/bkf/tooling/commands.md#searchyaml). |
 
 The `document` profile's filename rule is defined in the
 [frontmatter profiles](/bkf/format/frontmatter-profiles.md).
@@ -414,6 +415,7 @@ requirements for that version are met:
   resolve to existing files. External URLs are valid absolute URLs.
 - A `tag-vocabulary.yaml` at the bundle root is valid, and every tag of every
   tracked document is in it.
+- A `search.yaml` at the bundle root is valid.
 - Cross-profile YAML requirements and profile-specific fields have valid
   values and types. The `document` profile's fields are defined in the
   [frontmatter profiles](/bkf/format/frontmatter-profiles.md).

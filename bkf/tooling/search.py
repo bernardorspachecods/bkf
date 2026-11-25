@@ -1,8 +1,10 @@
-"""Search tracked BKF document sections using a temporary FTS5 index."""
+"""Search tracked BKF document sections with a persistent FTS5 index and memory fallback."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -35,6 +37,8 @@ STOPWORDS = frozenset(
 WORD = re.compile(r"[^\W_]+", re.UNICODE)
 HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+INDEX_SCHEMA = 2
+_CACHE_NOTICE: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,26 @@ class Section:
     title: str = ""
     tags: tuple[str, ...] = ()
     preview: str = ""
+    kind: str = "section"
+    locator: dict | None = None
+    start: int | None = None
+    end: int | None = None
+    document_title: str = ""
+    context: str = ""
+
+
+@dataclass(frozen=True)
+class RankedPassage:
+    section: Section
+    score: float
+
+
+@dataclass(frozen=True)
+class DocumentHit:
+    path: str
+    title: str
+    score: float
+    passages: tuple[RankedPassage, ...]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,6 +86,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="only documents carrying this tag; repeat to require several",
     )
     parser.add_argument("--debug", action="store_true", help="print a traceback when search fails")
+    parser.add_argument("--json", action="store_true", help="print document hits as JSON")
+    parser.add_argument("--full", action="store_true", help="show each matching passage in full")
+    parser.add_argument("--passages", choices=("all", "sections", "text"), default="all",
+                        help="passage kinds to search (default: all)")
     return parser
 
 
@@ -93,11 +121,14 @@ def _sections(body: str, path: str, description: str, tags: tuple[str, ...] = ()
     if heading_rows and heading_rows[0][0] > 0:
         prefix = "\n".join(lines[: heading_rows[0][0]]).strip()
         if prefix:
-            sections.append(Section(path, first_heading or "(top)", description, prefix, first_heading or "(top)", tags))
+            sections.append(Section(
+                path, first_heading or "(top)", description, prefix, first_heading or "(top)", tags,
+                document_title=first_heading or "",
+            ))
     elif not heading_rows:
         text = "\n".join(lines).strip()
         if text:
-            sections.append(Section(path, "(top)", description, text, "(top)", tags))
+            sections.append(Section(path, "(top)", description, text, "(top)", tags, document_title=""))
 
     trail: list[tuple[int, str]] = []
     for offset, (line_index, level, title) in enumerate(heading_rows):
@@ -106,7 +137,7 @@ def _sections(body: str, path: str, description: str, tags: tuple[str, ...] = ()
         label = " > ".join(item for _, item in trail)
         next_line = heading_rows[offset + 1][0] if offset + 1 < len(heading_rows) else len(lines)
         text = "\n".join(lines[line_index + 1 : next_line]).strip()
-        sections.append(Section(path, label, description, text, title, tags))
+        sections.append(Section(path, label, description, text, title, tags, document_title=first_heading or ""))
     return sections
 
 
@@ -133,7 +164,8 @@ def _collect_sections(
     required_tags: list[str] | None = None,
     on_document_error: Callable[[str], None] | None = None,
 ) -> list[Section]:
-    from bkf_common import BKFInputError, canonical_tag, is_root_nonmember, parse_markdown, tracking_state
+    from bkf_common import canonical_tag, is_root_nonmember
+    from search_attached import load_search_config
 
     vocabularies = vocabularies or {}
     result: list[Section] = []
@@ -141,6 +173,7 @@ def _collect_sections(
         if any(part.startswith(".") for part in bundle.relative_to(root).parts):
             continue
         required = _resolve_required_tags(required_tags or [], vocabularies.get(bundle), canonical_tag)
+        search_config = load_search_config(bundle)
         for directory, directories, filenames in os.walk(bundle):
             directory_path = Path(directory)
             directories[:] = sorted(
@@ -164,30 +197,64 @@ def _collect_sections(
                     continue
                 if scope is not None and not (path == scope or path.is_relative_to(scope)):
                     continue
-                relative = "/" + path.relative_to(root).as_posix()
-                try:
-                    parsed = parse_markdown(path)
-                    is_agents = filename == "AGENTS.md"
-                    profile = parsed.frontmatter.get("bkf")
-                    if not is_agents:
-                        if isinstance(profile, str) and profile in {"feedback", "ideas"}:
-                            continue
-                        if not tracking_state(parsed.frontmatter, path=relative.lstrip("/")):
-                            continue
-                    description = parsed.frontmatter.get("description", "")
-                    if not isinstance(description, str):
-                        description = ""
-                    tags = parsed.frontmatter.get("tags")
-                    tags = tuple(tag for tag in tags if isinstance(tag, str)) if isinstance(tags, list) else ()
-                except BKFInputError as exc:
-                    if on_document_error is None:
-                        raise BKFInputError(f"{relative.lstrip('/')}: {exc}") from exc
-                    on_document_error(f"{path}: {exc}")
-                    continue
-                if required and not required <= {tag.casefold() for tag in tags}:
-                    continue
-                result.extend(_sections(parsed.body, relative, " ".join(description.split()), tags))
+                _, document_sections = _collect_document_sections(
+                    root, bundle, path, vocabularies, required, search_config, on_document_error,
+                )
+                result.extend(document_sections)
     return result
+
+
+def _collect_document_sections(
+    root: Path, bundle: Path, path: Path,
+    vocabularies: dict[Path, dict[str, list[str]]], required_tags: set[str],
+    search_config, on_document_error: Callable[[str], None] | None = None,
+) -> tuple[bool, list[Section]]:
+    """Parse one candidate document, preserving the collector's membership and passage rules."""
+    from bkf_common import BKFInputError, parse_markdown, tracking_state
+    from search_attached import attached_text_for, read_attached_text, text_passages
+
+    relative = "/" + path.relative_to(root).as_posix()
+    try:
+        parsed = parse_markdown(path)
+        profile = parsed.frontmatter.get("bkf")
+        is_agents = path.name == "AGENTS.md"
+        if not is_agents:
+            if isinstance(profile, str) and profile in {"feedback", "ideas"}:
+                return False, []
+            if not tracking_state(parsed.frontmatter, path=relative.lstrip("/")):
+                return False, []
+        description = parsed.frontmatter.get("description", "")
+        if not isinstance(description, str):
+            description = ""
+        tags_field = parsed.frontmatter.get("tags")
+        tags = tuple(tag for tag in tags_field if isinstance(tag, str)) if isinstance(tags_field, list) else ()
+    except BKFInputError as exc:
+        if on_document_error is None:
+            raise BKFInputError(f"{relative.lstrip('/')}: {exc}") from exc
+        on_document_error(f"{path}: {exc}")
+        return False, []
+
+    if required_tags and not required_tags <= {tag.casefold() for tag in tags}:
+        return True, []
+    normalized_description = " ".join(description.split())
+    sections = _sections(parsed.body, relative, normalized_description, tags)
+    if search_config is None:
+        return True, sections
+    attached = attached_text_for(search_config, bundle, path)
+    if attached is None:
+        return True, sections
+    sidecar_path, entry = attached
+    document_title = sections[0].document_title if sections else ""
+    context = ". ".join(part for part in (document_title, normalized_description) if part)
+    for passage in text_passages(read_attached_text(sidecar_path), entry):
+        label = passage.locator.get("label") if passage.locator else None
+        heading = label if isinstance(label, str) else "(text)"
+        sections.append(Section(
+            relative, heading, normalized_description, passage.text, heading, tags,
+            kind="text", locator=passage.locator, start=passage.start, end=passage.end,
+            document_title=document_title, context=context,
+        ))
+    return True, sections
 
 
 def _resolve_required_tags(tags: list[str], vocabulary: dict[str, list[str]] | None, canonical_tag) -> set[str]:
@@ -225,8 +292,8 @@ def _contains_sequence(words: list[str], sequence: list[str]) -> bool:
 
 
 def _search(
-    sections: list[Section], terms: list[str], limit: int, phrases: list[str] | None = None,
-    *, unique_paths: bool = False,
+    sections: list[Section], terms: list[str], limit: int | None, phrases: list[str] | None = None,
+    *, unique_paths: bool = False, include_previews: bool = True,
 ) -> list[tuple[Section, float]]:
     connection = sqlite3.connect(":memory:")
     try:
@@ -238,11 +305,12 @@ def _search(
         connection.execute("CREATE VIRTUAL TABLE section_tags USING fts5(tags, tokenize='porter unicode61')")
         connection.executemany(
             "INSERT INTO sections(path, heading, description, body) VALUES (?, ?, ?, ?)",
-            ((section.path, section.heading, section.description, section.body) for section in sections),
+            ((section.path, section.heading, section.context if section.kind == "text" else section.description, section.body)
+             for section in sections),
         )
         connection.executemany(
             "INSERT INTO section_tags(tags) VALUES (?)",
-            ((" ".join(section.tags),) for section in sections),
+            ((" ".join(section.tags) if section.kind == "section" else "",) for section in sections),
         )
         query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases or []])
         ranks: dict[int, float] = {}
@@ -260,10 +328,13 @@ def _search(
             for rowid, rank in ordered:
                 best_by_path.setdefault(sections[rowid - 1].path, (rowid, rank))
             ordered = list(best_by_path.values())
-        return [
-            (replace(sections[rowid - 1], preview=_preview(connection, rowid, query, sections[rowid - 1].body)), rank)
-            for rowid, rank in ordered[:limit]
-        ]
+        result = []
+        for rowid, rank in (ordered if limit is None else ordered[:limit]):
+            section = sections[rowid - 1]
+            if include_previews:
+                section = replace(section, preview=_preview(connection, rowid, query, section.body))
+            result.append((section, rank))
+        return result
     finally:
         connection.close()
 
@@ -295,12 +366,412 @@ def _preview(connection: sqlite3.Connection, rowid: int, query: str, body: str) 
     return text[: PREVIEW_LENGTH - 1].rstrip() + "…"
 
 
-def _render(hits: list[tuple[Section, float]]) -> str:
+def _cache_directory() -> Path:
+    configured = os.environ.get("BKF_SEARCH_CACHE")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(os.environ.get("XDG_CACHE_HOME", "~/.cache")).expanduser() / "bkf" / "search"
+
+
+def _candidate_documents(root: Path, find_bundles, is_bundle_root_map, in_nested_bundle):
+    """Return possible member documents without parsing their frontmatter."""
+    from bkf_common import is_root_nonmember
+
+    for bundle in find_bundles(root):
+        if any(part.startswith(".") for part in bundle.relative_to(root).parts):
+            continue
+        for directory, directories, filenames in os.walk(bundle):
+            directory_path = Path(directory)
+            directories[:] = sorted(
+                name for name in directories
+                if not name.startswith(".")
+                and not (directory_path / name / ".git").is_file()
+                and not ((directory_path / name) != bundle
+                         and ((directory_path / name) / "MAP.md").is_file()
+                         and is_bundle_root_map((directory_path / name) / "MAP.md"))
+            )
+            for filename in sorted(filenames):
+                path = directory_path / filename
+                if path.suffix.lower() != ".md" or filename == "MAP.md":
+                    continue
+                if any(part.startswith(".") for part in path.relative_to(bundle).parts[:-1]):
+                    continue
+                if in_nested_bundle(bundle, path) or is_root_nonmember(bundle, path):
+                    continue
+                yield bundle, path
+
+
+def _stat(path: Path | None) -> tuple[int | None, int | None]:
+    if path is None:
+        return None, None
+    try:
+        info = path.stat()
+    except FileNotFoundError:
+        return None, None
+    return info.st_mtime_ns, info.st_size
+
+
+def _delete_document(connection: sqlite3.Connection, relative: str) -> None:
+    ids = [row[0] for row in connection.execute("SELECT id FROM passages WHERE document_path = ?", (relative,))]
+    for passage_id in ids:
+        connection.execute("DELETE FROM sections WHERE rowid = ?", (passage_id,))
+        connection.execute("DELETE FROM section_tags WHERE rowid = ?", (passage_id,))
+    connection.execute("DELETE FROM passages WHERE document_path = ?", (relative,))
+
+
+def _write_document(connection: sqlite3.Connection, relative: str, sections: list[Section]) -> None:
+    _delete_document(connection, relative)
+    for section in sections:
+        cursor = connection.execute(
+            "INSERT INTO passages(document_path, path, kind, heading, title, document_title, description, context, tags, locator, start, end, body) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (relative, section.path, section.kind, section.heading, section.title, section.document_title,
+             section.description, section.context, json.dumps(section.tags),
+             json.dumps(section.locator, ensure_ascii=False) if section.locator is not None else None,
+             section.start, section.end, section.body),
+        )
+        passage_id = cursor.lastrowid
+        indexed_description = section.context if section.kind == "text" else section.description
+        connection.execute(
+            "INSERT INTO sections(rowid, path, heading, description, body) VALUES (?, ?, ?, ?, ?)",
+            (passage_id, section.path, section.heading, indexed_description, section.body),
+        )
+        connection.execute(
+            "INSERT INTO section_tags(rowid, tags) VALUES (?, ?)",
+            (passage_id, " ".join(section.tags) if section.kind == "section" else ""),
+        )
+
+
+def _open_index(path: Path) -> sqlite3.Connection:
+    connection = sqlite3.connect(path, timeout=10)
+    connection.execute("PRAGMA busy_timeout = 10000")
+    connection.execute("PRAGMA journal_mode = WAL")
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if version != INDEX_SCHEMA:
+        connection.executescript("""
+            DROP TABLE IF EXISTS sections;
+            DROP TABLE IF EXISTS section_tags;
+            DROP TABLE IF EXISTS passages;
+            DROP TABLE IF EXISTS files;
+            CREATE TABLE files (
+                path TEXT PRIMARY KEY, mtime_ns INTEGER NOT NULL, size INTEGER NOT NULL,
+                sidecar_path TEXT, sidecar_mtime_ns INTEGER, sidecar_size INTEGER,
+                config_sha256 TEXT, bundle_path TEXT NOT NULL, is_member INTEGER NOT NULL
+            );
+            CREATE TABLE passages (
+                id INTEGER PRIMARY KEY, document_path TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL,
+                heading TEXT NOT NULL, title TEXT NOT NULL, document_title TEXT NOT NULL,
+                description TEXT NOT NULL, context TEXT NOT NULL, tags TEXT NOT NULL, locator TEXT,
+                start INTEGER, end INTEGER, body TEXT NOT NULL
+            );
+            CREATE INDEX passages_document_path ON passages(document_path);
+            CREATE VIRTUAL TABLE sections USING fts5(path UNINDEXED, heading, description, body, tokenize='porter unicode61');
+            CREATE VIRTUAL TABLE section_tags USING fts5(tags, tokenize='porter unicode61');
+        """)
+        connection.execute(f"PRAGMA user_version = {INDEX_SCHEMA}")
+    return connection
+
+
+def _persistent_search(
+    root: Path, question: str, terms: list[str], phrases: list[str], limit: int | None,
+    scope: Path | None, heading: str | None, tags: list[str], vocabularies,
+    *, unique_paths: bool = False, passages: str = "all", on_document_error=None,
+    include_previews: bool = True,
+) -> list[tuple[Section, float]] | None:
+    """Refresh changed documents and search the persistent index; None requests memory fallback."""
+    global _CACHE_NOTICE
+    _CACHE_NOTICE = None
+    from bkf_common import find_bundles, in_nested_bundle, is_bundle_root_map
+    from search_attached import attached_text_for, load_search_config
+
+    def fallback(reason: Exception):
+        global _CACHE_NOTICE
+        _CACHE_NOTICE = str(reason)
+        return None
+
+    cache_dir = _cache_directory()
+    try:
+        cache_inside_bundle = cache_dir.resolve().is_relative_to(root.resolve())
+    except (OSError, RuntimeError) as exc:
+        return fallback(exc)
+    if cache_inside_bundle:
+        return fallback(OSError("cache directory is inside the bundle"))
+    cache_path = cache_dir / (hashlib.sha256(str(root.resolve()).encode()).hexdigest() + ".sqlite3")
+
+    for attempt in range(2):
+        connection = None
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            connection = _open_index(cache_path)
+            connection.create_function(
+                "casefold", 1, lambda value: value.casefold() if isinstance(value, str) else value,
+                deterministic=True,
+            )
+            connection.execute("BEGIN IMMEDIATE")
+            bundles = list(find_bundles(root))
+            configs = {bundle: load_search_config(bundle) for bundle in bundles}
+            config_hashes = {}
+            for bundle in bundles:
+                config_path = bundle / "search.yaml"
+                config_hashes[bundle] = hashlib.sha256(config_path.read_bytes()).hexdigest() if config_path.is_file() else None
+            candidates: dict[str, tuple[Path, Path, int, int, Path | None, int | None, int | None, str | None]] = {}
+            for bundle, path in _candidate_documents(root, find_bundles, is_bundle_root_map, in_nested_bundle):
+                try:
+                    info = path.stat()
+                except FileNotFoundError:
+                    continue
+                attached = attached_text_for(configs.get(bundle), bundle, path) if configs.get(bundle) else None
+                sidecar = attached[0] if attached else None
+                sidecar_mtime, sidecar_size = _stat(sidecar)
+                relative = path.relative_to(root).as_posix()
+                candidates[relative] = (bundle, path, info.st_mtime_ns, info.st_size, sidecar,
+                                        sidecar_mtime, sidecar_size, config_hashes.get(bundle))
+            existing = {row[0]: row[1:] for row in connection.execute(
+                "SELECT path, mtime_ns, size, sidecar_path, sidecar_mtime_ns, sidecar_size, config_sha256, bundle_path, is_member FROM files"
+            )}
+            for vanished in existing.keys() - candidates.keys():
+                _delete_document(connection, vanished)
+                connection.execute("DELETE FROM files WHERE path = ?", (vanished,))
+            for relative, candidate in candidates.items():
+                bundle, path, mtime_ns, size, sidecar, sidecar_mtime, sidecar_size, config_hash = candidate
+                sidecar_name = sidecar.relative_to(bundle).as_posix() if sidecar else None
+                current = (mtime_ns, size, sidecar_name, sidecar_mtime, sidecar_size, config_hash)
+                bundle_relative = bundle.relative_to(root).as_posix() or "."
+                saved = existing.get(relative, ())
+                if saved[:6] == current and len(saved) >= 7 and saved[6] == bundle_relative:
+                    continue
+                errors = []
+                def report_document_error(message):
+                    errors.append(message)
+                    if on_document_error is not None:
+                        on_document_error(message)
+                is_member, found = _collect_document_sections(
+                    root, bundle, path, vocabularies, set(), configs.get(bundle),
+                    report_document_error if on_document_error is not None else None,
+                )
+                if errors:
+                    _delete_document(connection, relative)
+                    connection.execute("DELETE FROM files WHERE path = ?", (relative,))
+                    continue
+                _delete_document(connection, relative)
+                connection.execute("DELETE FROM files WHERE path = ?", (relative,))
+                if is_member:
+                    _write_document(connection, relative, found)
+                connection.execute("INSERT INTO files VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                   (relative, *current, bundle_relative, int(is_member)))
+            connection.commit()
+
+            query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases])
+            conditions: list[str] = []
+            params: list[object] = [query, query]
+            if scope is not None and scope.resolve() != root.resolve():
+                scoped = "/" + scope.relative_to(root).as_posix()
+                conditions.append("(p.path = ? OR p.path LIKE ? ESCAPE '\\')")
+                escaped = scoped.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                params.extend((scoped, escaped.rstrip("/") + "/%"))
+            if heading is not None:
+                conditions.append("(p.kind = 'section' AND casefold(p.title) = ?)")
+                params.append(heading.strip().casefold())
+            if passages != "all":
+                conditions.append("p.kind = ?")
+                params.append("section" if passages == "sections" else "text")
+            if tags:
+                from bkf_common import canonical_tag
+                for tag in tags:
+                    alternatives = []
+                    for bundle in bundles:
+                        vocabulary = vocabularies.get(bundle)
+                        canonical = canonical_tag(vocabulary, tag) if vocabulary else None
+                        resolved = (canonical or tag).casefold()
+                        bundle_relative = bundle.relative_to(root).as_posix() or "."
+                        alternatives.append(
+                            "(p.document_path IN (SELECT path FROM files WHERE bundle_path = ?) AND "
+                            "EXISTS (SELECT 1 FROM json_each(p.tags) WHERE lower(value) = ?))"
+                        )
+                        params.extend((bundle_relative, resolved))
+                    if alternatives:
+                        conditions.append("(" + " OR ".join(alternatives) + ")")
+                    else:
+                        conditions.append("0")
+            where = " AND ".join(conditions)
+            sql_filter = f" AND {where}" if where else ""
+            ranks = {}
+            for passage_id, rank in connection.execute(
+                "SELECT s.rowid, bm25(sections, 0, 20, 1, 1) FROM sections s JOIN passages p ON p.id=s.rowid "
+                "WHERE sections MATCH ?" + sql_filter, params[:1] + params[2:]
+            ):
+                ranks[passage_id] = rank
+            for passage_id, rank in connection.execute(
+                "SELECT t.rowid, bm25(section_tags) * 20 FROM section_tags t JOIN passages p ON p.id=t.rowid "
+                "WHERE section_tags MATCH ?" + sql_filter, params[:1] + params[2:]
+            ):
+                ranks[passage_id] = ranks.get(passage_id, 0.0) + rank
+            passage_ids = list(ranks)
+            if passage_ids:
+                connection.execute("CREATE TEMP TABLE matched_passages (id INTEGER PRIMARY KEY)")
+                connection.executemany(
+                    "INSERT INTO matched_passages(id) VALUES (?)", ((passage_id,) for passage_id in passage_ids),
+                )
+                rows = {
+                    row[0]: row[1:]
+                    for row in connection.execute(
+                        "SELECT p.id, p.path, p.kind, p.heading, p.title, p.document_title, p.description, "
+                        "p.context, p.tags, p.locator, p.start, p.end, p.body "
+                        "FROM passages p JOIN matched_passages m ON m.id = p.id"
+                    )
+                }
+            else:
+                rows = {}
+            ordered = sorted(ranks.items(), key=lambda item: (item[1], rows[item[0]][0]))
+            if unique_paths:
+                selected = {}
+                for passage_id, rank in ordered:
+                    selected.setdefault(rows[passage_id][0], (passage_id, rank))
+                ordered = list(selected.values())
+            result = []
+            for passage_id, rank in (ordered if limit is None else ordered[:limit]):
+                (_, path, kind, heading_value, title, document_title, description, context, tags_json,
+                 locator_json, start, end, body) = (passage_id, *rows[passage_id])
+                section = Section(path, heading_value, description, body, title, tuple(json.loads(tags_json)),
+                                  kind=kind, locator=json.loads(locator_json) if locator_json else None,
+                                  start=start, end=end, document_title=document_title, context=context)
+                if include_previews:
+                    section = replace(section, preview=_preview(connection, passage_id, query, body))
+                result.append((section, rank))
+            return result
+        except (sqlite3.DatabaseError, OSError) as exc:
+            if connection is not None:
+                try:
+                    connection.rollback()
+                    connection.close()
+                except sqlite3.Error:
+                    pass
+            corrupt = isinstance(exc, sqlite3.DatabaseError) and any(
+                marker in str(exc).casefold()
+                for marker in ("not a database", "malformed", "encrypted", "file is not a database")
+            )
+            if corrupt and attempt == 0 and cache_path.exists():
+                try:
+                    cache_path.unlink()
+                    Path(str(cache_path) + "-wal").unlink(missing_ok=True)
+                    Path(str(cache_path) + "-shm").unlink(missing_ok=True)
+                    continue
+                except OSError:
+                    pass
+            return fallback(exc)
+        except Exception:
+            if connection is not None:
+                try:
+                    connection.rollback()
+                    connection.close()
+                except sqlite3.Error:
+                    pass
+            raise
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except sqlite3.Error:
+                    pass
+    return fallback(OSError("cache unavailable"))
+
+
+def rank_passages(
+    root: Path, question: str, *, scope: Path | None = None, heading: str | None = None,
+    tags: list[str] | None = None, passages: str = "all", depth: int | None = None,
+    on_document_error=None,
+) -> list[RankedPassage]:
+    """Every matching passage (or the best depth), best first, filters applied, synonym expansion included."""
+    if passages not in {"all", "sections", "text"}:
+        raise ValueError("passages must be all, sections, or text")
+    terms = _query_terms(question)
+    if not terms:
+        return []
+    from bkf_common import find_bundles, in_nested_bundle, is_bundle_root_map
+    vocabularies = _vocabularies(root, find_bundles)
+    phrases = _expansions(question, vocabularies)
+    indexed = _persistent_search(root, question, terms, phrases, None, scope, heading, tags or [],
+                                 vocabularies, passages=passages, on_document_error=on_document_error,
+                                 include_previews=False)
+    if indexed is None:
+        sections = _collect_sections(root, find_bundles, is_bundle_root_map, in_nested_bundle,
+                                     vocabularies, scope, tags, on_document_error)
+        if passages != "all":
+            kind = "section" if passages == "sections" else "text"
+            sections = [section for section in sections if section.kind == kind]
+        if heading is not None:
+            wanted = heading.strip().casefold()
+            sections = [s for s in sections if s.kind == "section" and s.title.casefold() == wanted]
+        indexed = _search(sections, terms, None, phrases, include_previews=False)
+    ranked = [RankedPassage(section, -score) for section, score in indexed]
+    return ranked if depth is None else ranked[:depth]
+
+
+def group_documents(ranked: list[RankedPassage], *, limit: int, per_document: int = 2) -> list[DocumentHit]:
+    """Documents in order of their first passage in ranked, each with its first per_document passages."""
+    grouped: dict[str, list[RankedPassage]] = {}
+    for hit in ranked:
+        grouped.setdefault(hit.section.path, []).append(hit)
+    return [DocumentHit(path, rows[0].section.document_title, rows[0].score, tuple(rows[:per_document]))
+            for path, rows in list(grouped.items())[:limit]]
+
+
+def _preview_sections(
+    sections: list[Section], question: str, phrases: list[str] | None = None,
+) -> list[Section]:
+    """Compute previews for an already selected set of passages."""
+    if not sections:
+        return []
+    terms = _query_terms(question)
+    if not terms:
+        return [replace(section, preview=_start_of(section.body)) for section in sections]
+    query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases or []])
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE VIRTUAL TABLE sections USING fts5(path UNINDEXED, heading, description, body, "
+            "tokenize='porter unicode61')"
+        )
+        connection.executemany(
+            "INSERT INTO sections(path, heading, description, body) VALUES (?, ?, ?, ?)",
+            ((section.path, section.heading,
+              section.context if section.kind == "text" else section.description, section.body)
+             for section in sections),
+        )
+        return [replace(section, preview=_preview(connection, index, query, section.body))
+                for index, section in enumerate(sections, 1)]
+    finally:
+        connection.close()
+
+
+def prepare_previews(
+    hits: list[DocumentHit], question: str, *, phrases: list[str] | None = None,
+) -> list[DocumentHit]:
+    """Fill previews after document grouping, so only output passages incur snippet work."""
+    flattened = [passage.section for hit in hits for passage in hit.passages]
+    previewed = iter(_preview_sections(flattened, question, phrases))
+    return [replace(hit, passages=tuple(
+        replace(passage, section=next(previewed)) for passage in hit.passages
+    )) for hit in hits]
+
+
+def _full_text(section: Section) -> str:
+    return " ".join(section.body.split())
+
+
+def _render(hits: list[DocumentHit], *, full: bool = False) -> str:
     blocks: list[str] = []
     used = 0
-    for index, (section, _) in enumerate(hits, 1):
-        preview = section.preview or _start_of(section.body)
-        block = f"{index}  {section.path} § {section.heading}\n   {preview}"
+    for index, hit in enumerate(hits, 1):
+        title = f"  {hit.title}" if hit.title else ""
+        lines = [f"{index}  {hit.path}{title}"]
+        for ranked in hit.passages:
+            section = ranked.section
+            label = (f"§ {section.heading}" if section.kind == "section"
+                     else ((section.locator or {}).get("label") or "(text)"))
+            preview = _full_text(section) if full else (section.preview or _start_of(section.body))
+            lines.append(f"   {label}  {preview}")
+        block = "\n".join(lines)
         addition = len(block) + (1 if blocks else 0)
         if used + addition + 1 > OUTPUT_LIMIT:
             break
@@ -314,19 +785,23 @@ def search_bundle(
     tags: list[str] | None = None, unique_paths: bool = False,
     on_document_error: Callable[[str], None] | None = None,
 ) -> list[tuple[Section, float]]:
-    from bkf_common import find_bundles, in_nested_bundle, is_bundle_root_map
-
-    terms = _query_terms(question)
-    if not terms:
+    if limit < 1:
         return []
-    vocabularies = _vocabularies(root, find_bundles)
-    sections = _collect_sections(
-        root, find_bundles, is_bundle_root_map, in_nested_bundle, vocabularies, scope, tags, on_document_error,
-    )
-    if heading is not None:
-        heading = heading.strip().casefold()
-        sections = [section for section in sections if section.title.casefold() == heading]
-    return _search(sections, terms, limit, _expansions(question, vocabularies), unique_paths=unique_paths)
+    ranked = rank_passages(root, question, scope=scope, heading=heading, tags=tags,
+                           on_document_error=on_document_error)
+    selected: list[RankedPassage] = []
+    seen: set[str] = set()
+    for hit in ranked:
+        if unique_paths and hit.section.path in seen:
+            continue
+        seen.add(hit.section.path)
+        selected.append(hit)
+        if len(selected) >= limit:
+            break
+    from bkf_common import find_bundles
+    phrases = _expansions(question, _vocabularies(root, find_bundles))
+    sections = _preview_sections([hit.section for hit in selected], question, phrases)
+    return [(section, -hit.score) for section, hit in zip(sections, selected)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -352,16 +827,38 @@ def main(argv: list[str] | None = None) -> int:
             if not scope.is_relative_to(root):
                 print(f"bkf search: --path is outside the bundle: {args.path}", file=sys.stderr)
                 return 2
-        hits = search_bundle(
-            root, question, limit=args.limit, scope=scope, heading=args.heading, tags=args.tag,
-        )
+        ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
+                               passages=args.passages)
+        hits = group_documents(ranked, limit=args.limit)
+        if not args.full:
+            from bkf_common import find_bundles
+            phrases = _expansions(question, _vocabularies(root, find_bundles))
+            hits = prepare_previews(hits, question, phrases=phrases)
+        if args.debug and _CACHE_NOTICE:
+            print(f"bkf search: cache unavailable; using memory ({_CACHE_NOTICE})", file=sys.stderr)
         reconfigure = getattr(sys.stdout, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8")
         if not hits:
-            print("no sections match")
+            print("[]" if args.json else "no sections match")
             return 0
-        sys.stdout.write(_render(hits))
+        if args.json:
+            payload = []
+            for hit in hits:
+                payload.append({
+                    "path": hit.path, "title": hit.title, "score": hit.score,
+                    "passages": [{
+                        "kind": row.section.kind,
+                        "heading": row.section.heading if row.section.kind == "section" else None,
+                        "locator": row.section.locator,
+                        "start": row.section.start, "end": row.section.end,
+                        "preview": _full_text(row.section) if args.full else (row.section.preview or _start_of(row.section.body)),
+                        "score": row.score,
+                    } for row in hit.passages],
+                })
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        else:
+            sys.stdout.write(_render(hits, full=args.full))
         return 0
     except Exception as exc:
         print(f"bkf search: {exc}", file=sys.stderr)
