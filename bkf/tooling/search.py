@@ -58,6 +58,20 @@ class Section:
     context: str = ""
 
 
+@dataclass(frozen=True)
+class RankedPassage:
+    section: Section
+    score: float
+
+
+@dataclass(frozen=True)
+class DocumentHit:
+    path: str
+    title: str
+    score: float
+    passages: tuple[RankedPassage, ...]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bkf search", description=__doc__)
     parser.add_argument("query", nargs="+", help="question or topic to search for")
@@ -72,6 +86,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="only documents carrying this tag; repeat to require several",
     )
     parser.add_argument("--debug", action="store_true", help="print a traceback when search fails")
+    parser.add_argument("--json", action="store_true", help="print document hits as JSON")
+    parser.add_argument("--full", action="store_true", help="show each matching passage in full")
+    parser.add_argument("--passages", choices=("all", "sections", "text"), default="all",
+                        help="passage kinds to search (default: all)")
     return parser
 
 
@@ -274,8 +292,8 @@ def _contains_sequence(words: list[str], sequence: list[str]) -> bool:
 
 
 def _search(
-    sections: list[Section], terms: list[str], limit: int, phrases: list[str] | None = None,
-    *, unique_paths: bool = False,
+    sections: list[Section], terms: list[str], limit: int | None, phrases: list[str] | None = None,
+    *, unique_paths: bool = False, include_previews: bool = True,
 ) -> list[tuple[Section, float]]:
     connection = sqlite3.connect(":memory:")
     try:
@@ -310,10 +328,13 @@ def _search(
             for rowid, rank in ordered:
                 best_by_path.setdefault(sections[rowid - 1].path, (rowid, rank))
             ordered = list(best_by_path.values())
-        return [
-            (replace(sections[rowid - 1], preview=_preview(connection, rowid, query, sections[rowid - 1].body)), rank)
-            for rowid, rank in ordered[:limit]
-        ]
+        result = []
+        for rowid, rank in (ordered if limit is None else ordered[:limit]):
+            section = sections[rowid - 1]
+            if include_previews:
+                section = replace(section, preview=_preview(connection, rowid, query, section.body))
+            result.append((section, rank))
+        return result
     finally:
         connection.close()
 
@@ -452,9 +473,10 @@ def _open_index(path: Path) -> sqlite3.Connection:
 
 
 def _persistent_search(
-    root: Path, question: str, terms: list[str], phrases: list[str], limit: int,
+    root: Path, question: str, terms: list[str], phrases: list[str], limit: int | None,
     scope: Path | None, heading: str | None, tags: list[str], vocabularies,
-    *, unique_paths: bool = False, on_document_error=None,
+    *, unique_paths: bool = False, passages: str = "all", on_document_error=None,
+    include_previews: bool = True,
 ) -> list[tuple[Section, float]] | None:
     """Refresh changed documents and search the persistent index; None requests memory fallback."""
     global _CACHE_NOTICE
@@ -550,6 +572,9 @@ def _persistent_search(
             if heading is not None:
                 conditions.append("(p.kind = 'section' AND casefold(p.title) = ?)")
                 params.append(heading.strip().casefold())
+            if passages != "all":
+                conditions.append("p.kind = ?")
+                params.append("section" if passages == "sections" else "text")
             if tags:
                 from bkf_common import canonical_tag
                 for tag in tags:
@@ -569,7 +594,6 @@ def _persistent_search(
                     else:
                         conditions.append("0")
             where = " AND ".join(conditions)
-            base = "SELECT path, kind, heading, title, document_title, description, context, tags, locator, start, end, body FROM passages WHERE id = ?"
             sql_filter = f" AND {where}" if where else ""
             ranks = {}
             for passage_id, rank in connection.execute(
@@ -582,7 +606,22 @@ def _persistent_search(
                 "WHERE section_tags MATCH ?" + sql_filter, params[:1] + params[2:]
             ):
                 ranks[passage_id] = ranks.get(passage_id, 0.0) + rank
-            rows = {passage_id: connection.execute(base, (passage_id,)).fetchone() for passage_id in ranks}
+            passage_ids = list(ranks)
+            if passage_ids:
+                connection.execute("CREATE TEMP TABLE matched_passages (id INTEGER PRIMARY KEY)")
+                connection.executemany(
+                    "INSERT INTO matched_passages(id) VALUES (?)", ((passage_id,) for passage_id in passage_ids),
+                )
+                rows = {
+                    row[0]: row[1:]
+                    for row in connection.execute(
+                        "SELECT p.id, p.path, p.kind, p.heading, p.title, p.document_title, p.description, "
+                        "p.context, p.tags, p.locator, p.start, p.end, p.body "
+                        "FROM passages p JOIN matched_passages m ON m.id = p.id"
+                    )
+                }
+            else:
+                rows = {}
             ordered = sorted(ranks.items(), key=lambda item: (item[1], rows[item[0]][0]))
             if unique_paths:
                 selected = {}
@@ -590,13 +629,15 @@ def _persistent_search(
                     selected.setdefault(rows[passage_id][0], (passage_id, rank))
                 ordered = list(selected.values())
             result = []
-            for passage_id, rank in ordered[:limit]:
+            for passage_id, rank in (ordered if limit is None else ordered[:limit]):
                 (_, path, kind, heading_value, title, document_title, description, context, tags_json,
                  locator_json, start, end, body) = (passage_id, *rows[passage_id])
                 section = Section(path, heading_value, description, body, title, tuple(json.loads(tags_json)),
                                   kind=kind, locator=json.loads(locator_json) if locator_json else None,
                                   start=start, end=end, document_title=document_title, context=context)
-                result.append((replace(section, preview=_preview(connection, passage_id, query, body)), rank))
+                if include_previews:
+                    section = replace(section, preview=_preview(connection, passage_id, query, body))
+                result.append((section, rank))
             return result
         except (sqlite3.DatabaseError, OSError) as exc:
             if connection is not None:
@@ -635,12 +676,102 @@ def _persistent_search(
     return fallback(OSError("cache unavailable"))
 
 
-def _render(hits: list[tuple[Section, float]]) -> str:
+def rank_passages(
+    root: Path, question: str, *, scope: Path | None = None, heading: str | None = None,
+    tags: list[str] | None = None, passages: str = "all", depth: int | None = None,
+    on_document_error=None,
+) -> list[RankedPassage]:
+    """Every matching passage (or the best depth), best first, filters applied, synonym expansion included."""
+    if passages not in {"all", "sections", "text"}:
+        raise ValueError("passages must be all, sections, or text")
+    terms = _query_terms(question)
+    if not terms:
+        return []
+    from bkf_common import find_bundles, in_nested_bundle, is_bundle_root_map
+    vocabularies = _vocabularies(root, find_bundles)
+    phrases = _expansions(question, vocabularies)
+    indexed = _persistent_search(root, question, terms, phrases, None, scope, heading, tags or [],
+                                 vocabularies, passages=passages, on_document_error=on_document_error,
+                                 include_previews=False)
+    if indexed is None:
+        sections = _collect_sections(root, find_bundles, is_bundle_root_map, in_nested_bundle,
+                                     vocabularies, scope, tags, on_document_error)
+        if passages != "all":
+            kind = "section" if passages == "sections" else "text"
+            sections = [section for section in sections if section.kind == kind]
+        if heading is not None:
+            wanted = heading.strip().casefold()
+            sections = [s for s in sections if s.kind == "section" and s.title.casefold() == wanted]
+        indexed = _search(sections, terms, None, phrases, include_previews=False)
+    ranked = [RankedPassage(section, -score) for section, score in indexed]
+    return ranked if depth is None else ranked[:depth]
+
+
+def group_documents(ranked: list[RankedPassage], *, limit: int, per_document: int = 2) -> list[DocumentHit]:
+    """Documents in order of their first passage in ranked, each with its first per_document passages."""
+    grouped: dict[str, list[RankedPassage]] = {}
+    for hit in ranked:
+        grouped.setdefault(hit.section.path, []).append(hit)
+    return [DocumentHit(path, rows[0].section.document_title, rows[0].score, tuple(rows[:per_document]))
+            for path, rows in list(grouped.items())[:limit]]
+
+
+def _preview_sections(
+    sections: list[Section], question: str, phrases: list[str] | None = None,
+) -> list[Section]:
+    """Compute previews for an already selected set of passages."""
+    if not sections:
+        return []
+    terms = _query_terms(question)
+    if not terms:
+        return [replace(section, preview=_start_of(section.body)) for section in sections]
+    query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases or []])
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE VIRTUAL TABLE sections USING fts5(path UNINDEXED, heading, description, body, "
+            "tokenize='porter unicode61')"
+        )
+        connection.executemany(
+            "INSERT INTO sections(path, heading, description, body) VALUES (?, ?, ?, ?)",
+            ((section.path, section.heading,
+              section.context if section.kind == "text" else section.description, section.body)
+             for section in sections),
+        )
+        return [replace(section, preview=_preview(connection, index, query, section.body))
+                for index, section in enumerate(sections, 1)]
+    finally:
+        connection.close()
+
+
+def prepare_previews(
+    hits: list[DocumentHit], question: str, *, phrases: list[str] | None = None,
+) -> list[DocumentHit]:
+    """Fill previews after document grouping, so only output passages incur snippet work."""
+    flattened = [passage.section for hit in hits for passage in hit.passages]
+    previewed = iter(_preview_sections(flattened, question, phrases))
+    return [replace(hit, passages=tuple(
+        replace(passage, section=next(previewed)) for passage in hit.passages
+    )) for hit in hits]
+
+
+def _full_text(section: Section) -> str:
+    return " ".join(section.body.split())
+
+
+def _render(hits: list[DocumentHit], *, full: bool = False) -> str:
     blocks: list[str] = []
     used = 0
-    for index, (section, _) in enumerate(hits, 1):
-        preview = section.preview or _start_of(section.body)
-        block = f"{index}  {section.path} § {section.heading}\n   {preview}"
+    for index, hit in enumerate(hits, 1):
+        title = f"  {hit.title}" if hit.title else ""
+        lines = [f"{index}  {hit.path}{title}"]
+        for ranked in hit.passages:
+            section = ranked.section
+            label = (f"§ {section.heading}" if section.kind == "section"
+                     else ((section.locator or {}).get("label") or "(text)"))
+            preview = _full_text(section) if full else (section.preview or _start_of(section.body))
+            lines.append(f"   {label}  {preview}")
+        block = "\n".join(lines)
         addition = len(block) + (1 if blocks else 0)
         if used + addition + 1 > OUTPUT_LIMIT:
             break
@@ -654,25 +785,23 @@ def search_bundle(
     tags: list[str] | None = None, unique_paths: bool = False,
     on_document_error: Callable[[str], None] | None = None,
 ) -> list[tuple[Section, float]]:
-    from bkf_common import find_bundles, in_nested_bundle, is_bundle_root_map
-
-    terms = _query_terms(question)
-    if not terms:
+    if limit < 1:
         return []
-    vocabularies = _vocabularies(root, find_bundles)
-    indexed = _persistent_search(
-        root, question, terms, _expansions(question, vocabularies), limit, scope, heading, tags or [],
-        vocabularies, unique_paths=unique_paths, on_document_error=on_document_error,
-    )
-    if indexed is not None:
-        return indexed
-    sections = _collect_sections(
-        root, find_bundles, is_bundle_root_map, in_nested_bundle, vocabularies, scope, tags, on_document_error,
-    )
-    if heading is not None:
-        heading = heading.strip().casefold()
-        sections = [section for section in sections if section.kind == "section" and section.title.casefold() == heading]
-    return _search(sections, terms, limit, _expansions(question, vocabularies), unique_paths=unique_paths)
+    ranked = rank_passages(root, question, scope=scope, heading=heading, tags=tags,
+                           on_document_error=on_document_error)
+    selected: list[RankedPassage] = []
+    seen: set[str] = set()
+    for hit in ranked:
+        if unique_paths and hit.section.path in seen:
+            continue
+        seen.add(hit.section.path)
+        selected.append(hit)
+        if len(selected) >= limit:
+            break
+    from bkf_common import find_bundles
+    phrases = _expansions(question, _vocabularies(root, find_bundles))
+    sections = _preview_sections([hit.section for hit in selected], question, phrases)
+    return [(section, -hit.score) for section, hit in zip(sections, selected)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -698,18 +827,38 @@ def main(argv: list[str] | None = None) -> int:
             if not scope.is_relative_to(root):
                 print(f"bkf search: --path is outside the bundle: {args.path}", file=sys.stderr)
                 return 2
-        hits = search_bundle(
-            root, question, limit=args.limit, scope=scope, heading=args.heading, tags=args.tag,
-        )
+        ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
+                               passages=args.passages)
+        hits = group_documents(ranked, limit=args.limit)
+        if not args.full:
+            from bkf_common import find_bundles
+            phrases = _expansions(question, _vocabularies(root, find_bundles))
+            hits = prepare_previews(hits, question, phrases=phrases)
         if args.debug and _CACHE_NOTICE:
             print(f"bkf search: cache unavailable; using memory ({_CACHE_NOTICE})", file=sys.stderr)
         reconfigure = getattr(sys.stdout, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8")
         if not hits:
-            print("no sections match")
+            print("[]" if args.json else "no sections match")
             return 0
-        sys.stdout.write(_render(hits))
+        if args.json:
+            payload = []
+            for hit in hits:
+                payload.append({
+                    "path": hit.path, "title": hit.title, "score": hit.score,
+                    "passages": [{
+                        "kind": row.section.kind,
+                        "heading": row.section.heading if row.section.kind == "section" else None,
+                        "locator": row.section.locator,
+                        "start": row.section.start, "end": row.section.end,
+                        "preview": _full_text(row.section) if args.full else (row.section.preview or _start_of(row.section.body)),
+                        "score": row.score,
+                    } for row in hit.passages],
+                })
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        else:
+            sys.stdout.write(_render(hits, full=args.full))
         return 0
     except Exception as exc:
         print(f"bkf search: {exc}", file=sys.stderr)

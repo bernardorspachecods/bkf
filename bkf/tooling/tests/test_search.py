@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stdout
+import io
 import os
 import subprocess
 import sys
@@ -51,7 +53,7 @@ def run(root: Path, *arguments: str, cwd: Path = TOOLING) -> subprocess.Complete
 class PreviewTests(unittest.TestCase):
     def preview_of(self, result: subprocess.CompletedProcess[str]) -> str:
         self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout.splitlines()[1].strip()
+        return result.stdout.splitlines()[1].strip().split("  ", 1)[-1]
 
     def test_match_deep_in_long_body_appears_in_preview(self) -> None:
         claims = "\n".join(f"- Claim {n}: finding number {n} about topic{n}." for n in range(1, 16))
@@ -81,8 +83,9 @@ class PreviewTests(unittest.TestCase):
                 result = run(root, query)
                 lines = result.stdout.splitlines()
                 self.assertIn(name, lines[0])
-                self.assertTrue(lines[1].strip().startswith("Opening words here. filler"), (query, lines[1]))
-                self.assertEqual(len(lines[1].strip()), search.PREVIEW_LENGTH + 1)
+                self.assertTrue(lines[1].strip().startswith("§ Quokka  Opening words here. filler") or
+                                lines[1].strip().startswith("§ Plain  Opening words here. filler"), (query, lines[1]))
+                self.assertEqual(len(lines[1].split("  ", 2)[-1].strip()), search.PREVIEW_LENGTH + 1)
 
     def test_multi_word_synonym_phrase_match_appears_in_preview(self) -> None:
         body = "Preamble. " * 60 + "Notes on artificial intelligence in practice. " + "Tail. " * 60
@@ -114,6 +117,102 @@ class PreviewTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def test_broad_query_only_previews_selected_document_passages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            for document_number in range(8):
+                sections = "\n\n".join(
+                    f"## Match {passage_number}\n\nneedle matching passage {passage_number}."
+                    for passage_number in range(40)
+                )
+                (root / f"doc-{document_number}.md").write_text(
+                    document(f"Document {document_number}", sections), encoding="utf-8"
+                )
+
+            output = io.StringIO()
+            with patch.object(search, "_preview", wraps=search._preview) as preview:
+                with redirect_stdout(output):
+                    result = search.main(["needle", "--cwd", str(root), "--limit", "3"])
+
+        self.assertEqual(result, 0)
+        self.assertLessEqual(preview.call_count, 2 * 3)
+        self.assertEqual(sum(line[:1].isdigit() for line in output.getvalue().splitlines()), 3)
+
+    def test_limit_counts_documents_and_keeps_two_passages_per_document(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            ten = "\n\n".join(f"## Section {n}\n\nneedle passage number {n}." for n in range(10))
+            (root / "many.md").write_text(document("Many", ten), encoding="utf-8")
+            for n in range(1, 4):
+                (root / f"single{n}.md").write_text(
+                    document(f"Single {n}", "needle once. " + "filler " * 400), encoding="utf-8"
+                )
+
+            result = run(root, "needle", "--limit", "3")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        document_lines = [line for line in result.stdout.splitlines() if line[:1].isdigit()]
+        self.assertEqual(len(document_lines), 3)
+        self.assertEqual(len({line.split()[1] for line in document_lines}), 3)
+        current_path = None
+        many_passages = 0
+        for line in result.stdout.splitlines():
+            if line[:1].isdigit():
+                current_path = line.split()[1]
+            elif line.strip().startswith("§ ") and current_path == "/many.md":
+                many_passages += 1
+        self.assertEqual(many_passages, 2)
+
+    def test_json_has_document_and_passage_shape_and_full_located_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "search.yaml").write_text(
+                'attached_text:\n  - documents: "*.md"\n    text: "{stem}.txt"\n'
+                '    locator:\n      pattern: "^PAGE (?P<page>[0-9]+)$"\n'
+                '      labels:\n        - label: "Page {page}"\n', encoding="utf-8"
+            )
+            (root / "guide.md").write_text(document("Guide", "sectionjsonword"), encoding="utf-8")
+            sidecar = "before\nPAGE 9\nlocatedjsonword full passage text\nafter"
+            (root / "guide.txt").write_text(sidecar, encoding="utf-8")
+
+            section_result = run(root, "sectionjsonword", "--json")
+            text_result = run(root, "locatedjsonword", "--json", "--full")
+
+        section = __import__("json").loads(section_result.stdout)
+        self.assertEqual(set(section[0]), {"path", "title", "score", "passages"})
+        self.assertEqual(section[0]["title"], "Guide")
+        passage = section[0]["passages"][0]
+        self.assertEqual(set(passage), {"kind", "heading", "locator", "start", "end", "preview", "score"})
+        self.assertEqual(passage["kind"], "section")
+        self.assertIsNone(passage["locator"])
+        text_hit = __import__("json").loads(text_result.stdout)[0]["passages"][0]
+        self.assertEqual(text_hit["kind"], "text")
+        self.assertEqual(text_hit["heading"], None)
+        self.assertEqual(text_hit["locator"]["label"], "Page 9")
+        self.assertEqual(" ".join(sidecar[text_hit["start"]:text_hit["end"]].split()), text_hit["preview"])
+
+    def test_passages_option_filters_kinds_before_document_ranking(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "search.yaml").write_text(
+                'attached_text:\n  - documents: "*.md"\n    text: "{stem}.txt"\n', encoding="utf-8"
+            )
+            (root / "guide.md").write_text(document("Guide", "sectiononlyword"), encoding="utf-8")
+            (root / "guide.txt").write_text("textonlyword sidecar passage", encoding="utf-8")
+
+            text_only = run(root, "sectiononlyword", "--passages", "text")
+            sections_only = run(root, "textonlyword", "--passages", "sections")
+            located = run(root, "textonlyword", "--passages", "text")
+
+        self.assertEqual(text_only.stdout, "no sections match\n")
+        self.assertEqual(sections_only.stdout, "no sections match\n")
+        self.assertIn("1  /guide.md", located.stdout)
+        self.assertIn("textonlyword", located.stdout)
+
     def test_linked_worktree_uses_its_bundle_and_finds_uncommitted_documents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             checkout = Path(directory) / "checkout"
@@ -147,7 +246,8 @@ class SearchTests(unittest.TestCase):
             result = run(root, "description")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("1  /heading.md § Descriptions", result.stdout)
+        self.assertIn("1  /heading.md  Descriptions", result.stdout)
+        self.assertIn("§ Descriptions", result.stdout)
 
     def test_heading_splitting_and_fenced_code_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -243,7 +343,7 @@ Last content.
             capped = run(root, "needle", "--limit", "40")
 
         self.assertEqual(limited.returncode, 0, limited.stderr)
-        self.assertEqual(limited.stdout.count(" § "), 2)
+        self.assertEqual(sum(line.startswith("1  ") or line.startswith("2  ") for line in limited.stdout.splitlines()), 2)
         self.assertEqual(capped.returncode, 0, capped.stderr)
         self.assertLessEqual(len(capped.stdout), search.OUTPUT_LIMIT)
 
@@ -412,7 +512,7 @@ thesis: []
 
 
 def paths(result: subprocess.CompletedProcess[str]) -> list[str]:
-    return [line.split()[1] for line in result.stdout.splitlines() if " § " in line]
+    return [line.split()[1] for line in result.stdout.splitlines() if line[:1].isdigit()]
 
 
 class TagSearchTests(unittest.TestCase):
@@ -428,7 +528,8 @@ class TagSearchTests(unittest.TestCase):
             result = run(root, "zebra")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(paths(result), ["/tagged.md", "/tagged.md"])
+        self.assertEqual(paths(result), ["/tagged.md"])
+        self.assertEqual(sum(line.strip().startswith("§ ") for line in result.stdout.splitlines()), 2)
         self.assertIn("§ Notes > Other", result.stdout)
 
     def test_tag_column_does_not_change_ranking_of_other_queries(self) -> None:
@@ -512,9 +613,9 @@ class TagSearchTests(unittest.TestCase):
             prefix_result = run(root, "opening3")
             section_result = run(root, "searchablewords")
 
-        self.assertIn("/guide.md § Page 7", located_result.stdout)
+        self.assertIn("Page 7  ", located_result.stdout)
         self.assertIn("passageonlyword", located_result.stdout)
-        self.assertIn("/guide.md § (text)", prefix_result.stdout)
+        self.assertIn("(text)  ", prefix_result.stdout)
         self.assertIn("/guide.md", section_result.stdout)
 
     def test_attached_passage_filters_and_heading_behavior(self) -> None:
@@ -536,9 +637,9 @@ class TagSearchTests(unittest.TestCase):
             tag_excluded = run(root, "filterword", "--tag", "beta")
             heading_filtered = run(root, "filterword", "--heading", "Guide")
 
-        self.assertIn("/sub/guide.md § (text)", unfiltered.stdout)
-        self.assertIn("/sub/guide.md § (text)", path_filtered.stdout)
-        self.assertIn("/sub/guide.md § (text)", tag_filtered.stdout)
+        self.assertIn("1  /sub/guide.md", unfiltered.stdout)
+        self.assertIn("1  /sub/guide.md", path_filtered.stdout)
+        self.assertIn("1  /sub/guide.md", tag_filtered.stdout)
         self.assertEqual(tag_excluded.stdout, "no sections match\n")
         self.assertEqual(heading_filtered.stdout, "no sections match\n")
 
@@ -554,8 +655,8 @@ class TagSearchTests(unittest.TestCase):
 
             result = run(root, "zebra", "--limit", "10")
 
-        self.assertIn("/guide.md § Guide", result.stdout.splitlines()[0])
-        self.assertNotIn("§ (text)", result.stdout)
+        self.assertIn("1  /guide.md", result.stdout.splitlines()[0])
+        self.assertNotIn("(text)  ", result.stdout)
 
     def test_missing_sidecar_keeps_document_sections_searchable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -569,7 +670,7 @@ class TagSearchTests(unittest.TestCase):
             result = run(root, "sectiononlyword")
 
         self.assertIn("/guide.md", result.stdout)
-        self.assertNotIn("§ (text)", result.stdout)
+        self.assertNotIn("(text)  ", result.stdout)
 
     def test_gitignored_attached_sidecar_is_indexed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -587,7 +688,7 @@ class TagSearchTests(unittest.TestCase):
 
             result = run(root, "ignoredsidecarword")
 
-        self.assertIn("/guide.md § (text)", result.stdout)
+        self.assertIn("(text)  ", result.stdout)
 
     def test_invalid_search_config_fails_search(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -645,7 +645,7 @@ one-time review of new hooks, so run `/hooks` in Codex after the first install.
 ## bkf search
 
 `bkf search QUERY... [--cwd PATH] [--limit N] [--path PATH] [--heading TEXT]
-[--tag TAG]... [--debug]` searches sections in
+[--tag TAG]... [--passages all|sections|text] [--json] [--full] [--debug]` searches passages in
 the outermost bundle containing the selected directory, including nested
 bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
 Search uses a persistent SQLite index outside the repository: `$BKF_SEARCH_CACHE`
@@ -687,11 +687,19 @@ Filters narrow the sections searched and combine with AND:
   resolves to its canonical tag through the vocabulary of the document's bundle.
   Repeat the option to require several tags.
 
-Results show the `/`-rooted path, section heading, and a whitespace-collapsed
-preview of up to 200 characters. When the query matches the section body, the
-preview is the matching passage, with `…` where text is cut and no highlight
-markers. When the hit came only from the heading, description or tags, the
-preview is the start of the body. Output is capped at 4,000 characters.
+Results are documents ordered by their best matching passage. `--limit` counts
+documents (default 5); each document shows its two highest ranked passages.
+Section passages show their heading trail and text passages show their locator
+label (or `(text)`). Previews are whitespace-collapsed and up to 200 characters.
+When the query matches the passage body, the preview contains the matching text,
+with `…` where cut and no highlight markers. When only the heading, description
+or tags matched, the preview starts at the passage body. `--full` shows each
+passage in full. Text output is capped at 4,000 characters and stops before a
+whole document block or passage line. `--passages` filters matching passage kinds
+before documents are ranked. `--json` prints an uncapped JSON array with
+document paths, titles, scores and passage metadata; with `--full`, each passage's
+`preview` field contains its full whitespace-collapsed text. No matches prints
+`no sections match` in text mode and `[]` in JSON mode; both exit `0`.
 
 Agents should search before writing or moving a rule to see where it already
 lives. Exit `0` means results or no matches; `2` means the query has no
