@@ -32,7 +32,7 @@ FIELDS = (
 )
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 TITLE_LIMIT = 120
-# The title a session card takes from its window name or its first prompt.
+# The title a session task takes from its window name or its first prompt.
 SESSION_TITLE_LIMIT = 80
 # The folder of the Claude session links, one JSON file per session. Its dot name keeps list_tasks from reading it.
 SESSIONS_FOLDER = ".sessions"
@@ -221,7 +221,7 @@ def list_tasks(store: Path) -> TaskList:
 
 
 def _attach_legacy_session_ids(store: Path, tasks: list[Task]) -> None:
-    """Expose an old link only when it is the sole UUID for a card without a recorded current UUID."""
+    """Expose an old link only when it is the sole UUID for a task without a recorded current UUID."""
     folder = Path(store) / SESSIONS_FOLDER
     try:
         files = list(folder.glob("*.json"))
@@ -322,10 +322,10 @@ def start(
     worktree: dict[str, Any] | None = None,
     run_dir: str | None = None,
 ) -> None:
-    """Begin a run on the card. A working card may begin again (a rerun): that clears its attention.
+    """Begin a run on the task. A working task may begin again (a rerun): that clears its attention.
 
-    A to-merge card may begin too, as a safety net for a card that a session left in to-merge after landing.
-    The command refuses it while the card still holds an entry in the merge queue (bkf_task does that check).
+    A to-merge task may begin too, as a safety net for a task that a session left in to-merge after landing.
+    The command refuses it while the task still holds an entry in the merge queue (bkf_task does that check).
     """
     _require(task, ("todo", "working", "failed", "to-merge"), "working")
     task.status = "working"
@@ -342,21 +342,21 @@ def start(
 
 
 def enter_merge(task: Task) -> None:
-    """The card joins the merge queue: to-merge, with no attention (the queue is its wait)."""
+    """The task joins the merge queue: to-merge, with no attention (the queue is its wait)."""
     _require(task, ("todo", "working", "failed", "to-merge"), "to-merge")
     task.status = "to-merge"
     task.attention = None
 
 
 def merge_failed(task: Task, *, note: str, now: datetime | None) -> None:
-    """The card left the merge queue with a reason: working again, with the merge-failed attention."""
+    """The task left the merge queue with a reason: working again, with the merge-failed attention."""
     _require(task, ("todo", "working", "failed", "to-merge"), "working")
     task.status = "working"
     task.attention = {"reason": "merge-failed", "since": _stamp(now), "note": note}
 
 
 def leave_merge(task: Task) -> None:
-    """The card left the merge queue on purpose: working, with no attention."""
+    """The task left the merge queue on purpose: working, with no attention."""
     _require(task, ("todo", "working", "failed", "to-merge"), "working")
     task.status = "working"
     task.attention = None
@@ -386,7 +386,7 @@ def clear_attention(task: Task) -> None:
 # Internal helpers.
 
 def _ensure_migrated(store: Path) -> None:
-    """Migrate the legacy statuses once: done cards are deleted, review cards become working.
+    """Migrate the legacy statuses once: done tasks are deleted, review tasks become working.
 
     The marker file records that it ran, so later reads stop here at one stat call. A store that does not
     exist yet is left alone; the first write creates it and the next read migrates nothing.
@@ -436,7 +436,7 @@ def _normalize_title(title: str) -> str:
 
 
 def title_from_text(text: str) -> str | None:
-    """Return a card title from free text: the first line that has words, without leading markdown marks.
+    """Return a task title from free text: the first line that has words, without leading markdown marks.
 
     Leading `#` marks and spaces are removed, runs of whitespace collapse to one space, and a title longer than
     SESSION_TITLE_LIMIT characters ends with an ellipsis. None when no line has words.
@@ -622,7 +622,7 @@ def locked(store: Path) -> Iterator[None]:
         os.close(fd)
 
 
-# Session links: which card a Claude session writes to. One JSON file per session id, written under the lock.
+# Session links: which task a Claude session writes to. One JSON file per session id, written under the lock.
 
 def is_valid_session_id(text: Any) -> bool:
     return isinstance(text, str) and _SESSION.fullmatch(text) is not None

@@ -28,7 +28,7 @@ class FakeProbe:
         self.windows = windows or {}
         self.is_landed = landed
 
-    def card_exists(self, task: str) -> bool:
+    def task_exists(self, task: str) -> bool:
         return task in self.cards
 
     def window_alive(self, task: str) -> bool | None:
@@ -117,11 +117,11 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(merge_store.recover(queue, NOW, LEASE, FakeProbe()), [])
         self.assertEqual(queue, before)
 
-    def test_a_holder_whose_card_is_gone_loses_the_turn_with_a_note(self) -> None:
+    def test_a_holder_whose_task_is_gone_loses_the_turn_with_a_note(self) -> None:
         queue = queue_with(TASK_A, TASK_B)
         found = merge_store.recover(queue, NOW, LEASE, FakeProbe(cards=(TASK_B,)))
         self.assertEqual([(item.task, item.event) for item in found], [(TASK_A, "lock-recovered")])
-        self.assertEqual(found[0].note, "lost its place in the merge queue: its card is gone")
+        self.assertEqual(found[0].note, "lost its place in the merge queue: its task is gone")
         self.assertEqual(merge_store.holder(queue)["task"], TASK_B)
         self.assertEqual(queue["events"][-2]["event"], "lock-recovered")
 
@@ -156,10 +156,10 @@ class RecoveryTests(unittest.TestCase):
         queue["entries"][1]["seen"] = merge_store.stamp(NOW + timedelta(minutes=2))
         self.assertEqual(merge_store.recover(queue, NOW + timedelta(minutes=3), LEASE, FakeProbe()), [])
 
-    def test_a_waiter_whose_card_is_gone_is_dropped_without_a_note(self) -> None:
+    def test_a_waiter_whose_task_is_gone_is_dropped_without_a_note(self) -> None:
         queue = queue_with(TASK_A, TASK_B)
         found = merge_store.recover(queue, NOW, LEASE, FakeProbe(cards=(TASK_A,)))
-        self.assertEqual(found[0].reason, "its card is gone")
+        self.assertEqual(found[0].reason, "its task is gone")
         self.assertEqual(len(queue["entries"]), 1)
 
     def test_a_crashed_land_whose_branch_is_on_the_target_counts_as_landed(self) -> None:
@@ -233,15 +233,15 @@ class FileTests(unittest.TestCase):
     def test_touch_from_hook_renews_only_the_holder_and_at_most_once_a_minute(self) -> None:
         task_store.create(self.store, repo=REPO, title="holder", now=NOW)
         tasks = task_store.list_tasks(self.store).tasks
-        holder_card = tasks[0].id
-        queue = queue_with(holder_card)
+        holder_task = tasks[0].id
+        queue = queue_with(holder_task)
         old_lease = merge_store.stamp(NOW + LEASE - timedelta(minutes=5))
         queue["entries"][0]["lease_until"] = old_lease
         merge_store.save(self.store, self.path, queue)
-        merge_store.touch_from_hook(self.store, holder_card, {})
+        merge_store.touch_from_hook(self.store, holder_task, {})
         renewed = merge_store.load(self.path)["entries"][0]["lease_until"]
         self.assertNotEqual(renewed, old_lease)
-        merge_store.touch_from_hook(self.store, holder_card, {})
+        merge_store.touch_from_hook(self.store, holder_task, {})
         self.assertEqual(merge_store.load(self.path)["entries"][0]["lease_until"], renewed)
 
 

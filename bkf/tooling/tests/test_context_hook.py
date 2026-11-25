@@ -39,7 +39,7 @@ class ContextHookTest(unittest.TestCase):
 
     def test_config_defaults_and_overrides_independently(self) -> None:
         self.assertEqual(context_hook.load_config(self.home), {
-            "warn_percent": 40, "compact_percent": 55, "window_tokens": 1_000_000,
+            "warn_percent": 45, "compact_percent": 55, "window_tokens": 1_000_000,
         })
         config = self.home / ".agent-hooks" / "context.json"
         config.parent.mkdir(parents=True)
@@ -49,23 +49,23 @@ class ContextHookTest(unittest.TestCase):
         })
 
     def test_below_threshold_is_silent_and_threshold_warns_once(self) -> None:
-        self.write_transcript(self.assistant(399_999))
+        self.write_transcript(self.assistant(449_999))
         self.assertIsNone(self.warning())
-        self.write_transcript(self.assistant(400_000))
+        self.write_transcript(self.assistant(450_000))
         output = self.warning()
         self.assertEqual(output["hookSpecificOutput"]["hookEventName"], "PostToolUse")
         message = output["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("40%", message)
+        self.assertIn("45%", message)
         self.assertIn("55%", message)
         self.assertIn(str(self.home / ".agent-hooks" / "continue" / "session_one.md"), message)
         self.assertIsNone(self.warning())
 
     def test_usage_adds_cache_tokens_and_subagent_is_ignored(self) -> None:
-        self.write_transcript(self.assistant(300_000, cache_creation_input_tokens=50_000, cache_read_input_tokens=50_000))
+        self.write_transcript(self.assistant(350_000, cache_creation_input_tokens=50_000, cache_read_input_tokens=50_000))
         self.assertIsNone(self.warning(agent_id="subagent"))
         self.assertFalse((self.home / ".agent-hooks" / "state").exists())
         output = self.warning()
-        self.assertIn("40%", output["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("45%", output["hookSpecificOutput"]["additionalContext"])
 
     def test_sidechain_and_precompact_assistant_are_ignored(self) -> None:
         self.write_transcript(
@@ -78,8 +78,37 @@ class ContextHookTest(unittest.TestCase):
             self.assistant(750_000),
             {"type": "system", "subtype": "compact_boundary"},
             {**self.assistant(350_000), "isSidechain": True},
-            self.assistant(400_000),
+            self.assistant(450_000),
         )
+        self.assertIsNotNone(self.warning())
+
+    def test_final_warning_comes_three_points_before_compaction_once(self) -> None:
+        self.write_transcript(self.assistant(450_000))
+        self.assertIn("BKF context hook", self.warning()["hookSpecificOutput"]["additionalContext"])
+        self.write_transcript(self.assistant(519_999))
+        self.assertIsNone(self.warning())
+        self.write_transcript(self.assistant(520_000))
+        message = self.warning()["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("rewrite the continuation message", message)
+        self.assertIn(str(self.home / ".agent-hooks" / "continue" / "session_one.md"), message)
+        self.write_transcript(self.assistant(530_000))
+        self.assertIsNone(self.warning())
+
+    def test_a_jump_past_both_thresholds_sends_only_the_first_warning(self) -> None:
+        self.write_transcript(self.assistant(530_000))
+        self.assertIn("read ~/.claude/skills/before-context-loss", self.warning()["hookSpecificOutput"]["additionalContext"])
+        self.write_transcript(self.assistant(540_000))
+        self.assertIsNone(self.warning())
+
+    def test_compaction_clears_both_warnings(self) -> None:
+        self.write_transcript(self.assistant(450_000))
+        self.warning()
+        self.write_transcript(self.assistant(520_000))
+        self.warning()
+        context_hook.handle({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session/one"}, self.home)
+        self.write_transcript(self.assistant(450_000))
+        self.assertIsNotNone(self.warning())
+        self.write_transcript(self.assistant(520_000))
         self.assertIsNotNone(self.warning())
 
     def test_resume_injects_content_moves_file_and_clears_mark(self) -> None:

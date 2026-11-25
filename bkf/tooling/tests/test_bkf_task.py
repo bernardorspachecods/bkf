@@ -177,9 +177,9 @@ class BkfTaskTests(unittest.TestCase):
 
     def test_edit_empty_title_is_refused_without_changing_task(self) -> None:
         task_id = self.new("keep")
-        before = self.card_bytes(task_id)
+        before = self.task_bytes(task_id)
         self.assertRefused(*self.run_task("edit", task_id, "--title", "  "), "title is empty")
-        self.assertEqual(self.card_bytes(task_id), before)
+        self.assertEqual(self.task_bytes(task_id), before)
 
     def test_edit_body_file_dash_reads_standard_input(self) -> None:
         task_id = self.new("prompt")
@@ -349,7 +349,7 @@ class BkfTaskTests(unittest.TestCase):
                 self.assertEqual(status, 2)
                 self.assertIn("invalid choice", error)
 
-    def test_close_deletes_the_card_from_any_status(self) -> None:
+    def test_close_deletes_the_task_from_any_status(self) -> None:
         for status_name in ("todo", "working", "to-merge", "failed"):
             with self.subTest(status_name):
                 task_id = self.new()
@@ -368,7 +368,7 @@ class BkfTaskTests(unittest.TestCase):
         status, output, error = self.run_task("close", "t20000101-000000-0000")
         self.assertRefused(status, output, error, "no task")
 
-    def test_a_card_in_to_merge_is_listed_with_its_status(self) -> None:
+    def test_a_task_in_to_merge_is_listed_with_its_status(self) -> None:
         task_id = self.new()
         self.run_task("start", task_id)
         task_store.update(self.store, task_id, task_store.enter_merge)
@@ -499,7 +499,7 @@ class BkfTaskTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         return calls
 
-    def card_bytes(self, task_id: str) -> bytes:
+    def task_bytes(self, task_id: str) -> bytes:
         return (self.store / task_id / "task.json").read_bytes()
 
     def test_output_reads_the_visible_screen_and_two_hundred_history_lines_by_default(self) -> None:
@@ -609,13 +609,13 @@ class BkfTaskTests(unittest.TestCase):
                 self.assertRefused(*self.run_task("output", task_id), "not a tmux session and window name")
         self.assertEqual(calls, [])
 
-    def test_output_never_changes_the_card(self) -> None:
+    def test_output_never_changes_the_task(self) -> None:
         task_id = self.windowed()
-        before = self.card_bytes(task_id)
+        before = self.task_bytes(task_id)
         generation = task_store.generation(self.store)
         self.fake_tmux()
         self.run_task("output", task_id, "--lines", "10")
-        self.assertEqual(self.card_bytes(task_id), before)
+        self.assertEqual(self.task_bytes(task_id), before)
         self.assertEqual(task_store.generation(self.store), generation)
 
     # send
@@ -718,13 +718,13 @@ class BkfTaskTests(unittest.TestCase):
         self.assertRefused(*self.run_task("send", "t20000101-000000-0000", "--text", "x"), "no task")
         self.assertEqual(calls, [])
 
-    def test_send_never_changes_the_card(self) -> None:
+    def test_send_never_changes_the_task(self) -> None:
         task_id = self.windowed()
-        before = self.card_bytes(task_id)
+        before = self.task_bytes(task_id)
         generation = task_store.generation(self.store)
         self.fake_tmux()
         self.run_task("send", task_id, "--text", "hello")
-        self.assertEqual(self.card_bytes(task_id), before)
+        self.assertEqual(self.task_bytes(task_id), before)
         self.assertEqual(task_store.generation(self.store), generation)
 
 

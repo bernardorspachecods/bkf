@@ -28,7 +28,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Edit a task's title or prompt | [bkf task edit](#bkf-task-edit) |
 | Read the text of a task's tmux window | [bkf task output](#bkf-task) |
 | Send text to a task's tmux window | [bkf task send](#bkf-task) |
-| Open an agent session in tmux with its task card | [bkf launch](#bkf-launch) |
+| Open an agent session in tmux with its task | [bkf launch](#bkf-launch) |
 | Queue a session's branch to land on the target, one at a time | [bkf merge](#bkf-merge) |
 
 ## Install
@@ -396,11 +396,11 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   when the task holds it and the lease is more than a minute old (see
   [bkf merge](#bkf-merge)). Nothing else changes with those events.
 
-  The hook keeps its own mark on the card: attention reason `prompt` with one of
-  four notes. It applies only to a card that is `working` and of kind `task` or
-  `handoff`; other cards are left alone.
+  The hook keeps its own mark on the task: attention reason `prompt` with one of
+  four notes. It applies only to a task that is `working` and of kind `task` or
+  `handoff`; other tasks are left alone.
 
-  | Event | Effect on the card |
+  | Event | Effect on the task |
   | --- | --- |
   | `Stop`, with `background_tasks` and `session_crons` both empty or absent | set `waiting for your reply` |
   | `Stop`, with either list non-empty | clear the hook's own mark; set nothing |
@@ -413,7 +413,7 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   to any other attention: a `prompt` with another note, or another reason. Clearing
   touches only the hook's own mark. So a session that ends its turn to wait for
   background work never shows as waiting, and a session that resumes clears its
-  mark when its first tool call starts. The hook changes the card through the store's
+  mark when its first tool call starts. The hook changes the task through the store's
   locked helpers, as `bkf task attention` does; an event that changes nothing
   does not take the lock. Empty or invalid input is treated as
   `SessionStart`. With `BKF_HOOK_DEBUG_FILE` set, the hook also appends each raw
@@ -421,39 +421,39 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
   default. The hook always exits 0; errors are swallowed. The agents that
   the harness starts never see `BKF_TASK`.
 
-  **Session cards.** With `BKF_TASK` unset, an interactive Claude session in tmux
-  (`CLAUDE_CODE_ENTRYPOINT` is `cli` and `TMUX_PANE` is set) has a card of its
+  **Session tasks.** With `BKF_TASK` unset, an interactive Claude session in tmux
+  (`CLAUDE_CODE_ENTRYPOINT` is `cli` and `TMUX_PANE` is set) has a task of its
   own: kind `task`, source `session`, session agent `claude`. Any other session,
   such as `claude -p` or one outside tmux, returns before it reads its input.
-  A `BKF_TASK` session does not create a session card. `bkf launch` gives each
+  A `BKF_TASK` session does not create a session task. `bkf launch` gives each
   new Claude task session a UUID with `claude --session-id` and records it on
   the task. A `SessionStart` can backfill an older explicit task only when it
   has no recorded UUID, is working for Claude, and the hook's tmux pane matches
   the task's recorded window. An old session therefore cannot replace a newer
-  association. `SessionEnd` never deletes an explicit task. The session card's
+  association. `SessionEnd` never deletes an explicit task. The session task's
   `session_id` link is kept in the store as described under
   [bkf task](#bkf-task):
 
-  - `SessionStart` with no card for the `session_id`, in a git repository (the
-    input's `cwd`): creates the card, `working`. Its repository is the one that
+  - `SessionStart` with no task for the `session_id`, in a git repository (the
+    input's `cwd`): creates the task, `working`. Its repository is the one that
     holds `cwd`, its title is the tmux window's name (else the repository
     folder's name), and its session records `tmux_session` and `tmux_window`
     (the window id) of `TMUX_PANE`. Outside a git repository nothing is read or
-    written. A link whose card is missing is replaced by a new card.
-  - `SessionStart` with a card (`resume`, `compact`): reuses it and points its
+    written. A link whose task is missing is replaced by a new task.
+  - `SessionStart` with a task (`resume`, `compact`): reuses it and points its
     session at the pane's window again. A repeated start for the same UUID does
     not update the task.
-  - `UserPromptSubmit`: while the card's title is still the one it was created
+  - `UserPromptSubmit`: while the task's title is still the one it was created
     with, the first prompt with text names it: its first line that has words,
     without leading `#` marks, with runs of spaces collapsed, and cut to 80
     characters ending in `…`. The window name gives the title the same way.
     Later prompts never rename it, and a title someone else set is kept.
-  - `SessionEnd`: a session card is deleted, unless it is `to-merge` or has the
+  - `SessionEnd`: a session task is deleted, unless it is `to-merge` or has the
     `merge-failed` attention: those wait for the owner (the merge queue, or the
-    failed merge), so they stay. The link stays either way; a resume whose card
-    is gone gets a new card, and a link is replaced only when its card is gone.
-  - The mark events act on a session card as on a launched one. A link whose
-    card is missing does nothing on these events.
+    failed merge), so they stay. The link stays either way; a resume whose task
+    is gone gets a new task, and a link is replaced only when its task is gone.
+  - The mark events act on a session task as on a launched one. A link whose
+    task is missing does nothing on these events.
 - **check** registers a `SessionStart` hook that records a git snapshot,
   a `PostToolUse` hook that records files written by editing tool calls
   (`Edit`, `Write`, `NotebookEdit`, `MultiEdit`, `apply_patch`), and a `Stop`
@@ -609,12 +609,15 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
 
 - **context** registers Claude Code `PostToolUse`, `UserPromptSubmit` and
   `SessionStart` hooks. At the configured warning percentage it tells the
-  agent to write a continuation note in `~/.agent-hooks/continue/`. After
+  agent to write a continuation note in `~/.agent-hooks/continue/`. Three
+  points before the compaction percentage it warns once more, telling the
+  agent to rewrite the note so it matches the current state; when one call
+  crosses both percentages, only the first warning is sent. After
   compaction, the next session start resumes from that note and moves it to
   the `continue/used/` archive. If the note is missing after a warning, it
   sends a `systemMessage`. Subagent tool calls are ignored. `--context-warn PCT`,
   `--context-compact PCT` and `--context-window TOKENS` set the warning and
-  compaction percentages and the context window; defaults are 40, 55 and
+  compaction percentages and the context window; defaults are 45, 55 and
   1000000 (the 1M window of Opus and Sonnet). Percentages must be 1–99, warn must be below compact, and the window
   must be at least 1000. These values are merged into
   `~/.agent-hooks/context.json`. The group sets `autoCompactEnabled: true`,
@@ -964,15 +967,15 @@ bkf task delete ID
 **Layout.** Each task is `<store>/<id>/task.json`, and a task may also have
 `prompt.md`. The store holds `generation`, a counter that rises on every
 write, and `.lock`, which serializes writes. `<store>/.sessions/<session_id>.json`
-links a Claude session to its card: `{"task": <id>, "default_title": <title or null>}`,
-where `default_title` is kept until the first prompt names the card. The folder
+links a Claude session to its task: `{"task": <id>, "default_title": <title or null>}`,
+where `default_title` is kept until the first prompt names the task. The folder
 name starts with a dot, so `bkf task list` does not read it as a task. An id is `t` followed by the
 local time, a dash, and four hex digits, such as `t20261120-143005-a1b2`.
 Writes replace files atomically.
 
 **Legacy statuses.** The first read or write of a store that predates the four
-statuses below migrates it once, under the lock: `done` cards are deleted,
-`review` cards become `working`, and the file `.migrated-statuses` records that
+statuses below migrates it once, under the lock: `done` tasks are deleted,
+`review` tasks become `working`, and the file `.migrated-statuses` records that
 it ran. The merge queue's files live under `<store>/.merge/` (see
 [bkf merge](#bkf-merge)).
 
@@ -999,15 +1002,15 @@ it ran. The merge queue's files live under `<store>/.merge/` (see
 **Statuses and transitions.** `todo` starts at `new`. The statuses are `todo`,
 `working`, `to-merge` (in the merge queue; see [bkf merge](#bkf-merge)), and
 `failed`. `start` moves `todo`, `working`, `failed` or `to-merge` to `working` and
-clears `attention` and `exit`; a `working` card that starts again is a rerun, and
+clears `attention` and `exit`; a `working` task that starts again is a rerun, and
 the start clears its attention. `bkf merge enter` moves `todo`, `working`, `failed`
-or `to-merge` to `to-merge` and clears `attention`. The merge queue moves a card
+or `to-merge` to `to-merge` and clears `attention`. The merge queue moves a task
 to `working` with the `merge-failed` attention when it leaves the queue with a
 reason (`bkf merge fail`, or recovery), and to `working` without attention when
 the session or the owner takes it out, or when an interim land (`bkf merge land
 --continue`) finishes. `fail` moves `working` or `to-merge` to `failed`.
 `attention` is allowed in `todo`, `working`, `to-merge`, and `failed` (a failed
-card is one that needs its owner); `--clear` is always allowed. `close` and
+task is one that needs its owner); `--clear` is always allowed. `close` and
 `delete` remove the folder whatever its status. A transition that is not
 allowed is refused.
 
@@ -1035,13 +1038,13 @@ prints the id, or the updated task JSON with `--json`. Only the selected title
 and body change, along with the store's `updated` timestamp.
 
 **Start.** An option object is recorded only when at least one of its options
-is given, and its other keys stay null. A `working` card may start again (a
-rerun). A `to-merge` card may start too, but only as a safety net for a card a
+is given, and its other keys stay null. A `working` task may start again (a
+rerun). A `to-merge` task may start too, but only as a safety net for a task a
 session left in `to-merge` after a plain land: `bkf task start` refuses it while
-it still holds an entry in the merge queue, and the card then stays `to-merge`.
+it still holds an entry in the merge queue, and the task then stays `to-merge`.
 The transition table allows the move; the queue check is in `bkf task start`.
 
-**Close.** Deletes the card, whatever its status: a session runs it after its
+**Close.** Deletes the task, whatever its status: a session runs it after its
 branch has landed, and a plan run's passed unit is closed the same way. It
 prints nothing, and an unknown id is refused like the other commands.
 
@@ -1059,9 +1062,9 @@ Tasks are in creation order, then id. The app reads `list --json` each time
 `generation` changes, so the command imports only the standard library.
 
 **Worktree.** Creates the git worktree of a task, or reuses it, and records it on
-the card as `worktree: {path, branch, head: null}`. The status does not change;
+the task as `worktree: {path, branch, head: null}`. The status does not change;
 the task must be `todo`, `working` or `failed`, and any other status is refused
-before git runs. A failed card's worktree is reused or created like any other. The repository is the task's `repo`, the main checkout. The path is
+before git runs. A failed task's worktree is reused or created like any other. The repository is the task's `repo`, the main checkout. The path is
 `<repo>/.claude/worktrees/<slug>` and the branch is `task/<slug>`. The slug folds
 the title to Unicode NFKD without combining marks, lowercase, runs of characters
 outside `a-z0-9` as one `-`, at most 30 characters with no trailing `-`, and
@@ -1086,19 +1089,19 @@ parent, worktree, branch, tmux window, attention, and note. A missing value is
 `-`.
 
 **Output.** Prints the text of the task's tmux window, so a session can see what
-another shows. The target is always the card's recorded `tmux_session` and
+another shows. The target is always the task's recorded `tmux_session` and
 `tmux_window`, never an argument. It runs `tmux capture-pane -p -S -N -t
 <session>:<window>`: the visible screen and `N` lines of history above it.
 `--lines` defaults to 200 and is at most 5000; any other value is refused. Output
 goes to standard output unchanged. A session or window name with a leading dash,
 a colon, a space or a line break is refused before tmux runs. Refused, with a
-reason on standard error, when the card has no window, when the window is closed
+reason on standard error, when the task has no window, when the window is closed
 (no such window, or no tmux server running), or when tmux is not installed. It
-never changes the card.
+never changes the task.
 
 **Send.** Types a message into the task's tmux window as if the user had typed
 it, so one agent can answer a prompt in another agent's window. The target is
-the card's recorded `tmux_session` and `tmux_window`, never an argument, and the
+the task's recorded `tmux_session` and `tmux_window`, never an argument, and the
 refusals are those of `output`. Exactly one of `--text T` and `--message-file F|-`
 is required; `-` reads standard input. Each line is typed as literal characters,
 with an Enter key between lines, and one more Enter follows the last line unless
@@ -1106,7 +1109,7 @@ with an Enter key between lines, and one more Enter follows the last line unless
 a message that starts with a dash needs the `--text=-...` form. A message is
 refused when it is empty, longer than 10000 characters, or holds a control
 character other than tab or line feed. Standard output stays empty on success,
-and the command never changes the card.
+and the command never changes the task.
 
 **Exit status.** `0` is success. `1` is a refusal: an unknown or corrupt task,
 a transition not allowed, a dirty tree, or a missing id. A refusal prints one
@@ -1138,15 +1141,15 @@ bkf merge status [--repo DIR] [--task ID] [--json]
 branch that `origin/HEAD` names, else `main`, else `master`. A `--target` that
 differs from an existing queue's target is refused.
 
-**Task.** `--task` defaults to `$BKF_TASK`. The card names the repository, so
-the queue is the card's.
+**Task.** `--task` defaults to `$BKF_TASK`. The task names the repository, so
+the queue is the task's.
 
 **Worktree.** `enter`, and `wait` when it joins the queue, take the worktree from
-`--worktree`, else from the card's recorded path, else from the current work
+`--worktree`, else from the task's recorded path, else from the current work
 tree. The branch is the one checked out there. A detached head, or the target
 branch itself, is refused.
 
-**Entry and turn.** `enter` adds the task at the back, moves its card to
+**Entry and turn.** `enter` adds the task at the back, moves its task to
 `to-merge` and clears its attention. When nobody holds the turn, the new entry
 takes it at once. `wait` joins the queue first when the task is not in it. The
 entry at the head whose state is `turn` is the lock: only it verifies and lands.
@@ -1161,12 +1164,12 @@ the target's checkout has uncommitted changes. Before it moves the target it
 writes phase `landing` to disk, then fast-forwards the target only: `git merge
 --ff-only <branch>` in the target's checkout, or a compare-and-swap of the ref
 when no worktree has the target checked out. On success the entry is removed,
-and the card stays `to-merge` until the session runs `bkf task close`.
+and the task stays `to-merge` until the session runs `bkf task close`.
 
 **Interim land.** `land --continue` lands the same way, with the same checks and
 the same fast-forward, for a session that keeps working on its branch after the
 land. Afterwards the entry is removed, the next entry takes the turn, and the
-card moves to `working` without attention, so the session can go on; the
+task moves to `working` without attention, so the session can go on; the
 event is `landed` with a reason that starts `interim:`. The output names no
 cleanup and says what to do next: the session may keep working on the branch,
 and before its next land it runs `bkf merge enter` again. Each land needs its
@@ -1176,14 +1179,14 @@ the branch, so while the target has not moved, a land after new commits is a
 fast-forward of what was verified. Once another session has landed, the target
 has moved and is not an ancestor of the branch's new commits, so `land` refuses
 with exit 3 until the branch merges the target again and is verified again. The
-last land of a branch is the plain `land`, which keeps the card in `to-merge`
-and points to cleanup. Between two lands the card is `working`, so a session
-that ends in that gap loses its card at `SessionEnd` like any working card; the
-branch stays, and a resumed session gets a new card.
+last land of a branch is the plain `land`, which keeps the task in `to-merge`
+and points to cleanup. Between two lands the task is `working`, so a session
+that ends in that gap loses its task at `SessionEnd` like any working task; the
+branch stays, and a resumed session gets a new task.
 
-**Fail and leave.** `fail --reason TEXT` removes the entry, moves the card to
+**Fail and leave.** `fail --reason TEXT` removes the entry, moves the task to
 `working` with the attention `merge-failed` and the reason as its note, and
-gives the turn to the next entry. `leave` removes the entry and moves the card
+gives the turn to the next entry. `leave` removes the entry and moves the task
 to `working` without attention. Neither runs during a land. A take-out by the
 owner is a `leave` (the app runs it and types the owner's message into the
 session); see the take-out rule below.
@@ -1195,7 +1198,7 @@ the output names the cause from the task's last queue event:
 - A `left` event (the owner's take-out, or the session's own `leave`): the
   session stops the merge flow, does not run `land` and does not re-enter the
   queue on its own, and goes on with its work or waits for the owner. It
-  re-enters on its own only after its own `bkf merge fail`: the card then has
+  re-enters on its own only after its own `bkf merge fail`: the task then has
   `merge-failed` with the reason the session wrote, and the session fixes the
   branch first. Otherwise it re-enters only when the owner asks again.
 - A `landed` event: the branch already landed, so there is nothing to land and
@@ -1211,20 +1214,20 @@ take-out.
 **Recovery.** Every mutating command, and every poll of `wait`, first settles
 the queue under the lock; `status` only reports what recovery would do.
 
-- The holder loses the turn when its card is gone, when its recorded tmux window
-  is gone (a card that records no window is not checked for one), or when its
+- The holder loses the turn when its task is gone, when its recorded tmux window
+  is gone (a task that records no window is not checked for one), or when its
   lease has run out. The lease is 60 minutes from the last sign of life, and
   `BKF_MERGE_LEASE_MINUTES` sets its length in minutes. Any `bkf merge` call by
   the holder renews it, and so does the task hook on `PostToolUse` and `Stop`, at
   most once a minute. A single tool call longer than the lease ends the turn.
-- A waiting entry is dropped when its card is gone, or when it has not been
+- A waiting entry is dropped when its task is gone, or when it has not been
   polled for three minutes. `wait` polls every second and refreshes the entry at
   most every ten seconds, so the store does not write on each poll.
-- A dropped holder or waiter returns its card to `working` with the attention
+- A dropped holder or waiter returns its task to `working` with the attention
   `merge-failed` and the note `lost its place in the merge queue: <why>`.
 - A holder in phase `landing` when the queue is read again means its land died
   before it wrote the result. The branch decides: an ancestor of the target is
-  recorded as landed; anything else is dropped as failed, with the card marked.
+  recorded as landed; anything else is dropped as failed, with the task marked.
 
 Each recovery is an event in the queue: `lock-recovered`, `dropped-dormant`,
 `landed` or `failed`. `main-moved` records a land that found the target moved.
@@ -1281,26 +1284,26 @@ bkf launch --session-name --dir D
 claude only. `--remote-control` takes no value and adds that flag to Claude's
 command. `--dir` is a folder, and `--prompt-file` exists when it is a path.
 `--task` names a task whose status is `todo` or `failed`. `--name`,
-`--permission-mode`, or `--remote-control` with codex, and the card options with
+`--permission-mode`, or `--remote-control` with codex, and the task options with
 `--task` or `--no-task` are usage errors, as is `--worktree auto` with
 `--no-task`.
 
-**Card.** `--task ID` launches on that card. `--no-task` makes none. Otherwise a
-new card is created: its repository is the identity of `--dir`, its kind is
+**Task.** `--task ID` launches on that task. `--no-task` makes none. Otherwise a
+new task is created: its repository is the identity of `--dir`, its kind is
 `--kind` (default `handoff`), its parent is `--parent` (default `$BKF_TASK`;
 `--no-parent` for none), its body is `--body-file`, and its title is the first
 of `--title`, `--window`, `--name`, the first non-empty line of the prompt cut to
 80 characters, or `session`.
 
-**Worktree.** `--worktree` defaults to `auto` when the card's kind is `task`, and
-to `none` otherwise and without a card. `auto` calls `bkf task worktree` through
+**Worktree.** `--worktree` defaults to `auto` when the task's kind is `task`, and
+to `none` otherwise and without a task. `auto` calls `bkf task worktree` through
 `task_worktree.prepare`. A repository that is not a git repository falls back to
-`none` silently. A failed card is prepared like any other card, and it is reused
+`none` silently. A failed task is prepared like any other task, and it is reused
 through `prepare`, which reuses it on its branch or creates it. The session works in the
 worktree, or in `--dir`.
 
-**Prompt.** With a card, the prompt is saved as the card's `prompt.md`, and the
-window reads that copy. Without a card, a path is used as an absolute path, and
+**Prompt.** With a task, the prompt is saved as the task's `prompt.md`, and the
+window reads that copy. Without a task, a path is used as an absolute path, and
 standard input is saved to a new temporary file that is kept. Without
 `--prompt-file` the session starts with no first message.
 
@@ -1309,8 +1312,8 @@ Codex: `codex [-m M] [-c 'model_reasoning_effort="E"'] "$(cat '<prompt>')"`. Eac
 value is shell-quoted. The prompt is expanded by the window's shell, because a
 typed line of tens of KB overflows the terminal.
 
-**Window.** `task_tmux.open_window`, named by `--window` (else the card's title),
-with `BKF_TASK=<id>` for a card, `BKF_TASKS_DIR` when the caller has it set, and
+**Window.** `task_tmux.open_window`, named by `--window` (else the task's title),
+with `BKF_TASK=<id>` for a task, `BKF_TASKS_DIR` when the caller has it set, and
 `BKF_DELEGATED=1` with `--delegated`. `--size` sizes a new session. The placement
 rules are those of `task_tmux.py`: inside tmux, the window goes into the caller's
 session, grouped with the windows of the same repository (right after the caller's
@@ -1325,11 +1328,11 @@ session: iTerm2 gets `tmux -CC attach`, Terminal.app `tmux attach`. Elsewhere, o
 `BKF_TMUX_SOCKET` makes every tmux call use a named server: the tests use it and
 never touch the user's server.
 
-**Start.** With a card, `task_store.start` records the session (agent, model,
-effort, reviewer, tmux session and window id) and the worktree, and the card
+**Start.** With a task, `task_store.start` records the session (agent, model,
+effort, reviewer, tmux session and window id) and the worktree, and the task
 becomes `working`.
 
-**Output.** Plain: the card id on the first line (with a card), then
+**Output.** Plain: the task id on the first line (with a task), then
 `<session>:<window id>`, then `attach with: tmux attach -t =<session>` when no
 terminal shows the session. With `--json`, one object: `{"task", "session",
 "window", "worktree", "branch", "needs_attach"}`, where `task`, `worktree`, and
@@ -1340,11 +1343,11 @@ placement above uses for `D` (the session holding the repository's windows, else
 its repository session) and launches nothing. A caller can use it to bring
 that session's iTerm2 window forward before a launch.
 
-**Failure.** After the card exists, a failing step (worktree, window, start)
-leaves the card in its status, sets `attention` `launch-failed` with the error as
+**Failure.** After the task exists, a failing step (worktree, window, start)
+leaves the task in its status, sets `attention` `launch-failed` with the error as
 its note, and exits 1 with one `bkf launch: ` line on standard error. This holds
-for a failed card too. A worktree already created is kept. With no
-card, the same failure only exits 1. A refusal before the card exists also exits
+for a failed task too. A worktree already created is kept. With no
+task, the same failure only exits 1. A refusal before the task exists also exits
 1; usage errors exit 2.
 
 ```md

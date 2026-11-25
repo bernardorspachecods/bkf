@@ -1,4 +1,4 @@
-"""Tell a session that works on a task which task it is, and keep its card in step with its turns."""
+"""Tell a session which task it works on, and keep that task in step with its turns."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from task_store import TaskError
 TASK_ENV = "BKF_TASK"
 # Opt-in: the file that receives every raw hook input as one line, to read a real payload (never set by default).
 DEBUG_ENV = "BKF_HOOK_DEBUG_FILE"
-# A script owns the card of these kinds, so the session is not told to move it.
-# The hook marks a card of these kinds while it is working; other kinds are never marked.
+# A script owns the task of these kinds, so the session is not told to move it.
+# The hook marks a task of these kinds while it is working; other kinds are never marked.
 WAITING_KINDS = ("task", "handoff")
 MARK_REASON = "prompt"
-# The notes of the hook's own mark. Any other attention on a card belongs to someone else.
+# The notes of the hook's own mark. Any other attention on a task belongs to someone else.
 REPLY_NOTE = "waiting for your reply"
 APPROVAL_NOTE = "waiting for your approval"
 ANSWER_NOTE = "waiting for your answer"
@@ -34,7 +34,7 @@ QUESTION_TOOL = "AskUserQuestion"
 MARK_EVENTS = ("Stop", "StopFailure", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "PostToolUse")
 # Events that show the session is alive: a session that holds the merge turn renews its lease on them.
 LEASE_EVENTS = ("PostToolUse", "Stop")
-# Claude Code's end of a session: the card of an interactive session is done then. Prints nothing.
+# Claude Code's end of a session: the task of an interactive session is done then. Prints nothing.
 SESSION_END = "SessionEnd"
 # Stop with background work or scheduled wake-ups in flight is not a wait for the owner.
 IN_FLIGHT_KEYS = ("background_tasks", "session_crons")
@@ -43,7 +43,7 @@ Plan = tuple[str, str | None]
 
 
 class _Unchanged(Exception):
-    """Raised inside a store change to leave the card as it is."""
+    """Raised inside a store change to leave the task as it is."""
 
 
 def _plan(task: task_store.Task, event: str, data: Mapping[str, Any]) -> Plan | None:
@@ -73,7 +73,7 @@ def _is_own(attention: dict[str, Any] | None) -> bool:
 
 
 def _would_change(attention: dict[str, Any] | None, plan: Plan | None) -> bool:
-    """Return True when the plan changes the card's attention; a foreign attention is never changed."""
+    """Return True when the plan changes the task's attention; a foreign attention is never changed."""
     if plan is None:
         return False
     if plan[0] == "clear":
@@ -91,7 +91,7 @@ def _apply(task: task_store.Task, plan: Plan) -> None:
 
 
 def _mark(store: Path, task_id: str, event: str, data: Mapping[str, Any]) -> None:
-    """Set or clear the hook's own mark on the card named by task_id. Failures are swallowed."""
+    """Set or clear the hook's own mark on the task named by task_id. Failures are swallowed."""
     def change(task: task_store.Task) -> None:
         plan = _plan(task, event, data)
         if not _would_change(task.attention, plan):
@@ -149,7 +149,7 @@ def run(environ: Mapping[str, str] | None = None, stream: TextIO | None = None) 
     With BKF_TASK, the mark events (Stop, StopFailure, UserPromptSubmit, PermissionRequest, PreToolUse,
     PostToolUse) set or clear the hook's own mark, and PostToolUse and Stop also renew the lease of a merge turn
     the task holds. The hook never prints: nothing it does reaches the agent's context. Without BKF_TASK, an interactive Claude session
-    in tmux keeps its session card (task_session); every other session returns before reading its input.
+    in tmux keeps its session task (task_session); every other session returns before reading its input.
     """
     env = os.environ if environ is None else environ
     try:
@@ -184,7 +184,7 @@ def _run_session(env: Mapping[str, str], stream: TextIO | None) -> None:
     elif event == SESSION_END:
         task_session.session_end(store, session_id)
     elif event in MARK_EVENTS:
-        task_id = task_session.card_of(store, session_id)
+        task_id = task_session.task_of(store, session_id)
         if task_id is None:
             return
         if event == "UserPromptSubmit":

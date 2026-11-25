@@ -130,7 +130,7 @@ class LaunchTests(unittest.TestCase):
     def cards(self) -> list[task_store.Task]:
         return task_store.list_tasks(self.store).tasks
 
-    def only_card(self) -> task_store.Task:
+    def only_task(self) -> task_store.Task:
         cards = self.cards()
         self.assertEqual(len(cards), 1)
         return cards[0]
@@ -199,7 +199,7 @@ class LaunchTests(unittest.TestCase):
                     self.assertIn("--remote-control works only with claude", error)
         self.assertEqual(self.windows.calls, [])
 
-    # Title, kind, parent and body of a new card.
+    # Title, kind, parent and body of a new task.
 
     def test_title_fallbacks(self) -> None:
         long_line = "x" * 100
@@ -218,35 +218,35 @@ class LaunchTests(unittest.TestCase):
                 arguments = ["claude", "--dir", str(self.plain), "--prompt-file", "-", *extra]
                 status, _, error = self.launch(*arguments, stdin=prompt)
                 self.assertEqual((status, error), (0, ""))
-                self.assertEqual(self.only_card().title, title)
+                self.assertEqual(self.only_task().title, title)
                 self.assertEqual(self.windows.calls[-1]["window_name"], window or title)
 
     def test_kind_and_parent_defaults(self) -> None:
         self.launch("claude", "--dir", str(self.plain), "--no-task")
         self.launch("claude", "--dir", str(self.plain), "--title", "a")
-        self.assertEqual(self.only_card().kind, "handoff")
-        self.assertIsNone(self.only_card().parent)
-        task_store.delete(self.store, self.only_card().id)
+        self.assertEqual(self.only_task().kind, "handoff")
+        self.assertIsNone(self.only_task().parent)
+        task_store.delete(self.store, self.only_task().id)
 
         with patch.dict(os.environ, {"BKF_TASK": PARENT_ID}):
             self.launch("claude", "--dir", str(self.plain), "--title", "child")
-        self.assertEqual(self.only_card().parent, PARENT_ID)
-        task_store.delete(self.store, self.only_card().id)
+        self.assertEqual(self.only_task().parent, PARENT_ID)
+        task_store.delete(self.store, self.only_task().id)
 
         with patch.dict(os.environ, {"BKF_TASK": PARENT_ID}):
             self.launch("claude", "--dir", str(self.plain), "--title", "orphan", "--no-parent")
-        self.assertIsNone(self.only_card().parent)
-        task_store.delete(self.store, self.only_card().id)
+        self.assertIsNone(self.only_task().parent)
+        task_store.delete(self.store, self.only_task().id)
 
         self.launch("codex", "--dir", str(self.plain), "--title", "explicit", "--kind", "task",
                     "--parent", PARENT_ID, "--worktree", "none")
-        card = self.only_card()
+        card = self.only_task()
         self.assertEqual((card.kind, card.parent), ("task", PARENT_ID))
 
     def test_body_file_becomes_the_body(self) -> None:
         body = self.write("body.md", "Body text\n")
         self.launch("claude", "--dir", str(self.plain), "--title", "b", "--body-file", body)
-        self.assertEqual(self.only_card().body, "Body text\n")
+        self.assertEqual(self.only_task().body, "Body text\n")
 
     # Worktree.
 
@@ -254,7 +254,7 @@ class LaunchTests(unittest.TestCase):
         status, _, error = self.launch("claude", "--dir", str(self.repo), "--title", "Make it",
                                        "--kind", "task")
         self.assertEqual((status, error), (0, ""))
-        card = self.only_card()
+        card = self.only_task()
         self.assertTrue(os.path.isdir(card.worktree["path"]))
         self.assertEqual(self.windows.calls[-1]["directory"], card.worktree["path"])
         self.assertEqual(card.worktree["path"], str(self.repo / ".claude" / "worktrees" /
@@ -263,19 +263,19 @@ class LaunchTests(unittest.TestCase):
     def test_handoff_and_explicit_none_run_in_dir(self) -> None:
         self.launch("claude", "--dir", str(self.repo), "--title", "h")
         self.assertEqual(self.windows.calls[-1]["directory"], os.path.abspath(self.repo))
-        self.assertIsNone(self.only_card().worktree)
-        task_store.delete(self.store, self.only_card().id)
+        self.assertIsNone(self.only_task().worktree)
+        task_store.delete(self.store, self.only_task().id)
         self.launch("claude", "--dir", str(self.repo), "--title", "t", "--kind", "task", "--worktree", "none")
-        self.assertIsNone(self.only_card().worktree)
+        self.assertIsNone(self.only_task().worktree)
 
-    def test_auto_on_a_handoff_card_creates_a_worktree(self) -> None:
+    def test_auto_on_a_handoff_task_creates_a_worktree(self) -> None:
         self.launch("claude", "--dir", str(self.repo), "--title", "h", "--worktree", "auto")
-        self.assertTrue(os.path.isdir(self.only_card().worktree["path"]))
+        self.assertTrue(os.path.isdir(self.only_task().worktree["path"]))
 
     def test_non_git_folder_falls_back_to_none_silently(self) -> None:
         status, _, error = self.launch("claude", "--dir", str(self.plain), "--title", "t", "--kind", "task")
         self.assertEqual((status, error), (0, ""))
-        self.assertIsNone(self.only_card().worktree)
+        self.assertIsNone(self.only_task().worktree)
         self.assertEqual(self.windows.calls[-1]["directory"], str(self.plain))
 
     def test_no_task_has_no_worktree_even_for_a_git_folder(self) -> None:
@@ -283,10 +283,10 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(self.windows.calls[-1]["directory"], str(self.repo))
         self.assertEqual(self.cards(), [])
 
-    # Existing cards.
+    # Existing tasks.
 
-    def test_task_launch_on_a_todo_card_records_the_session(self) -> None:
-        card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="Todo card")
+    def test_task_launch_on_a_todo_task_records_the_session(self) -> None:
+        card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="Todo task")
         status, out, error = self.launch("codex", "--dir", str(self.plain), "--task", card.id,
                                          "--worktree", "none", "--model", "m", "--effort", "e",
                                          "--reviewer", "r")
@@ -299,7 +299,7 @@ class LaunchTests(unittest.TestCase):
             "tmux_session": "fake-session", "tmux_window": "@7",
         })
 
-    def test_failed_card_with_its_worktree_reuses_it(self) -> None:
+    def test_failed_task_with_its_worktree_reuses_it(self) -> None:
         card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="Again", kind="task")
         self.assertEqual(self.launch("claude", "--dir", str(self.plain), "--task", card.id)[0], 0)
         first = task_store.read(self.store, card.id).worktree["path"]
@@ -309,7 +309,7 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(self.windows.calls[-1]["directory"], first)
         self.assertEqual(task_store.read(self.store, card.id).status, "working")
 
-    def test_failed_card_without_a_worktree_gets_one(self) -> None:
+    def test_failed_task_without_a_worktree_gets_one(self) -> None:
         card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="Late", kind="task")
         task_store.update(self.store, card.id, lambda task: task_store.start(task))
         task_store.update(self.store, card.id, lambda task: task_store.mark_failed(task, exit=1))
@@ -332,7 +332,7 @@ class LaunchTests(unittest.TestCase):
 
     # Refusals and usage errors.
 
-    def test_refusals_before_the_card_exist(self) -> None:
+    def test_refusals_before_the_task_exist(self) -> None:
         empty = self.root / "empty"
         empty.mkdir()
         with patch.dict(os.environ, {"PATH": f"{empty}:/usr/bin:/bin"}):
@@ -415,13 +415,13 @@ class LaunchTests(unittest.TestCase):
 
     # What the window receives and the output.
 
-    def test_card_after_success_is_working_with_session_and_worktree(self) -> None:
+    def test_task_after_success_is_working_with_session_and_worktree(self) -> None:
         prompt = self.write("first.md", "Do the thing\n")
         status, out, error = self.launch("claude", "--dir", str(self.repo), "--prompt-file", prompt,
                                          "--kind", "task", "--title", "Do it", "--model", "opus",
                                          "--no-attach")
         self.assertEqual((status, error), (0, ""))
-        card = self.only_card()
+        card = self.only_task()
         loaded = task_store.read(self.store, card.id)
         self.assertEqual(loaded.status, "working")
         self.assertEqual(loaded.session, {
@@ -435,19 +435,19 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(loaded.worktree["branch"], f"task/{task_worktree.slug('Do it', card.id)}")
         self.assertEqual(out.splitlines(), [card.id, "fake-session:@7"])
 
-    def test_launch_session_id_is_passed_to_claude_and_recorded_on_the_card(self) -> None:
+    def test_launch_session_id_is_passed_to_claude_and_recorded_on_the_task(self) -> None:
         prompt = self.write("first.md", "Do the thing\n")
         self.launch("claude", "--dir", str(self.repo), "--prompt-file", prompt, "--kind", "task", "--title", "Do it")
-        card = self.only_card()
+        card = self.only_task()
         session_id = task_store.read(self.store, card.id).session["claude_session_id"]
         command = shlex.split(self.command())
         self.assertEqual(command[1:3], ["--session-id", session_id])
         self.assertEqual(str(uuid.UUID(session_id)), session_id)
 
-    def test_the_prompt_is_copied_to_the_card_and_the_window_reads_the_copy(self) -> None:
+    def test_the_prompt_is_copied_to_the_task_and_the_window_reads_the_copy(self) -> None:
         prompt = self.write("first.md", "Do the thing\n")
         self.launch("claude", "--dir", str(self.plain), "--title", "p", "--prompt-file", prompt)
-        card = self.only_card()
+        card = self.only_task()
         copy = self.store / card.id / "prompt.md"
         self.assertEqual(copy.read_text(encoding="utf-8"), "Do the thing\n")
         command = shlex.split(self.command())
@@ -456,14 +456,14 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(str(uuid.UUID(command[2])), command[2])
         self.assertEqual(command[3], f"$(cat {shlex.quote(str(copy.absolute()))})")
 
-    def test_standard_input_with_a_card_is_saved_as_the_prompt(self) -> None:
+    def test_standard_input_with_a_task_is_saved_as_the_prompt(self) -> None:
         status, _, error = self.launch("claude", "--dir", str(self.plain), "--title", "s",
                                        "--prompt-file", "-", stdin="From stdin\n")
         self.assertEqual((status, error), (0, ""))
-        card = self.only_card()
+        card = self.only_task()
         self.assertEqual(task_store.read_prompt(self.store, card.id), "From stdin\n")
 
-    def test_standard_input_without_a_card_goes_to_a_kept_temporary_file(self) -> None:
+    def test_standard_input_without_a_task_goes_to_a_kept_temporary_file(self) -> None:
         status, _, error = self.launch("claude", "--dir", str(self.plain), "--no-task",
                                        "--prompt-file", "-", stdin="Kept text\n")
         self.assertEqual((status, error), (0, ""))
@@ -480,7 +480,7 @@ class LaunchTests(unittest.TestCase):
         self.assertNotIn("BKF_DELEGATED", environment)
 
         self.launch("claude", "--dir", str(self.plain), "--title", "e", "--delegated")
-        card = self.only_card()
+        card = self.only_task()
         environment = self.windows.calls[-1]["environment"]
         self.assertEqual(environment[bkf_launch.TASK_ENV], card.id)
         self.assertEqual(environment["BKF_DELEGATED"], "1")
@@ -503,7 +503,7 @@ class LaunchTests(unittest.TestCase):
     def test_json_output(self) -> None:
         status, out, _ = self.launch("claude", "--dir", str(self.repo), "--title", "j", "--kind", "task", "--json")
         self.assertEqual(status, 0)
-        card = self.only_card()
+        card = self.only_task()
         self.assertEqual(json.loads(out), {
             "task": card.id, "session": "fake-session", "window": "@7",
             "worktree": card.worktree["path"], "branch": card.worktree["branch"],
@@ -519,21 +519,21 @@ class LaunchTests(unittest.TestCase):
             self.assertEqual(bkf_cli.main(["help"]), 0)
         self.assertIn("launch", stdout.getvalue())
 
-    # Failures after the card exists.
+    # Failures after the task exists.
 
-    def test_window_failure_leaves_the_card_todo_with_attention_and_the_worktree(self) -> None:
+    def test_window_failure_leaves_the_task_todo_with_attention_and_the_worktree(self) -> None:
         self.windows.error = TmuxError("tmux new-window failed: no server running")
         status, out, error = self.launch("claude", "--dir", str(self.repo), "--title", "f", "--kind", "task")
         self.assertEqual(status, 1)
         self.assertEqual(out, "")
         self.assertEqual(error, "bkf launch: tmux new-window failed: no server running\n")
-        card = self.only_card()
+        card = self.only_task()
         self.assertEqual(card.status, "todo")
         self.assertEqual(card.attention["reason"], "launch-failed")
         self.assertEqual(card.attention["note"], "tmux new-window failed: no server running")
         self.assertTrue(os.path.isdir(card.worktree["path"]))
 
-    def test_worktree_failure_leaves_the_card_todo_with_attention(self) -> None:
+    def test_worktree_failure_leaves_the_task_todo_with_attention(self) -> None:
         card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="Clash", kind="task")
         blocked = self.repo / ".claude" / "worktrees" / task_worktree.slug(card.title, card.id)
         blocked.mkdir(parents=True)
@@ -545,7 +545,7 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual((loaded.status, loaded.attention["reason"]), ("todo", "launch-failed"))
         self.assertEqual(self.windows.calls, [])
 
-    def test_failed_card_keeps_its_status_and_gets_attention(self) -> None:
+    def test_failed_task_keeps_its_status_and_gets_attention(self) -> None:
         card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="Was failed",
                                  kind="handoff")
         task_store.update(self.store, card.id, lambda task: task_store.start(task))
@@ -614,7 +614,7 @@ class RealTmuxLaunchTests(unittest.TestCase):
             time.sleep(0.1)
         self.fail("the fake agent did not run")
 
-    def test_task_card_runs_in_its_worktree_and_handoff_runs_in_dir(self) -> None:
+    def test_task_task_runs_in_its_worktree_and_handoff_runs_in_dir(self) -> None:
         prompt = self.root / "prompt.md"
         text = "line one\n'quoted' $HOME `tick` \"double\"\nlast line\n"
         prompt.write_text(text, encoding="utf-8")

@@ -43,7 +43,7 @@ DISABLE_MODEL_INVOCATION = "disable-model-invocation"
 # Each entry names the reference that makes the skill agent-invoked; the check fails when an
 # entry no longer fits (its markers are not the exempt pair).
 AGENT_INVOKED_SKILLS = {
-    "git-merge-queue": "bkf/tooling/task_hook.py tells the session to follow it when a card moves",
+    "git-merge-queue": "bkf/tooling/task_hook.py tells the session to follow it when a task moves",
     "git-status-cleanup": "agent-skills/skills/git-worktree-cleanup/SKILL.md runs it as a step",
     "git-worktree-cleanup": "bkf/tooling/bkf_merge.py (land message) tells the agent to use it after a land",
 }

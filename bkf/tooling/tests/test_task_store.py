@@ -225,20 +225,20 @@ class TransitionTests(unittest.TestCase):
                 self.assertEqual(task.worktree["path"], "/w")
                 self.assertEqual(task.run_dir, "/runs/1")
 
-    def test_start_again_on_a_working_card_clears_its_attention(self) -> None:
+    def test_start_again_on_a_working_task_clears_its_attention(self) -> None:
         task = self.task("working")
         set_attention(task, "paused", note="report", now=NOW)
         start(task)
         self.assertEqual((task.status, task.attention), ("working", None))
 
-    def test_start_from_to_merge_moves_the_card_to_working_without_attention(self) -> None:
-        """The safety net for a card left in to-merge after a land: only the store's transition, no queue check."""
+    def test_start_from_to_merge_moves_the_task_to_working_without_attention(self) -> None:
+        """The safety net for a task left in to-merge after a land: only the store's transition, no queue check."""
         task = self.task("to-merge")
         set_attention(task, "merge-failed", note="old", now=NOW)
         start(task)
         self.assertEqual((task.status, task.attention), ("working", None))
 
-    def test_enter_merge_moves_a_card_to_to_merge_and_clears_attention(self) -> None:
+    def test_enter_merge_moves_a_task_to_to_merge_and_clears_attention(self) -> None:
         for status in ("todo", "working", "failed", "to-merge"):
             with self.subTest(status):
                 task = self.task(status)
@@ -314,10 +314,10 @@ class TransitionTests(unittest.TestCase):
 
 
 class LegacyStatusTests(TempStore):
-    """The one-time migration: done cards are deleted, review cards become working, and it runs once."""
+    """The one-time migration: done tasks are deleted, review tasks become working, and it runs once."""
 
     def make_legacy(self, *titles: str) -> dict[str, Task]:
-        """Make cards as an old store holds them: no marker, so the first read migrates them."""
+        """Make tasks as an old store holds them: no marker, so the first read migrates them."""
         tasks = {title: self.make(title) for title in titles}
         (self.store / ".migrated-statuses").unlink(missing_ok=True)
         return tasks
