@@ -117,6 +117,75 @@ class PreviewTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def test_group_documents_skips_overlapping_text_passages(self) -> None:
+        ranked = [
+            search.RankedPassage(search.Section("/guide.md", "Page 1", "", "first", "Page 1",
+                                                kind="text", start=0, end=220, document_title="Guide"), 1.0),
+            search.RankedPassage(search.Section("/guide.md", "Page 2", "", "overlap", "Page 2",
+                                                kind="text", start=160, end=380, document_title="Guide"), 2.0),
+            search.RankedPassage(search.Section("/guide.md", "Page 3", "", "next", "Page 3",
+                                                kind="text", start=320, end=540, document_title="Guide"), 3.0),
+        ]
+
+        hits = search.group_documents(ranked, limit=1)
+
+        self.assertEqual([hit.section.start for hit in hits[0].passages], [0, 320])
+        section = search.RankedPassage(
+            search.Section("/guide.md", "Content", "", "section", "Content", document_title="Guide"), 1.5
+        )
+        with_section = search.group_documents([ranked[0], section, ranked[1]], limit=1)
+        self.assertEqual([hit.section.kind for hit in with_section[0].passages], ["text", "section"])
+
+    def test_navigation_map_sections_are_excluded_in_both_search_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "guide.md").write_text(
+                document("Guide", "## Navigation map\n\nmaponlyword\n\n"
+                         "### nAvIgAtIoN MaP\n\nmapsectiononlyword\n\n"
+                         "#### Child\n\nchildword\n\n## Content\n\nrealword."),
+                encoding="utf-8",
+            )
+
+            for memory_only in (False, True):
+                with self.subTest(memory_only=memory_only):
+                    fallback = patch.object(search, "_persistent_search", return_value=None)
+                    if memory_only:
+                        fallback.start()
+                    try:
+                        self.assertEqual(search.rank_passages(root, "maponlyword"), [])
+                        self.assertEqual(search.rank_passages(root, "mapsectiononlyword"), [])
+                        hits = search.rank_passages(root, "childword realword")
+                    finally:
+                        if memory_only:
+                            fallback.stop()
+
+                    self.assertEqual({hit.section.title for hit in hits}, {"Child", "Content"})
+
+    def test_heading_weight_changes_heading_only_match_order_in_both_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "guide.md").write_text(
+                document("Guide", "## needle\n\n"
+                         "## Body match\n\nneedle " + "filler " * 120), encoding="utf-8"
+            )
+
+            for memory_only in (False, True):
+                with self.subTest(memory_only=memory_only):
+                    fallback = patch.object(search, "_persistent_search", return_value=None)
+                    if memory_only:
+                        fallback.start()
+                    try:
+                        default = search.rank_passages(root, "needle")
+                        without_heading_weight = search.rank_passages(root, "needle", heading_weight=0)
+                    finally:
+                        if memory_only:
+                            fallback.stop()
+
+                    self.assertEqual(default[0].section.title, "needle")
+                    self.assertEqual(without_heading_weight[0].section.title, "Body match")
+
     def test_broad_query_only_previews_selected_document_passages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

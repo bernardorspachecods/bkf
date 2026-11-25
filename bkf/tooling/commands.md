@@ -663,6 +663,8 @@ The index includes tracked BKF documents and every `AGENTS.md`. It excludes
 document metadata follow the
 [membership rules](/bkf/format/format-specification.md#12-discovery-membership-and-composition) and
 [frontmatter profiles](/bkf/format/frontmatter-profiles.md).
+Sections whose own heading is `Navigation map` are not indexed, regardless of
+heading level or capitalization; their subsections remain indexed.
 
 Documents declared in a bundle's `search.yaml` are also indexed from their
 attached text, with each passage shown under its locator label.
@@ -690,7 +692,9 @@ Filters narrow the sections searched and combine with AND:
   Repeat the option to require several tags.
 
 Results are documents ordered by their best matching passage. `--limit` counts
-documents (default 5); each document shows its two highest ranked passages.
+documents (default 5); each document shows up to its two highest ranked
+passages. A document's two text passages never overlap: overlapping passages
+are skipped in favor of the next non-overlapping match when available.
 Section passages show their heading trail and text passages show their locator
 label (or `(text)`). Previews are whitespace-collapsed and up to 200 characters.
 When the query matches the passage body, the preview contains the matching text,

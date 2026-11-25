@@ -14,6 +14,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from navigation_map import MAP_HEADING
+
 
 OUTPUT_LIMIT = 4000
 PREVIEW_LENGTH = 200
@@ -37,7 +39,7 @@ STOPWORDS = frozenset(
 WORD = re.compile(r"[^\W_]+", re.UNICODE)
 HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-INDEX_SCHEMA = 3
+INDEX_SCHEMA = 4
 _CACHE_NOTICE: str | None = None
 
 
@@ -131,13 +133,15 @@ def _sections(body: str, path: str, description: str, tags: tuple[str, ...] = ()
             sections.append(Section(path, "(top)", description, text, "(top)", tags, document_title=""))
 
     trail: list[tuple[int, str]] = []
+    map_title = MAP_HEADING.removeprefix("##").strip().casefold()
     for offset, (line_index, level, title) in enumerate(heading_rows):
         trail = [(prior_level, prior) for prior_level, prior in trail if prior_level < level]
         trail.append((level, title))
         label = " > ".join(item for _, item in trail)
         next_line = heading_rows[offset + 1][0] if offset + 1 < len(heading_rows) else len(lines)
         text = "\n".join(lines[line_index + 1 : next_line]).strip()
-        sections.append(Section(path, label, description, text, title, tags, document_title=first_heading or ""))
+        if title.casefold() != map_title:
+            sections.append(Section(path, label, description, text, title, tags, document_title=first_heading or ""))
     return sections
 
 
@@ -293,7 +297,7 @@ def _contains_sequence(words: list[str], sequence: list[str]) -> bool:
 
 def _search(
     sections: list[Section], terms: list[str], limit: int | None, phrases: list[str] | None = None,
-    *, unique_paths: bool = False, include_previews: bool = True,
+    *, unique_paths: bool = False, include_previews: bool = True, heading_weight: float = 20.0,
 ) -> list[tuple[Section, float]]:
     connection = sqlite3.connect(":memory:")
     try:
@@ -315,7 +319,8 @@ def _search(
         query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases or []])
         ranks: dict[int, float] = {}
         for rowid, rank in connection.execute(
-            "SELECT rowid, bm25(sections, 0, 20, 1, 1) FROM sections WHERE sections MATCH ?", (query,)
+            "SELECT rowid, bm25(sections, 0, ?, 1, 1) FROM sections WHERE sections MATCH ?",
+            (heading_weight, query),
         ):
             ranks[rowid] = rank
         for rowid, rank in connection.execute(
@@ -481,7 +486,7 @@ def _persistent_search(
     root: Path, question: str, terms: list[str], phrases: list[str], limit: int | None,
     scope: Path | None, heading: str | None, tags: list[str], vocabularies,
     *, unique_paths: bool = False, passages: str = "all", on_document_error=None,
-    include_previews: bool = True,
+    include_previews: bool = True, heading_weight: float = 20.0,
 ) -> list[tuple[Section, float]] | None:
     """Refresh changed documents and search the persistent index; None requests memory fallback."""
     global _CACHE_NOTICE
@@ -568,18 +573,18 @@ def _persistent_search(
 
             query = " OR ".join([f'"{term}"' for term in terms] + [f'"{phrase}"' for phrase in phrases])
             conditions: list[str] = []
-            params: list[object] = [query, query]
+            filter_params: list[object] = []
             if scope is not None and scope.resolve() != root.resolve():
                 scoped = "/" + scope.relative_to(root).as_posix()
                 conditions.append("(p.path = ? OR p.path LIKE ? ESCAPE '\\')")
                 escaped = scoped.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                params.extend((scoped, escaped.rstrip("/") + "/%"))
+                filter_params.extend((scoped, escaped.rstrip("/") + "/%"))
             if heading is not None:
                 conditions.append("(p.kind = 'section' AND casefold(p.title) = ?)")
-                params.append(heading.strip().casefold())
+                filter_params.append(heading.strip().casefold())
             if passages != "all":
                 conditions.append("p.kind = ?")
-                params.append("section" if passages == "sections" else "text")
+                filter_params.append("section" if passages == "sections" else "text")
             if tags:
                 from bkf_common import canonical_tag
                 for tag in tags:
@@ -593,7 +598,7 @@ def _persistent_search(
                             "(p.document_path IN (SELECT path FROM files WHERE bundle_path = ?) AND "
                             "EXISTS (SELECT 1 FROM json_each(p.tags) WHERE lower(value) = ?))"
                         )
-                        params.extend((bundle_relative, resolved))
+                        filter_params.extend((bundle_relative, resolved))
                     if alternatives:
                         conditions.append("(" + " OR ".join(alternatives) + ")")
                     else:
@@ -602,13 +607,13 @@ def _persistent_search(
             sql_filter = f" AND {where}" if where else ""
             ranks = {}
             for passage_id, rank in connection.execute(
-                "SELECT s.rowid, bm25(sections, 0, 20, 1, 1) FROM sections s JOIN passages p ON p.id=s.rowid "
-                "WHERE sections MATCH ?" + sql_filter, params[:1] + params[2:]
+                "SELECT s.rowid, bm25(sections, 0, ?, 1, 1) FROM sections s JOIN passages p ON p.id=s.rowid "
+                "WHERE sections MATCH ?" + sql_filter, [heading_weight, query, *filter_params]
             ):
                 ranks[passage_id] = rank
             for passage_id, rank in connection.execute(
                 "SELECT t.rowid, bm25(section_tags) * 20 FROM section_tags t JOIN passages p ON p.id=t.rowid "
-                "WHERE section_tags MATCH ?" + sql_filter, params[:1] + params[2:]
+                "WHERE section_tags MATCH ?" + sql_filter, [query, *filter_params]
             ):
                 ranks[passage_id] = ranks.get(passage_id, 0.0) + rank
             passage_ids = list(ranks)
@@ -684,7 +689,7 @@ def _persistent_search(
 def rank_passages(
     root: Path, question: str, *, scope: Path | None = None, heading: str | None = None,
     tags: list[str] | None = None, passages: str = "all", depth: int | None = None,
-    on_document_error=None,
+    on_document_error=None, heading_weight: float = 20.0,
 ) -> list[RankedPassage]:
     """Every matching passage (or the best depth), best first, filters applied, synonym expansion included."""
     if passages not in {"all", "sections", "text"}:
@@ -697,7 +702,7 @@ def rank_passages(
     phrases = _expansions(question, vocabularies)
     indexed = _persistent_search(root, question, terms, phrases, None, scope, heading, tags or [],
                                  vocabularies, passages=passages, on_document_error=on_document_error,
-                                 include_previews=False)
+                                 include_previews=False, heading_weight=heading_weight)
     if indexed is None:
         sections = _collect_sections(root, find_bundles, is_bundle_root_map, in_nested_bundle,
                                      vocabularies, scope, tags, on_document_error)
@@ -707,7 +712,7 @@ def rank_passages(
         if heading is not None:
             wanted = heading.strip().casefold()
             sections = [s for s in sections if s.kind == "section" and s.title.casefold() == wanted]
-        indexed = _search(sections, terms, None, phrases, include_previews=False)
+        indexed = _search(sections, terms, None, phrases, include_previews=False, heading_weight=heading_weight)
     ranked = [RankedPassage(section, -score) for section, score in indexed]
     return ranked if depth is None else ranked[:depth]
 
@@ -844,10 +849,24 @@ def vector_rank(
 
 
 def group_documents(ranked: list[RankedPassage], *, limit: int, per_document: int = 2) -> list[DocumentHit]:
-    """Documents in order of their first passage in ranked, each with its first per_document passages."""
+    """Group ranked passages, skipping overlapping text passages from the same document."""
     grouped: dict[str, list[RankedPassage]] = {}
     for hit in ranked:
-        grouped.setdefault(hit.section.path, []).append(hit)
+        path = hit.section.path
+        rows = grouped.setdefault(path, [])
+        if rows and len(rows) >= per_document:
+            continue
+        section = hit.section
+        if section.kind == "text" and section.start is not None and section.end is not None and any(
+            prior.section.kind == "text"
+            and prior.section.start is not None
+            and prior.section.end is not None
+            and section.start < prior.section.end
+            and prior.section.start < section.end
+            for prior in rows
+        ):
+            continue
+        rows.append(hit)
     return [DocumentHit(path, rows[0].section.document_title, rows[0].score, tuple(rows[:per_document]))
             for path, rows in list(grouped.items())[:limit]]
 

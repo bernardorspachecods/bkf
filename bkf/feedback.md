@@ -8,6 +8,14 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/bkf/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
+## 2026-11-25 — the navigation-map search test expected a map heading to be indexed
+
+Link: [search tests](/bkf/tooling/tests/test_search.py). Noticed by me. The
+receipt gate failed both persistent and in-memory cases because the fixture
+expected a level-three `Navigation map` heading to be indexed. The brief excludes
+that heading at every level; the fixture now checks that an ordinary child
+heading remains searchable. Cause confirmed by the failed assertion.
+
 ## 2026-11-25 — the vector cache test's expected embedding counts were off
 
 Link: [vector search tests](/bkf/tooling/tests/test_search_vectors.py). Noticed by
