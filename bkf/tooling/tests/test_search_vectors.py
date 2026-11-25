@@ -150,6 +150,26 @@ class VectorSearchTests(unittest.TestCase):
         # Equal RRF scores use lexical rank first; a precedes vector-only c.
         tied = search._reciprocal_rank_fusion([hit("a"), hit("b")], [hit("c")])
         self.assertEqual([row.section.title for row in tied], ["a", "c", "b"])
+        top_heavy = search._reciprocal_rank_fusion(
+            [hit("a"), hit("x"), hit("b")], [hit("y"), hit("b")], rrf_k=1,
+        )
+        self.assertEqual([row.section.title for row in top_heavy], ["a", "y", "b", "x"])
+        for row, expected in zip(top_heavy, [1.0, 1.0, 5 / 6, 0.5]):
+            self.assertAlmostEqual(row.score, expected)
+        default_k = search._reciprocal_rank_fusion(
+            [hit("a"), hit("x"), hit("b")], [hit("y"), hit("b")],
+        )
+        self.assertEqual([row.section.title for row in default_k], ["b", "a", "y", "x"])
+
+    def test_hybrid_depth_limits_each_input_before_fusion(self) -> None:
+        lexical = [search.RankedPassage(search.Section("/a.md", "A", "", "a", "A"), 1)]
+        dense = [search.RankedPassage(search.Section("/b.md", "B", "", "b", "B"), 1)]
+        ranker = search.rank_passages
+        with patch.object(search, "rank_passages", return_value=lexical) as rank, \
+                patch.object(search, "vector_rank", return_value=dense) as vector:
+            ranker(self.root, "question", mode="hybrid", depth=1, rrf_k=3)
+        self.assertEqual(rank.call_args.kwargs["depth"], 1)
+        self.assertEqual(vector.call_args.kwargs["depth"], 1)
 
     def test_document_fusion_ranks_documents_and_combines_best_passages(self) -> None:
         def hit(path: str, title: str, body: str) -> search.RankedPassage:

@@ -117,6 +117,44 @@ class PreviewTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def test_per_document_limit_and_renderer_boundary(self) -> None:
+        ranked = [search.RankedPassage(
+            search.Section("/many.md", f"H{index}", "", f"body {index}", f"H{index}", document_title="Many"),
+            float(index),
+        ) for index in range(5)]
+        hit = search.group_documents(ranked, limit=1, per_document=4)[0]
+        self.assertEqual(len(hit.passages), 4)
+        first = search.DocumentHit("/a.md", "A", 1, (ranked[0],))
+        second = search.DocumentHit("/b.md", "B", 1, (ranked[1],))
+        rendered_one = search._render([first], max_chars=200)
+        rendered_both = search._render([first, second], max_chars=len(rendered_one) + 1)
+        self.assertEqual(rendered_both, rendered_one)
+
+    def test_cli_per_document_option_applies_to_single_and_multi_query(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            sections = "\n\n".join(
+                f"## Section {index}\n\nalpha beta passage {index}." for index in range(6)
+            )
+            (root / "many.md").write_text(document("Many", sections), encoding="utf-8")
+            single = run(root, "alpha", "--per-document", "4", "--json")
+            multi = run(root, "--query", "alpha", "--query", "beta", "--per-document", "4", "--json")
+        self.assertEqual(single.returncode, 0, single.stderr)
+        self.assertEqual(multi.returncode, 0, multi.stderr)
+        self.assertEqual(len(__import__("json").loads(single.stdout)[0]["passages"]), 4)
+        self.assertLessEqual(len(__import__("json").loads(multi.stdout)[0]["passages"]), 4)
+
+    def test_search_numeric_options_reject_invalid_values_with_status_two(self) -> None:
+        from contextlib import redirect_stderr
+        cases = [("--per-document", "0"), ("--max-chars", "199"), ("--depth", "0"),
+                 ("--heading-weight", "-1"), ("--rrf-k", "0")]
+        for option, value in cases:
+            error = io.StringIO()
+            with self.subTest(option=option), redirect_stderr(error):
+                self.assertEqual(search.main(["query", option, value]), 2)
+            self.assertIn(option, error.getvalue())
+
     def test_multi_query_document_rrf_and_passage_query_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

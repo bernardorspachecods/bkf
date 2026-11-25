@@ -120,6 +120,18 @@ class SearchEvalTests(unittest.TestCase):
                                                "--heading-weight", "30"]), 0)
         self.assertEqual(rank.call_count, 1)
 
+    def test_depth_and_rrf_k_are_forwarded_to_each_eval_run(self) -> None:
+        self.write_inputs("id\tquestion\nq1\tquestion\n", {"q1": {}})
+        with patch.object(search_eval, "_available_modes", return_value=["lexical", "hybrid"]), \
+                patch.object(search_eval, "_fastembed_available", return_value=True), \
+                patch.object(search_eval.search, "rank_documents", return_value=[]) as rank, \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            result = search_eval.main([str(self.questions), str(self.qrels), "--cwd", str(self.root),
+                                       "--depth", "23", "--rrf-k", "8.5"])
+        self.assertEqual(result, 0)
+        self.assertTrue(all(call.kwargs["depth"] == 23 and call.kwargs["rrf_k"] == 8.5
+                            for call in rank.call_args_list))
+
     def test_default_modes_without_embeddings_stay_lexical(self) -> None:
         with patch.object(search_eval, "_fastembed_available", return_value=True):
             self.assertEqual(search_eval._available_modes(self.root), ["lexical"])

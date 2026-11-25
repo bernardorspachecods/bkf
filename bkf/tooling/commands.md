@@ -652,7 +652,8 @@ one-time review of new hooks, so run `/hooks` in Codex after the first install.
 
 `bkf search [QUERY...] [--query TEXT]... [--cwd PATH] [--limit N] [--path PATH] [--heading TEXT]
 [--tag TAG]... [--passages all|sections|text] [--mode lexical|vector|hybrid]
-[--fusion passage|document]
+[--fusion passage|document] [--per-document N] [--max-chars N]
+[--heading-weight W] [--depth N] [--rrf-k K]
 [--json] [--full] [--debug]` searches passages in
 the outermost bundle containing the selected directory, including nested
 bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
@@ -660,11 +661,18 @@ Repeat `--query TEXT` to search several sub-queries in one call. Positional
 words, when present, form the first sub-query; otherwise the first `--query`
 starts the list. Each sub-query uses the selected mode and filters, then
 document rankings are fused with Reciprocal Rank Fusion. The results show each
-document's two best distinct passages across the sub-queries, and JSON passages
+document's best distinct passages up to `--per-document` across the sub-queries, and JSON passages
 include the `query` that found them. An agent can break a vague question into a
 few specific sub-queries. Sub-queries with no searchable words are ignored; if
 all are empty, search exits `2`. With one searchable sub-query, output is
 unchanged.
+`--per-document` defaults to `2`; raise it to read around a hit, including
+additional non-overlapping text passages. `--max-chars` defaults to `4000` and
+sets the text output cap (minimum `200`) at whole-document boundaries; JSON remains uncapped.
+`--heading-weight` defaults to `20` (minimum `0`) and tunes lexical heading matches.
+`--depth` defaults to `150` (minimum `1`) and sets how many passages each mode contributes
+before hybrid fusion. `--rrf-k` defaults to `60` (must be greater than `0`); a lower value favours the top
+of each ranked list more strongly.
 Lexical mode finds exact words and phrases; vector mode ranks by meaning, and
 hybrid mode combines lexical and vector rankings with Reciprocal Rank Fusion.
 Use `--fusion document` with hybrid mode to fuse document rankings; the default
@@ -722,8 +730,8 @@ Filters narrow the sections searched and combine with AND:
   Repeat the option to require several tags.
 
 Results are documents ordered by their best matching passage. `--limit` counts
-documents (default 5); each document shows up to its two highest ranked
-passages. A document's two text passages never overlap: overlapping passages
+documents (default 5); each document shows up to `--per-document` (default 2)
+of its highest ranked passages. A document's text passages never overlap: overlapping passages
 are skipped in favor of the next non-overlapping match when available.
 Section passages show their heading trail and text passages show their locator
 label (or `(text)`). Previews are whitespace-collapsed and up to 200 characters.
@@ -746,12 +754,17 @@ failures.
 
 `bkf search-eval QUESTIONS QRELS [--cwd PATH] [--mode MODE]... [--k N]
 [--recall-grade G] [--path PATH] [--passages all|sections|text]
-[--heading-weight W]... [--fusion F]... [--json]` evaluates document rankings with nDCG@5
+[--heading-weight W]... [--fusion F]... [--depth N] [--rrf-k K]
+[--json]` evaluates document rankings with nDCG@5
 and recall@k. `QUESTIONS` is a TSV with `id` and `question` columns; `QRELS`
 is a JSON object mapping question ids to `/`-rooted document paths and
 non-negative grades. A grade may also be `{ "grade": N, "locators": [...] }`;
 locators are accepted but ignored. Questions without qrels are skipped with a
 stderr warning, while qrels ids without a question are an input error.
+
+`--depth` defaults to `150` passages per mode before hybrid fusion, and
+`--rrf-k` defaults to `60`; lowering `--rrf-k` gives more weight to each list's
+top ranks.
 
 By default the command evaluates lexical mode, adding vector and hybrid when
 `fastembed` is installed and the outermost bundle's `search.yaml` has an

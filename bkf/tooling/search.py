@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -103,6 +104,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fusion", choices=("passage", "document"), help="hybrid fusion method")
     parser.add_argument("--json", action="store_true", help="print document hits as JSON")
     parser.add_argument("--full", action="store_true", help="show each matching passage in full")
+    parser.add_argument("--per-document", type=int, default=2,
+                        help="maximum passages shown per document (default: 2)")
+    parser.add_argument("--max-chars", type=int, default=OUTPUT_LIMIT,
+                        help="maximum text output characters (default: 4000)")
+    parser.add_argument("--heading-weight", type=float, default=20.0,
+                        help="lexical BM25 heading weight (default: 20)")
+    parser.add_argument("--depth", type=int, default=150,
+                        help="passages per mode before hybrid fusion (default: 150)")
+    parser.add_argument("--rrf-k", type=float, default=60.0,
+                        help="RRF constant (default: 60)")
     parser.add_argument("--passages", choices=("all", "sections", "text"), default="all",
                         help="passage kinds to search (default: all)")
     return parser
@@ -703,6 +714,7 @@ def rank_passages(
     root: Path, question: str, *, scope: Path | None = None, heading: str | None = None,
     tags: list[str] | None = None, passages: str = "all", depth: int | None = None,
     on_document_error=None, heading_weight: float = 20.0, mode: str = "lexical",
+    rrf_k: float = 60.0, mode_depth: int = 150,
 ) -> list[RankedPassage]:
     """Every matching passage (or the best depth), best first, filters applied, synonym expansion included."""
     if passages not in {"all", "sections", "text"}:
@@ -713,12 +725,13 @@ def rank_passages(
         return vector_rank(root, question, scope=scope, heading=heading, tags=tags, passages=passages,
                            depth=depth, on_document_error=on_document_error)
     if mode == "hybrid":
+        mode_depth = depth if depth is not None else mode_depth
         lexical = rank_passages(root, question, scope=scope, heading=heading, tags=tags,
-                                passages=passages, depth=150, on_document_error=on_document_error,
+                                passages=passages, depth=mode_depth, on_document_error=on_document_error,
                                 heading_weight=heading_weight, mode="lexical")
         dense = vector_rank(root, question, scope=scope, heading=heading, tags=tags, passages=passages,
-                            depth=150, on_document_error=on_document_error)
-        return _reciprocal_rank_fusion(lexical, dense, depth=depth)
+                            depth=mode_depth, on_document_error=on_document_error)
+        return _reciprocal_rank_fusion(lexical, dense, depth=mode_depth, result_depth=depth, rrf_k=rrf_k)
     terms = _query_terms(question)
     if not terms:
         return []
@@ -748,21 +761,22 @@ def _passage_key(hit: RankedPassage) -> tuple:
 
 
 def _reciprocal_rank_fusion(
-    lexical: list[RankedPassage], vector: list[RankedPassage], *, depth: int | None = None,
+    lexical: list[RankedPassage], vector: list[RankedPassage], *, depth: int = 150,
+    result_depth: int | None = None, rrf_k: float = 60.0,
 ) -> list[RankedPassage]:
     """Fuse two ranked passage lists with zero-based RRF; lexical order breaks ties."""
     fused: dict[tuple, list] = {}
     for order, ranking in enumerate((lexical, vector)):
-        for rank, hit in enumerate(ranking[:150]):
+        for rank, hit in enumerate(ranking[:depth]):
             key = _passage_key(hit)
             row = fused.setdefault(key, [hit, 0.0, None, None])
-            row[1] += 1 / (60 + rank)
+            row[1] += 1 / (rrf_k + rank)
             row[2 if order == 0 else 3] = rank
     rows = list(fused.values())
     rows.sort(key=lambda row: (-row[1], row[2] if row[2] is not None else float("inf"),
                                row[3] if row[3] is not None else float("inf")))
     ranked = [RankedPassage(row[0].section, row[1]) for row in rows]
-    return ranked if depth is None else ranked[:depth]
+    return ranked if result_depth is None else ranked[:result_depth]
 
 
 def _embedder(model: str):
@@ -942,24 +956,26 @@ def _rank_document_depth(
     root: Path, question: str, *, mode: str, target: int, scope: Path | None,
     heading: str | None, tags: list[str] | None, passages: str,
     heading_weight: float, on_document_error: Callable[[str], None] | None,
+    depth: int, per_document: int,
 ) -> tuple[list[DocumentHit], list[RankedPassage]]:
-    depth = 150
+    increment = depth
     while True:
         ranked = rank_passages(
             root, question, mode=mode, scope=scope, heading=heading, tags=tags,
             passages=passages, depth=depth, heading_weight=heading_weight,
             on_document_error=on_document_error,
         )
-        grouped = group_documents(ranked, limit=target, per_document=2)
+        grouped = group_documents(ranked, limit=target, per_document=per_document)
         if len(grouped) >= target or len(ranked) < depth:
             return grouped, ranked
-        depth += 150
+        depth += increment
 
 
 def rank_documents(
     root: Path, question: str, *, limit: int, mode: str = "lexical", fusion: str = "passage",
     scope: Path | None = None, heading: str | None = None, tags: list[str] | None = None,
     passages: str = "all", heading_weight: float = 20.0,
+    depth: int = 150, rrf_k: float = 60.0, per_document: int = 2,
     on_document_error: Callable[[str], None] | None = None,
 ) -> list[DocumentHit]:
     """Rank documents using passage grouping or document-level hybrid fusion."""
@@ -972,17 +988,18 @@ def rank_documents(
         lexical, lexical_passages = _rank_document_depth(
             root, question, mode="lexical", target=target, scope=scope, heading=heading,
             tags=tags, passages=passages, heading_weight=heading_weight,
-            on_document_error=on_document_error,
+            on_document_error=on_document_error, depth=depth, per_document=per_document,
         )
         vector, vector_passages = _rank_document_depth(
             root, question, mode="vector", target=target, scope=scope, heading=heading,
             tags=tags, passages=passages, heading_weight=heading_weight,
-            on_document_error=on_document_error,
+            on_document_error=on_document_error, depth=depth, per_document=per_document,
         )
         lexical_ranks = {_passage_key(hit): rank for rank, hit in enumerate(lexical_passages)}
         vector_ranks = {_passage_key(hit): rank for rank, hit in enumerate(vector_passages)}
         hits = fuse_document_rankings(
             [("lexical", lexical, lexical_ranks), ("vector", vector, vector_ranks)], limit=limit,
+            rrf_k=rrf_k, per_document=per_document,
         )
         passage_ranks = {
             _passage_key(passage): rank
@@ -992,22 +1009,24 @@ def rank_documents(
     ranked = rank_passages(
         root, question, mode=mode, scope=scope, heading=heading, tags=tags,
         passages=passages, heading_weight=heading_weight, on_document_error=on_document_error,
+        mode_depth=depth, rrf_k=rrf_k,
     )
     return _RankedDocuments(
-        group_documents(ranked, limit=limit),
+        group_documents(ranked, limit=limit, per_document=per_document),
         {_passage_key(hit): rank for rank, hit in enumerate(ranked)},
     )
 
 
 def fuse_document_rankings(
     rankings: list[tuple[str, list[DocumentHit], dict[tuple, int]]], *, limit: int,
+    rrf_k: float = 60.0, per_document: int = 2,
 ) -> list[DocumentHit]:
     """Fuse query document rankings and select their best distinct passages."""
     documents: dict[str, list] = {}
     for query_index, (question, hits, passage_ranks) in enumerate(rankings):
         for rank, hit in enumerate(hits):
             row = documents.setdefault(hit.path, [hit.title, 0.0, (query_index, rank), {}])
-            row[1] += 1 / (60 + rank)
+            row[1] += 1 / (rrf_k + rank)
             row[2] = min(row[2], (query_index, rank))
             for passage in hit.passages:
                 key = _passage_key(passage)
@@ -1032,7 +1051,7 @@ def fuse_document_rankings(
             ):
                 continue
             passages.append(passage)
-            if len(passages) == 2:
+            if len(passages) == per_document:
                 break
         fused.append(DocumentHit(path, title, score, tuple(passages)))
     return fused
@@ -1081,7 +1100,7 @@ def _full_text(section: Section) -> str:
     return " ".join(section.body.split())
 
 
-def _render(hits: list[DocumentHit], *, full: bool = False) -> str:
+def _render(hits: list[DocumentHit], *, full: bool = False, max_chars: int = OUTPUT_LIMIT) -> str:
     blocks: list[str] = []
     used = 0
     for index, hit in enumerate(hits, 1):
@@ -1095,7 +1114,7 @@ def _render(hits: list[DocumentHit], *, full: bool = False) -> str:
             lines.append(f"   {label}  {preview}")
         block = "\n".join(lines)
         addition = len(block) + (1 if blocks else 0)
-        if used + addition + 1 > OUTPUT_LIMIT:
+        if used + addition + 1 > max_chars:
             break
         blocks.append(block)
         used += addition
@@ -1131,6 +1150,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit < 1:
         print("bkf search: --limit must be at least 1", file=sys.stderr)
         return 1
+    for option, value, minimum, label in (
+        ("--per-document", args.per_document, 1, "at least 1"),
+        ("--max-chars", args.max_chars, 200, "at least 200"),
+        ("--depth", args.depth, 1, "at least 1"),
+    ):
+        if value < minimum:
+            print(f"bkf search: {option} must be {label}", file=sys.stderr)
+            return 2
+    if not math.isfinite(args.heading_weight) or args.heading_weight < 0:
+        print("bkf search: --heading-weight must be finite and at least 0", file=sys.stderr)
+        return 2
+    if not math.isfinite(args.rrf_k) or args.rrf_k <= 0:
+        print("bkf search: --rrf-k must be finite and greater than 0", file=sys.stderr)
+        return 2
     questions = ([" ".join(args.query)] if args.query else []) + (args.queries or [])
     questions = [question for question in questions if _query_terms(question)]
     if not questions:
@@ -1158,6 +1191,8 @@ def main(argv: list[str] | None = None) -> int:
             hits = rank_documents(
                 root, question, limit=args.limit, scope=scope, heading=args.heading, tags=args.tag,
                 passages=args.passages, mode=mode, fusion=fusion,
+                heading_weight=args.heading_weight, depth=args.depth, rrf_k=args.rrf_k,
+                per_document=args.per_document,
             )
         else:
             rankings = []
@@ -1166,10 +1201,13 @@ def main(argv: list[str] | None = None) -> int:
                     root, question, limit=max(15, 3 * args.limit), scope=scope,
                     heading=args.heading, tags=args.tag, passages=args.passages,
                     mode=mode, fusion=fusion,
+                    heading_weight=args.heading_weight, depth=args.depth, rrf_k=args.rrf_k,
+                    per_document=args.per_document,
                 )
                 passage_ranks = grouped.passage_ranks
                 rankings.append((question, grouped, passage_ranks))
-            hits = fuse_document_rankings(rankings, limit=args.limit)
+            hits = fuse_document_rankings(rankings, limit=args.limit, rrf_k=args.rrf_k,
+                                          per_document=args.per_document)
         if not args.full:
             from bkf_common import find_bundles
             vocabularies = _vocabularies(root, find_bundles)
@@ -1221,7 +1259,7 @@ def main(argv: list[str] | None = None) -> int:
                 })
             sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
         else:
-            sys.stdout.write(_render(hits, full=args.full))
+            sys.stdout.write(_render(hits, full=args.full, max_chars=args.max_chars))
         return 0
     except Exception as exc:
         print(f"bkf search: {exc}", file=sys.stderr)

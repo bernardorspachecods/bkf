@@ -35,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="passage kinds to search (default: all)")
     parser.add_argument("--heading-weight", type=float, action="append", default=None,
                         help="heading weight for lexical and hybrid ranking; repeat to compare weights (default: 20)")
+    parser.add_argument("--depth", type=int, default=150,
+                        help="passages per mode before hybrid fusion (default: 150)")
+    parser.add_argument("--rrf-k", type=float, default=60.0,
+                        help="RRF constant (default: 60)")
     parser.add_argument("--json", action="store_true", help="print metrics as JSON")
     return parser
 
@@ -158,7 +162,8 @@ def _mean(values: list[float]) -> float | None:
 
 def _run(root: Path, questions: dict[str, str], qrels: dict[str, dict[str, int]], *,
          modes: list[str], weights: list[float], k: int, recall_grade: int,
-         scope: Path | None, passages: str, fusions: list[str] | None = None) -> dict[str, dict[str, Any]]:
+         scope: Path | None, passages: str, fusions: list[str] | None = None,
+         depth: int = 150, rrf_k: float = 60.0) -> dict[str, dict[str, Any]]:
     multiple_weights = len(weights) > 1
     fusions = fusions or ["passage"]
     multiple_fusions = len(fusions) > 1
@@ -182,6 +187,7 @@ def _run(root: Path, questions: dict[str, str], qrels: dict[str, dict[str, int]]
                     hits = search.rank_documents(
                         root, question, limit=max(5, k), mode=mode, fusion=fusion,
                         scope=scope, passages=passages, heading_weight=weight,
+                        depth=depth, rrf_k=rrf_k,
                     )
                     docs = [hit.path for hit in hits]
                     per_question[qid] = ndcg(docs, relevance)
@@ -218,6 +224,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.recall_grade < 0:
         print("bkf search-eval: --recall-grade must be non-negative", file=sys.stderr)
         return 2
+    if args.depth < 1:
+        print("bkf search-eval: --depth must be at least 1", file=sys.stderr)
+        return 2
+    if not math.isfinite(args.rrf_k) or args.rrf_k <= 0:
+        print("bkf search-eval: --rrf-k must be finite and greater than 0", file=sys.stderr)
+        return 2
     weights = args.heading_weight or [20.0]
     if any(not math.isfinite(weight) for weight in weights):
         print("bkf search-eval: --heading-weight must be finite", file=sys.stderr)
@@ -253,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(f"mode {requested_embedding_mode!r} cannot run: {message}")
         methods = _run(root, questions, qrels, modes=modes, weights=weights, k=args.k,
                        recall_grade=args.recall_grade, scope=scope, passages=args.passages,
-                       fusions=args.fusion or ["passage"])
+                       fusions=args.fusion or ["passage"], depth=args.depth, rrf_k=args.rrf_k)
     except InputError as exc:
         print(f"bkf search-eval: {exc}", file=sys.stderr)
         return 2
