@@ -46,6 +46,7 @@ class SearchConfig:
 class EmbeddingsConfig:
     model: str = "BAAI/bge-small-en-v1.5"
     mode: str = "lexical"
+    fusion: str = "passage"
 
 
 @dataclass(frozen=True)
@@ -180,14 +181,17 @@ def load_search_config(bundle_root: Path) -> SearchConfig | None:
     embeddings = None
     if "embeddings" in data:
         raw_embeddings = _mapping(data["embeddings"], "embeddings")
-        _unknown_keys(raw_embeddings, {"model", "mode"}, "embeddings")
+        _unknown_keys(raw_embeddings, {"model", "mode", "fusion"}, "embeddings")
         model = raw_embeddings.get("model", "BAAI/bge-small-en-v1.5")
         if not isinstance(model, str) or not model.strip():
             raise _fail("embeddings.model", "must be a non-empty string")
         mode = raw_embeddings.get("mode", "lexical")
         if not isinstance(mode, str) or mode not in {"lexical", "vector", "hybrid"}:
             raise _fail("embeddings.mode", "must be `lexical`, `vector`, or `hybrid`")
-        embeddings = EmbeddingsConfig(model.strip(), mode)
+        fusion = raw_embeddings.get("fusion", "passage")
+        if not isinstance(fusion, str) or fusion not in {"passage", "document"}:
+            raise _fail("embeddings.fusion", "must be `passage` or `document`")
+        embeddings = EmbeddingsConfig(model.strip(), mode, fusion)
     return SearchConfig(tuple(entries), embeddings)
 
 
@@ -262,15 +266,32 @@ def _cut_segment(text: str, start: int, end: int, entry: AttachedTextEntry, loca
     if not count:
         return []
     result: list[TextPassage] = []
-    for first in range(0, max(1, count - entry.words + entry.stride), entry.stride):
-        last = min(first + entry.words, count)
-        if last - first < 25 and first != 0:
-            continue
+    for first, last in word_window_ranges(count, entry.words, entry.stride):
         char_start = words[first].start()
         char_end = words[last - 1].end()
         passage_slice = text[char_start:char_end]
         result.append(TextPassage(" ".join(passage_slice.split()), char_start, char_end, locator))
     return result
+
+
+def word_window_ranges(count: int, words: int = 220, stride: int = 160) -> list[tuple[int, int]]:
+    """Return word-index windows, dropping short trailing windows after the first."""
+    if count <= 0:
+        return []
+    ranges: list[tuple[int, int]] = []
+    for first in range(0, max(1, count - words + stride), stride):
+        last = min(first + words, count)
+        if last - first < 25 and first != 0:
+            continue
+        ranges.append((first, last))
+    return ranges
+
+
+def word_windows(text: str, words: int = 220, stride: int = 160) -> list[str]:
+    """Split text into normalized word windows using the attached-text rule."""
+    matches = list(WORD_TOKEN.finditer(text))
+    return [" ".join(text[matches[first].start():matches[last - 1].end()].split())
+            for first, last in word_window_ranges(len(matches), words, stride)]
 
 
 def text_passages(text: str, entry: AttachedTextEntry) -> list[TextPassage]:

@@ -76,6 +76,14 @@ class DocumentHit:
     passages: tuple[RankedPassage, ...]
 
 
+class _RankedDocuments(list[DocumentHit]):
+    """List result carrying source passage ranks for the multi-query caller."""
+
+    def __init__(self, hits: list[DocumentHit], passage_ranks: dict[tuple, int]) -> None:
+        super().__init__(hits)
+        self.passage_ranks = passage_ranks
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bkf search", description=__doc__)
     parser.add_argument("query", nargs="*", help="question or topic to search for")
@@ -92,6 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--debug", action="store_true", help="print a traceback when search fails")
     parser.add_argument("--mode", choices=("lexical", "vector", "hybrid"), help="ranking mode")
+    parser.add_argument("--fusion", choices=("passage", "document"), help="hybrid fusion method")
     parser.add_argument("--json", action="store_true", help="print document hits as JSON")
     parser.add_argument("--full", action="store_true", help="show each matching passage in full")
     parser.add_argument("--passages", choices=("all", "sections", "text"), default="all",
@@ -773,7 +782,20 @@ def _embedder(model: str):
 def _embedded_text(section: Section) -> str:
     if section.kind == "text":
         return section.context[:300] + "\n" + section.body
-    return section.heading + "\n" + section.body
+    context = ". ".join(part for part in (section.document_title, section.description) if part)
+    if section.heading:
+        context += (" " if context else "") + f"Section: {section.heading}"
+    context = context[:300]
+    return "\n".join(part for part in (context, section.body) if part)
+
+
+def _embedded_texts(section: Section) -> list[str]:
+    if section.kind != "section":
+        return [_embedded_text(section)]
+    from search_attached import word_windows
+
+    windows = word_windows(section.body)
+    return [_embedded_text(replace(section, body=window)) for window in windows] or [_embedded_text(section)]
 
 
 def _normalise(vector) -> list[float]:
@@ -836,7 +858,8 @@ def vector_rank(
     if not sections:
         return []
 
-    embedded = [_embedded_text(section) for section in sections]
+    embedded_by_section = [_embedded_texts(section) for section in sections]
+    embedded = [text for windows in embedded_by_section for text in windows]
     keys = [hashlib.sha256(text.encode("utf-8")).hexdigest() for text in embedded]
     connection = _vector_cache(root)
     import array
@@ -878,8 +901,13 @@ def vector_rank(
         vectors = [cached[key] for key in keys]
         if any(len(vector) != len(query_vector) for vector in vectors):
             raise ValueError("embedder returned vectors with inconsistent dimensions")
-        scores = _vector_similarity(query_vector, vectors)
-        ranked = [RankedPassage(section, score) for section, score in zip(sections, scores)]
+        window_scores = _vector_similarity(query_vector, vectors)
+        ranked = []
+        offset = 0
+        for section, windows in zip(sections, embedded_by_section):
+            scores = window_scores[offset:offset + len(windows)]
+            offset += len(windows)
+            ranked.append(RankedPassage(section, max(scores)))
         ranked.sort(key=lambda hit: (-hit.score, hit.section.path, hit.section.heading, hit.section.body[:80]))
         return ranked if depth is None else ranked[:depth]
     finally:
@@ -908,6 +936,67 @@ def group_documents(ranked: list[RankedPassage], *, limit: int, per_document: in
         rows.append(hit)
     return [DocumentHit(path, rows[0].section.document_title, rows[0].score, tuple(rows[:per_document]))
             for path, rows in list(grouped.items())[:limit]]
+
+
+def _rank_document_depth(
+    root: Path, question: str, *, mode: str, target: int, scope: Path | None,
+    heading: str | None, tags: list[str] | None, passages: str,
+    heading_weight: float, on_document_error: Callable[[str], None] | None,
+) -> tuple[list[DocumentHit], list[RankedPassage]]:
+    depth = 150
+    while True:
+        ranked = rank_passages(
+            root, question, mode=mode, scope=scope, heading=heading, tags=tags,
+            passages=passages, depth=depth, heading_weight=heading_weight,
+            on_document_error=on_document_error,
+        )
+        grouped = group_documents(ranked, limit=target, per_document=2)
+        if len(grouped) >= target or len(ranked) < depth:
+            return grouped, ranked
+        depth += 150
+
+
+def rank_documents(
+    root: Path, question: str, *, limit: int, mode: str = "lexical", fusion: str = "passage",
+    scope: Path | None = None, heading: str | None = None, tags: list[str] | None = None,
+    passages: str = "all", heading_weight: float = 20.0,
+    on_document_error: Callable[[str], None] | None = None,
+) -> list[DocumentHit]:
+    """Rank documents using passage grouping or document-level hybrid fusion."""
+    if mode not in {"lexical", "vector", "hybrid"}:
+        raise ValueError("mode must be lexical, vector, or hybrid")
+    if fusion not in {"passage", "document"}:
+        raise ValueError("fusion must be passage or document")
+    if mode == "hybrid" and fusion == "document":
+        target = max(15, 3 * limit)
+        lexical, lexical_passages = _rank_document_depth(
+            root, question, mode="lexical", target=target, scope=scope, heading=heading,
+            tags=tags, passages=passages, heading_weight=heading_weight,
+            on_document_error=on_document_error,
+        )
+        vector, vector_passages = _rank_document_depth(
+            root, question, mode="vector", target=target, scope=scope, heading=heading,
+            tags=tags, passages=passages, heading_weight=heading_weight,
+            on_document_error=on_document_error,
+        )
+        lexical_ranks = {_passage_key(hit): rank for rank, hit in enumerate(lexical_passages)}
+        vector_ranks = {_passage_key(hit): rank for rank, hit in enumerate(vector_passages)}
+        hits = fuse_document_rankings(
+            [("lexical", lexical, lexical_ranks), ("vector", vector, vector_ranks)], limit=limit,
+        )
+        passage_ranks = {
+            _passage_key(passage): rank
+            for rank, passage in enumerate(passage for hit in hits for passage in hit.passages)
+        }
+        return _RankedDocuments(hits, passage_ranks)
+    ranked = rank_passages(
+        root, question, mode=mode, scope=scope, heading=heading, tags=tags,
+        passages=passages, heading_weight=heading_weight, on_document_error=on_document_error,
+    )
+    return _RankedDocuments(
+        group_documents(ranked, limit=limit),
+        {_passage_key(hit): rank for rank, hit in enumerate(ranked)},
+    )
 
 
 def fuse_document_rankings(
@@ -1061,19 +1150,24 @@ def main(argv: list[str] | None = None) -> int:
             if not scope.is_relative_to(root):
                 print(f"bkf search: --path is outside the bundle: {args.path}", file=sys.stderr)
                 return 2
-        mode = args.mode or embeddings_config(root).mode
+        config = embeddings_config(root)
+        mode = args.mode or config.mode
+        fusion = args.fusion or config.fusion
         if len(questions) == 1:
             question = questions[0]
-            ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
-                                   passages=args.passages, mode=mode)
-            hits = group_documents(ranked, limit=args.limit)
+            hits = rank_documents(
+                root, question, limit=args.limit, scope=scope, heading=args.heading, tags=args.tag,
+                passages=args.passages, mode=mode, fusion=fusion,
+            )
         else:
             rankings = []
             for question in questions:
-                ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
-                                       passages=args.passages, mode=mode)
-                grouped = group_documents(ranked, limit=max(15, 3 * args.limit), per_document=2)
-                passage_ranks = {_passage_key(hit): rank for rank, hit in enumerate(ranked)}
+                grouped = rank_documents(
+                    root, question, limit=max(15, 3 * args.limit), scope=scope,
+                    heading=args.heading, tags=args.tag, passages=args.passages,
+                    mode=mode, fusion=fusion,
+                )
+                passage_ranks = grouped.passage_ranks
                 rankings.append((question, grouped, passage_ranks))
             hits = fuse_document_rankings(rankings, limit=args.limit)
         if not args.full:

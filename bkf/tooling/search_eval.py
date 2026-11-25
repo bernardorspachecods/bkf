@@ -26,6 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cwd", type=Path, help="directory in the bundle (defaults to current directory)")
     parser.add_argument("--mode", action="append", choices=("lexical", "vector", "hybrid"),
                         help="search mode to evaluate; repeat to compare modes")
+    parser.add_argument("--fusion", action="append", choices=("passage", "document"), default=None,
+                        help="hybrid fusion method to evaluate; repeat to compare methods (default: passage)")
     parser.add_argument("--k", type=int, default=8, help="recall cutoff (default: 8)")
     parser.add_argument("--recall-grade", type=int, default=2, help="minimum grade counted for recall (default: 2)")
     parser.add_argument("--path", type=Path, help="only search documents under this directory or file")
@@ -156,33 +158,42 @@ def _mean(values: list[float]) -> float | None:
 
 def _run(root: Path, questions: dict[str, str], qrels: dict[str, dict[str, int]], *,
          modes: list[str], weights: list[float], k: int, recall_grade: int,
-         scope: Path | None, passages: str) -> dict[str, dict[str, Any]]:
+         scope: Path | None, passages: str, fusions: list[str] | None = None) -> dict[str, dict[str, Any]]:
     multiple_weights = len(weights) > 1
+    fusions = fusions or ["passage"]
+    multiple_fusions = len(fusions) > 1
     methods: dict[str, dict[str, Any]] = {}
     for mode in modes:
         method_weights = [weights[0]] if mode == "vector" else weights
         for weight in method_weights:
-            name = f"{mode}@{weight:g}" if multiple_weights and mode != "vector" else mode
-            per_question: dict[str, float] = {}
-            recalls: list[float] = []
-            for qid, question in questions.items():
-                relevance = qrels.get(qid)
-                if relevance is None:
-                    continue
-                ranked = search.rank_passages(root, question, mode=mode, scope=scope, passages=passages,
-                                               heading_weight=weight)
-                hits = search.group_documents(ranked, limit=max(5, k))
-                docs = [hit.path for hit in hits]
-                per_question[qid] = ndcg(docs, relevance)
-                question_recall = recall(docs, relevance, k=k, minimum_grade=recall_grade)
-                if question_recall is not None:
-                    recalls.append(question_recall)
-            methods[name] = {
-                "ndcg@5": _mean(list(per_question.values())),
-                "recall@k": _mean(recalls),
-                "questions": len(per_question),
-                "per_question_ndcg@5": per_question,
-            }
+            method_fusions = fusions if mode == "hybrid" else ["passage"]
+            for fusion in method_fusions:
+                name = mode
+                if mode == "hybrid" and multiple_fusions:
+                    name += f"/{fusion}"
+                if multiple_weights and mode != "vector":
+                    name += f"@{weight:g}"
+                per_question: dict[str, float] = {}
+                recalls: list[float] = []
+                for qid, question in questions.items():
+                    relevance = qrels.get(qid)
+                    if relevance is None:
+                        continue
+                    hits = search.rank_documents(
+                        root, question, limit=max(5, k), mode=mode, fusion=fusion,
+                        scope=scope, passages=passages, heading_weight=weight,
+                    )
+                    docs = [hit.path for hit in hits]
+                    per_question[qid] = ndcg(docs, relevance)
+                    question_recall = recall(docs, relevance, k=k, minimum_grade=recall_grade)
+                    if question_recall is not None:
+                        recalls.append(question_recall)
+                methods[name] = {
+                    "ndcg@5": _mean(list(per_question.values())),
+                    "recall@k": _mean(recalls),
+                    "questions": len(per_question),
+                    "per_question_ndcg@5": per_question,
+                }
     return methods
 
 
@@ -241,7 +252,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             raise RuntimeError(f"mode {requested_embedding_mode!r} cannot run: {message}")
         methods = _run(root, questions, qrels, modes=modes, weights=weights, k=args.k,
-                       recall_grade=args.recall_grade, scope=scope, passages=args.passages)
+                       recall_grade=args.recall_grade, scope=scope, passages=args.passages,
+                       fusions=args.fusion or ["passage"])
     except InputError as exc:
         print(f"bkf search-eval: {exc}", file=sys.stderr)
         return 2

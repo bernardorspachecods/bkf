@@ -70,6 +70,7 @@ class SearchAttachedTests(unittest.TestCase):
             ("{model: 7}\n", "embeddings.model"),
             ("{mode: [hybrid]}\n", "embeddings.mode"),
             ("{mode: dense}\n", "embeddings.mode"),
+            ("{fusion: mixed}\n", "embeddings.fusion"),
             ("{provider: future}\n", "embeddings.provider"),
         ):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
@@ -77,6 +78,14 @@ class SearchAttachedTests(unittest.TestCase):
                 write_config(root, f"embeddings: {value}")
                 with self.assertRaisesRegex(BKFInputError, expected):
                     load_search_config(root)
+
+    def test_embeddings_fusion_defaults_and_accepts_document(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_config(root, "embeddings: {mode: hybrid}\n")
+            self.assertEqual(load_search_config(root).embeddings.fusion, "passage")
+            write_config(root, "embeddings: {mode: hybrid, fusion: document}\n")
+            self.assertEqual(load_search_config(root).embeddings.fusion, "document")
 
     def test_optional_locator_defaults_and_chunk_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

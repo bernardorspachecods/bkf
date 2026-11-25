@@ -652,6 +652,7 @@ one-time review of new hooks, so run `/hooks` in Codex after the first install.
 
 `bkf search [QUERY...] [--query TEXT]... [--cwd PATH] [--limit N] [--path PATH] [--heading TEXT]
 [--tag TAG]... [--passages all|sections|text] [--mode lexical|vector|hybrid]
+[--fusion passage|document]
 [--json] [--full] [--debug]` searches passages in
 the outermost bundle containing the selected directory, including nested
 bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
@@ -666,9 +667,17 @@ all are empty, search exits `2`. With one searchable sub-query, output is
 unchanged.
 Lexical mode finds exact words and phrases; vector mode ranks by meaning, and
 hybrid mode combines lexical and vector rankings with Reciprocal Rank Fusion.
+Use `--fusion document` with hybrid mode to fuse document rankings; the default
+`passage` method fuses passages before grouping documents.
 Use hybrid for questions and lexical for exact lookups of a claim, phrase, or
 identifier. Without `--mode`, search uses `embeddings.mode` from the outermost
 bundle's `search.yaml`, defaulting to lexical when that setting is absent.
+Without `--fusion`, search uses `embeddings.fusion` from that configuration,
+defaulting to `passage`; `--fusion` overrides it.
+Vector and hybrid ranking embed each section window with a 300-character prefix
+of `document title. description Section: heading trail`; bodies over 220 words
+use 220-word windows stepping 160 words (dropping trailing windows under 25
+words), and each section is scored by its best window.
 Vector and hybrid modes require the optional `fastembed` extra; install it with
 `uv tool install --editable ./bkf/tooling --with fastembed --reinstall`.
 Search uses a persistent SQLite index outside the repository: `$BKF_SEARCH_CACHE`
@@ -737,7 +746,7 @@ failures.
 
 `bkf search-eval QUESTIONS QRELS [--cwd PATH] [--mode MODE]... [--k N]
 [--recall-grade G] [--path PATH] [--passages all|sections|text]
-[--heading-weight W]... [--json]` evaluates document rankings with nDCG@5
+[--heading-weight W]... [--fusion F]... [--json]` evaluates document rankings with nDCG@5
 and recall@k. `QUESTIONS` is a TSV with `id` and `question` columns; `QRELS`
 is a JSON object mapping question ids to `/`-rooted document paths and
 non-negative grades. A grade may also be `{ "grade": N, "locators": [...] }`;
@@ -750,7 +759,10 @@ By default the command evaluates lexical mode, adding vector and hybrid when
 installed, even without that section; otherwise they exit `1` with the
 installation command. `--heading-weight` defaults to `20` and may be repeated
 to compare lexical or hybrid ranking weights; vector is run only once because
-the weight does not affect it. Metrics are means across questions with qrels;
+the weight does not affect it. `--fusion` defaults to `passage` and may be
+repeated to compare hybrid fusion methods. Lexical and vector run once regardless
+of fusion. Hybrid method names include the fusion when multiple methods are
+requested and the weight suffix when multiple weights are requested. Metrics are means across questions with qrels;
 nDCG uses gain `2^grade - 1`, and recall counts documents at or above
 `--recall-grade` (default `2`). Questions with no relevant documents are
 excluded from recall. `--k` defaults to `8`. Text output includes aggregate
@@ -771,8 +783,10 @@ duplicate keys and invalid YAML are errors.
 
 `embeddings` accepts `model`, a non-empty model name defaulting to
 `BAAI/bge-small-en-v1.5`, and `mode`, one of `lexical` (the default), `vector`,
-or `hybrid`. The model is selected from the outermost bundle root's configuration.
-`mode` sets the default for `--mode` when that search option is available.
+or `hybrid`. It also accepts `fusion`, one of `passage` (the default) or
+`document`. The model is selected from the outermost bundle root's configuration.
+`mode` sets the default for `--mode` and `fusion` sets the default for
+`--fusion` when those search options are available.
 
 Each `attached_text` item is a mapping with these keys:
 

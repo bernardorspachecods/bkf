@@ -38,6 +38,11 @@ class FakeEmbedder:
         return [self._vector(text) for text in texts]
 
 
+class LastWindowEmbedder(FakeEmbedder):
+    def _vector(self, text: str) -> list[float]:
+        return [1.0, 0.0] if "needle" in text.casefold() else [0.0, 1.0]
+
+
 class VectorSearchTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -90,6 +95,42 @@ class VectorSearchTests(unittest.TestCase):
         self.assertEqual([hit.section.title for hit in result], ["Alpha"])
         self.assertEqual(load_search_config(self.root).embeddings.mode, "hybrid")
 
+    def test_long_sections_embed_contextual_windows_cache_them_and_score_the_best(self) -> None:
+        embedder = LastWindowEmbedder()
+        self.embed_patch.stop()
+        self.embed_patch = patch.object(search, "_embedder", return_value=embedder)
+        self.embed_patch.start()
+        words = [f"word{index}" for index in range(599)] + ["needle"]
+        (self.root / "guide.md").write_text(
+            document("Guide", "## Key claims\n\n" + " ".join(words) + "\n\n## Other\n\nordinary text."),
+            encoding="utf-8",
+        )
+
+        ranked = search.vector_rank(self.root, "needle")
+
+        self.assertEqual(len(embedder.embedded), 6)  # four Key claims windows plus the two other sections
+        prefix = "Guide. Guide. Section: Guide > Key claims\n"
+        key_claim_windows = [text for text in embedder.embedded if text.startswith(prefix)]
+        self.assertEqual(len(key_claim_windows), 4)
+        self.assertTrue(all(text.startswith(prefix) for text in key_claim_windows))
+        self.assertIn("needle", key_claim_windows[-1])
+        self.assertEqual(ranked[0].section.title, "Key claims")
+        self.assertEqual(len(ranked), 3)
+
+        search.vector_rank(self.root, "needle")
+        self.assertEqual(len(embedder.embedded), 6)
+
+    def test_text_passage_embedded_text_keeps_the_existing_formula(self) -> None:
+        (self.root / "search.yaml").write_text(
+            'attached_text:\n  - documents: "guide.md"\n    text: "guide.txt"\n', encoding="utf-8"
+        )
+        (self.root / "guide.md").write_text(document("Guide", "## Orchard\n\norchard details."), encoding="utf-8")
+        (self.root / "guide.txt").write_text("sidecar passage text", encoding="utf-8")
+
+        search.vector_rank(self.root, "orchard")
+
+        self.assertIn("Guide. Guide.\nsidecar passage text", self.embedder.embedded)
+
     def test_config_accepts_vector_mode(self) -> None:
         (self.root / "search.yaml").write_text("embeddings: {mode: vector}\n", encoding="utf-8")
         self.assertEqual(embeddings_config(self.root).mode, "vector")
@@ -110,6 +151,27 @@ class VectorSearchTests(unittest.TestCase):
         tied = search._reciprocal_rank_fusion([hit("a"), hit("b")], [hit("c")])
         self.assertEqual([row.section.title for row in tied], ["a", "c", "b"])
 
+    def test_document_fusion_ranks_documents_and_combines_best_passages(self) -> None:
+        def hit(path: str, title: str, body: str) -> search.RankedPassage:
+            section = search.Section(path, title, "", body, title, document_title=path)
+            return search.RankedPassage(section, 0.0)
+
+        lexical = [hit("/a.md", "a1", "lexical passage"), hit("/b.md", "b1", "shared passage")]
+        vector = [hit("/a.md", "a2", "vector passage"), hit("/b.md", "b1", "shared passage")]
+        rankings = {"lexical": lexical, "vector": vector,
+                    "hybrid": [hit("/b.md", "b1", "shared passage"),
+                              hit("/a.md", "a1", "lexical passage"),
+                              hit("/a.md", "a2", "vector passage")]}
+
+        with patch.object(search, "rank_passages", side_effect=lambda _root, _question, **kwargs:
+                          rankings[kwargs["mode"]][:kwargs.get("depth")]):
+            passage = search.rank_documents(self.root, "query", limit=2, mode="hybrid", fusion="passage")
+            document = search.rank_documents(self.root, "query", limit=2, mode="hybrid", fusion="document")
+
+        self.assertEqual([hit.path for hit in passage], ["/b.md", "/a.md"])
+        self.assertEqual([hit.path for hit in document], ["/a.md", "/b.md"])
+        self.assertEqual([row.section.title for row in document[0].passages], ["a1", "a2"])
+
     def test_cli_uses_config_default_and_explicit_mode_override(self) -> None:
         (self.root / "search.yaml").write_text("embeddings: {mode: hybrid}\n", encoding="utf-8")
         output = io.StringIO()
@@ -121,6 +183,20 @@ class VectorSearchTests(unittest.TestCase):
         with patch.object(search, "rank_passages", return_value=[]) as rank, redirect_stdout(output):
             self.assertEqual(search.main(["question", "--cwd", str(self.root), "--mode", "lexical"]), 0)
         self.assertEqual(rank.call_args.kwargs["mode"], "lexical")
+
+    def test_cli_uses_fusion_config_default_and_explicit_override(self) -> None:
+        (self.root / "search.yaml").write_text(
+            "embeddings: {mode: hybrid, fusion: document}\n", encoding="utf-8"
+        )
+        with patch.object(search, "rank_passages", return_value=[]) as rank, redirect_stdout(io.StringIO()):
+            self.assertEqual(search.main(["question", "--cwd", str(self.root)]), 0)
+        self.assertEqual([call.kwargs["mode"] for call in rank.call_args_list], ["lexical", "vector"])
+        self.assertTrue(all(call.kwargs["depth"] == 150 for call in rank.call_args_list))
+
+        with patch.object(search, "rank_passages", return_value=[]) as rank, redirect_stdout(io.StringIO()):
+            self.assertEqual(search.main(["question", "--cwd", str(self.root), "--fusion", "passage"]), 0)
+        self.assertEqual(rank.call_args.kwargs["mode"], "hybrid")
+        self.assertNotIn("depth", rank.call_args.kwargs)
 
     def test_cli_missing_fastembed_is_one_line_and_lexical_does_not_embed(self) -> None:
         from contextlib import redirect_stderr

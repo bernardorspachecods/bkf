@@ -137,6 +137,21 @@ class SearchEvalTests(unittest.TestCase):
         rank.assert_called_once()
         self.assertEqual(rank.call_args.kwargs["mode"], "hybrid")
 
+    def test_repeated_fusions_create_hybrid_rows_and_run_other_modes_once(self) -> None:
+        self.write_inputs("id\tquestion\nq1\tquestion\n", {"q1": {}})
+        output = io.StringIO()
+        with patch.object(search_eval, "_available_modes", return_value=["lexical", "vector", "hybrid"]), \
+                patch.object(search_eval, "_fastembed_available", return_value=True), \
+                patch.object(search_eval.search, "rank_documents", return_value=[]) as rank, \
+                redirect_stdout(output), redirect_stderr(io.StringIO()):
+            result = search_eval.main([str(self.questions), str(self.qrels), "--cwd", str(self.root),
+                                       "--fusion", "passage", "--fusion", "document"])
+        self.assertEqual(result, 0)
+        self.assertIn("hybrid/passage", output.getvalue())
+        self.assertIn("hybrid/document", output.getvalue())
+        self.assertEqual([call.kwargs["mode"] for call in rank.call_args_list],
+                         ["lexical", "vector", "hybrid", "hybrid"])
+
     def test_explicit_hybrid_without_fastembed_exits_with_install_line(self) -> None:
         self.write_inputs("id\tquestion\nq1\tquestion\n", {"q1": {}})
         error = io.StringIO()
