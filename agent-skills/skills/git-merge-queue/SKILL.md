@@ -1,9 +1,9 @@
 ---
 name: git-merge-queue
-description: Land this session's finished branch on the target branch through the repository's merge queue (bkf merge), which joins it, waits for the turn, merges the target into the branch, verifies and lands it. Use when the owner moves this session's card to "to be merged", when the user asks you to queue, land or merge the branch, to land a batch now while the session keeps working on the branch, or to continue after a failed merge; do not use to clean up worktrees without landing (use git-worktree-cleanup).
+description: Land this session's finished branch on the target branch through the repository's merge queue (bkf merge), which joins it, waits for the turn, merges the target into the branch, verifies and lands it. Use when the owner moves this session's task to "to be merged", when the user asks you to queue, land or merge the branch, to land a batch now while the session keeps working on the branch, or to continue after a failed merge; do not use to clean up worktrees without landing (use git-worktree-cleanup).
 ---
 
-Sessions land one at a time, and you run every step yourself. Run from your worktree; `BKF_TASK` names your card. `bkf merge status` shows the queue.
+Sessions land one at a time, and you run every step yourself. Run from your worktree; `BKF_TASK` names your task. `bkf merge status` shows the queue.
 
 1. Commit your work, then `bkf merge enter`.
 2. `bkf merge wait` until your turn (exit 75: run it again).

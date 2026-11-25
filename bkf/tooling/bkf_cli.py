@@ -96,12 +96,12 @@ COMMANDS = {
     "merge": (
         "bkf_merge",
         "Queue a session's branch to land on the target, one at a time",
-        "called by sessions when their card is to be merged, and by skills; not by hand",
+        "called by sessions when their task is to be merged, and by skills; not by hand",
         "called by skills and sessions",
     ),
     "launch": (
         "bkf_launch",
-        "Open an interactive agent session in tmux, with its task card",
+        "Open an interactive agent session in tmux, with its task",
         "called by the handoff skill and skills that start a session; not by hand",
         "called by skills and sessions",
     ),

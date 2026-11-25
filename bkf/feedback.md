@@ -8,9 +8,9 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/bkf/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
-## 2026-11-20 — a card that an interim land left in to-merge could not start again
+## 2026-11-20 — a task that an interim land left in to-merge could not start again
 
-Link: [bkf task statuses](/bkf/tooling/commands.md#bkf-task) and `bkf/tooling/task_store.py` (the `start` transition). Noticed by the user, relayed in the brief of session desmor-hub3 (card t20261120-133435-460a). The session landed an intermediate batch with `bkf merge land`, kept working in the same worktree and branch, and found its card still `to-merge`: `bkf task start` refuses `to-merge -> working`. Evidence: before this change `start` accepted only `todo`, `working` and `failed`, and a plain land leaves the card in `to-merge`. I did not see the session's own output. Fixed on branch `task/bkf-merge-continue`: `land --continue` returns the card to `working`, and `start` accepts `to-merge` only when the card is no longer queued.
+Link: [bkf task statuses](/bkf/tooling/commands.md#bkf-task) and `bkf/tooling/task_store.py` (the `start` transition). Noticed by the user, relayed in the brief of session desmor-hub3 (task t20261120-133435-460a). The session landed an intermediate batch with `bkf merge land`, kept working in the same worktree and branch, and found its task still `to-merge`: `bkf task start` refuses `to-merge -> working`. Evidence: before this change `start` accepted only `todo`, `working` and `failed`, and a plain land leaves the task in `to-merge`. I did not see the session's own output. Fixed on branch `task/bkf-merge-continue`: `land --continue` returns the task to `working`, and `start` accepts `to-merge` only when the task is no longer queued.
 
 ## 2026-11-20 — the land message told a session that was still working to clean up
 
@@ -22,11 +22,11 @@ Link: `agent-skills/skills/git-merge-queue/SKILL.md` (steps 2 and 5), and `bkf/t
 
 ## 2026-11-20 — the merge-queue design did not say how plan runs use the removed statuses
 
-Link: `agent-skills/skills/agentic-work/script-run.md` (the card lifecycle of plan runs) and the [bkf task statuses](/bkf/tooling/commands.md#bkf-task). Noticed by me. The approved list named `delegate-run.sh` for `bkf task ready`, but `plan_cards.py` and `plan_unit.py` also called `ready` and `done`, and their tests asserted `review` and `done`. I mapped a finished agent run or a run's final report to `working` with the `paused` attention (the design's checkpoint reason), and a passed unit or a finished run to `bkf task close`. The owner should confirm that mapping, because it changes what the app shows for plan units.
+Link: `agent-skills/skills/agentic-work/script-run.md` (the task lifecycle of plan runs) and the [bkf task statuses](/bkf/tooling/commands.md#bkf-task). Noticed by me. The approved list named `delegate-run.sh` for `bkf task ready`, but `plan_cards.py` and `plan_unit.py` also called `ready` and `done`, and their tests asserted `review` and `done`. I mapped a finished agent run or a run's final report to `working` with the `paused` attention (the design's checkpoint reason), and a passed unit or a finished run to `bkf task close`. The owner should confirm that mapping, because it changes what the app shows for plan units.
 
 ## 2026-11-20 — the merge-queue design had `status` read-only and a store migration on the first read
 
-Link: [bkf merge status](/bkf/tooling/commands.md#bkf-merge). Noticed by me. The design says `status` never mutates, and that the legacy statuses are migrated once on the first read of the store. A `status` call on a store that still holds `done` or `review` cards therefore runs the migration. I let it, because the store read path is the one place that migrates, and documented it. The owner should decide whether the migration belongs to the first write instead.
+Link: [bkf merge status](/bkf/tooling/commands.md#bkf-merge). Noticed by me. The design says `status` never mutates, and that the legacy statuses are migrated once on the first read of the store. A `status` call on a store that still holds `done` or `review` tasks therefore runs the migration. I let it, because the store read path is the one place that migrates, and documented it. The owner should decide whether the migration belongs to the first write instead.
 
 ## 2026-11-20 — `bkf merge wait` both joins the queue and reports a dropped entry as exit 2
 

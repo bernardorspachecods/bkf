@@ -1,4 +1,4 @@
-"""Tests task_session through the task hook: one card per interactive Claude session in tmux, and its life."""
+"""Tests task_session through the task hook: one task per interactive Claude session in tmux, and its life."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class TaskSessionTest(unittest.TestCase):
         self.fire("SessionStart", source="startup")
         return self.card()
 
-    def test_interactive_session_in_tmux_gets_one_working_card(self) -> None:
+    def test_interactive_session_in_tmux_gets_one_working_task(self) -> None:
         self.assertEqual(self.fire("SessionStart", source="startup"), "")
         card = self.card()
         self.assertEqual((card.kind, card.status, card.source), ("task", "working", "session"))
@@ -90,7 +90,7 @@ class TaskSessionTest(unittest.TestCase):
         self.assertEqual(self.card().title, "agentic")
         self.assertIsNone(self.card().session["tmux_window"])
 
-    def test_no_card_for_sdk_cli_outside_tmux_or_outside_git(self) -> None:
+    def test_no_task_for_sdk_cli_outside_tmux_or_outside_git(self) -> None:
         self.fire("SessionStart", environ={**self.env, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
         self.fire("SessionStart", environ={k: v for k, v in self.env.items() if k != "TMUX_PANE"})
         self.fire("SessionStart", cwd=self.plain)
@@ -103,7 +103,7 @@ class TaskSessionTest(unittest.TestCase):
             self.fire("SessionStart", cwd=self.plain)
         self.assertFalse(self.store.exists())
 
-    def test_resume_reuses_the_card_and_points_it_at_the_window_again(self) -> None:
+    def test_resume_reuses_the_task_and_points_it_at_the_window_again(self) -> None:
         card = self.start()
         self.tmux.result = Result(0, "main\t@9\tAgentic work\n", "")
         self.fire("SessionStart", source="resume")
@@ -119,12 +119,12 @@ class TaskSessionTest(unittest.TestCase):
         listed = task_store.list_tasks(self.store).tasks[0]
         self.assertEqual(listed.session["claude_session_id"], SESSION)
 
-    def test_two_starts_with_one_session_id_make_one_card(self) -> None:
+    def test_two_starts_with_one_session_id_make_one_task(self) -> None:
         self.start()
         self.fire("SessionStart", source="startup")
         self.assertEqual(len(self.cards()), 1)
 
-    def test_a_stale_link_gets_a_new_card_on_start(self) -> None:
+    def test_a_stale_link_gets_a_new_task_on_start(self) -> None:
         card = self.start()
         task_store.delete(self.store, card.id)
         self.fire("SessionStart", source="resume")
@@ -132,7 +132,7 @@ class TaskSessionTest(unittest.TestCase):
         self.assertNotEqual(new.id, card.id)
         self.assertEqual(task_store.session_link(self.store, SESSION)["task"], new.id)
 
-    def test_first_prompt_names_the_card_and_later_prompts_do_not(self) -> None:
+    def test_first_prompt_names_the_task_and_later_prompts_do_not(self) -> None:
         self.start()
         self.fire("UserPromptSubmit", prompt="Fix the parser\nand the lexer too")
         self.assertEqual(self.card().title, "Fix the parser")
@@ -157,13 +157,13 @@ class TaskSessionTest(unittest.TestCase):
         self.fire("UserPromptSubmit", prompt="Something else")
         self.assertEqual(self.card().title, "My own name")
 
-    def test_session_end_deletes_a_working_card_and_keeps_the_link(self) -> None:
+    def test_session_end_deletes_a_working_task_and_keeps_the_link(self) -> None:
         card = self.start()
         self.fire("SessionEnd", reason="other")
         self.assertEqual(self.cards(), [])
         self.assertEqual(task_store.session_link(self.store, SESSION)["task"], card.id)
 
-    def test_resume_after_session_end_makes_a_new_card(self) -> None:
+    def test_resume_after_session_end_makes_a_new_task(self) -> None:
         card = self.start()
         self.fire("SessionEnd", reason="other")
         self.tmux.result = Result(0, "main\t@9\tAgentic work\n", "")
@@ -175,19 +175,19 @@ class TaskSessionTest(unittest.TestCase):
         self.fire("SessionEnd", reason="other")
         self.assertEqual(self.cards(), [])
 
-    def test_session_end_keeps_a_card_in_the_merge_queue(self) -> None:
+    def test_session_end_keeps_a_task_in_the_merge_queue(self) -> None:
         card = self.start()
         task_store.update(self.store, card.id, task_store.enter_merge)
         self.fire("SessionEnd", reason="other")
         self.assertEqual((self.card().id, self.card().status), (card.id, "to-merge"))
 
-    def test_session_end_keeps_a_card_that_failed_to_merge(self) -> None:
+    def test_session_end_keeps_a_task_that_failed_to_merge(self) -> None:
         card = self.start()
         task_store.update(self.store, card.id, lambda task: task_store.merge_failed(task, note="tests", now=None))
         self.fire("SessionEnd", reason="other")
         self.assertEqual((self.card().id, self.card().attention["reason"]), (card.id, "merge-failed"))
 
-    def test_session_end_deletes_a_failed_card(self) -> None:
+    def test_session_end_deletes_a_failed_task(self) -> None:
         card = self.start()
         task_store.update(self.store, card.id, task_store.mark_failed)
         self.fire("SessionEnd", reason="other")
@@ -203,7 +203,7 @@ class TaskSessionTest(unittest.TestCase):
         self.assertEqual(self.cards(), [])
         self.assertEqual(task_store.session_link(self.store, SESSION)["task"], card.id)
 
-    def test_turn_events_set_and_clear_the_mark_on_the_session_card(self) -> None:
+    def test_turn_events_set_and_clear_the_mark_on_the_session_task(self) -> None:
         self.start()
         self.fire("Stop")
         self.assertEqual(self.card().attention["note"], "waiting for your reply")
@@ -212,7 +212,7 @@ class TaskSessionTest(unittest.TestCase):
         self.fire("PostToolUse", tool_name="Bash")
         self.assertIsNone(self.card().attention)
 
-    def test_explicit_task_session_is_linked_without_owning_card_lifecycle(self) -> None:
+    def test_explicit_task_session_is_linked_without_owning_task_lifecycle(self) -> None:
         task = task_store.create(self.store, repo="/repo", title="Launched")
         task_store.update(self.store, task.id, lambda card: task_store.start(card, session={
             "agent": "claude", "model": None, "effort": None, "reviewer": None,
@@ -244,7 +244,7 @@ class TaskSessionTest(unittest.TestCase):
         output = self.fire("SessionEnd", environ={**self.env, "BKF_TASK": task.id}, reason="other")
         self.assertEqual(output, "")
 
-    def test_session_cards_are_not_reported_as_unreadable(self) -> None:
+    def test_session_tasks_are_not_reported_as_unreadable(self) -> None:
         card = self.start()
         task_store.update(self.store, card.id, task_store.enter_merge)
         self.fire("SessionEnd", reason="other")

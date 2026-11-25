@@ -53,7 +53,7 @@ class Stop(Exception):
 
 
 class LiveProbe:
-    """Reads the cards, tmux windows and git refs that recovery and status ask about."""
+    """Reads the tasks, tmux windows and git refs that recovery and status ask about."""
 
     def __init__(self, store: Path, repo: str, target: str, environ: Mapping[str, str]) -> None:
         self.store = store
@@ -61,7 +61,7 @@ class LiveProbe:
         self.target = target
         self.environ = environ
 
-    def card_exists(self, task: str) -> bool:
+    def task_exists(self, task: str) -> bool:
         try:
             task_store.read(self.store, task)
         except TaskError:
@@ -83,7 +83,7 @@ class LiveProbe:
 
 
 class Context:
-    """The task, its card, and the queue it belongs to."""
+    """The task and the queue it belongs to."""
 
     def __init__(self, store: Path, card: Task, target: str, environ: Mapping[str, str], lease: timedelta) -> None:
         self.store = store
@@ -108,9 +108,9 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--target", metavar="BRANCH",
                          help="the branch the work lands on (default: origin's HEAD, else main or master)")
 
-    enter = commands.add_parser("enter", help="join the queue at the back, with the card in to-merge")
+    enter = commands.add_parser("enter", help="join the queue at the back, with the task in to-merge")
     task_options(enter)
-    enter.add_argument("--worktree", metavar="PATH", help="the session's worktree (default: the card's, else cwd)")
+    enter.add_argument("--worktree", metavar="PATH", help="the session's worktree (default: the task's, else cwd)")
 
     wait = commands.add_parser("wait", help="block until the turn is yours (exit 0), joining the queue if needed")
     task_options(wait)
@@ -123,8 +123,8 @@ def build_parser() -> argparse.ArgumentParser:
     land = commands.add_parser("land", help="fast-forward the target to the verified branch")
     task_options(land)
     land.add_argument("--continue", dest="interim", action="store_true",
-                      help="an interim land: the card goes back to working and the session keeps its branch")
-    fail = commands.add_parser("fail", help="give up the turn: the card gets the reason and leaves the queue")
+                      help="an interim land: the task goes back to working and the session keeps its branch")
+    fail = commands.add_parser("fail", help="give up the turn: the task gets the reason and leaves the queue")
     task_options(fail)
     fail.add_argument("--reason", required=True, metavar="TEXT")
     leave = commands.add_parser("leave", help="cancel: leave the queue and give the turn to the next")
@@ -165,7 +165,7 @@ def _target(explicit: str | None, existing: dict[str, Any] | None, repo: str) ->
 
 
 def _work_place(card: Task, explicit: str | None) -> tuple[str, str]:
-    """Return (worktree, branch) of the session: the explicit path, else the card's, else the current folder's."""
+    """Return (worktree, branch) of the session: the explicit path, else the task's, else the current folder's."""
     path = explicit
     recorded = (card.worktree or {}).get("path")
     if path is None and recorded and Path(recorded).is_dir():
@@ -181,14 +181,14 @@ def _work_place(card: Task, explicit: str | None) -> tuple[str, str]:
     return path, branch
 
 
-def _update_card(store: Path, task: str, change: Callable[[Task], Any]) -> None:
+def _update_task(store: Path, task: str, change: Callable[[Task], Any]) -> None:
     task_store.update(store, task, change)
 
 
-def _leave_queue_card(store: Path, task: str) -> None:
-    """Move the card out of to-merge after an interim land. A card that is already gone has nothing to move."""
+def _leave_queue_task(store: Path, task: str) -> None:
+    """Move the task out of to-merge after an interim land. A task that is already gone has nothing to move."""
     try:
-        _update_card(store, task, task_store.leave_merge)
+        _update_task(store, task, task_store.leave_merge)
     except TaskError:
         pass
 
@@ -199,7 +199,7 @@ def _apply_recovery(store: Path, found: merge_store.Recovery) -> None:
     try:
         task_store.update(store, found.task, lambda card: task_store.merge_failed(card, note=found.note, now=None))
     except TaskError:
-        return  # the card is gone: there is nothing to tell
+        return  # the task is gone: there is nothing to tell
 
 
 def _mutate(ctx: Context, action: Callable[[dict[str, Any], datetime], int | None]) -> int | None:
@@ -234,10 +234,10 @@ def _turn_entry(queue: dict[str, Any], task: str) -> dict[str, Any]:
 
 
 def _join(ctx: Context, queue: dict[str, Any], now: datetime, worktree: str, branch: str) -> None:
-    """Put the task at the back of the queue, grant the turn if the queue was idle, and move the card to to-merge."""
+    """Put the task at the back of the queue, grant the turn if the queue was idle, and move the task to to-merge."""
     merge_store.add(queue, ctx.task, branch, worktree, now)
     merge_store.promote(queue, now, ctx.lease)
-    _update_card(ctx.store, ctx.task, task_store.enter_merge)
+    _update_task(ctx.store, ctx.task, task_store.enter_merge)
 
 
 def _position(queue: dict[str, Any], task: str) -> str:
@@ -261,7 +261,7 @@ def cmd_enter(args: argparse.Namespace, store: Path, environ: Mapping[str, str])
             verb = "Entered the merge queue"
         else:
             queue["entries"][merge_store.find(queue, ctx.task)]["seen"] = merge_store.stamp(now)
-            _update_card(ctx.store, ctx.task, task_store.enter_merge)
+            _update_task(ctx.store, ctx.task, task_store.enter_merge)
             verb = "Already in the merge queue"
         print(f"{verb} for {ctx.target} ({branch}). {_position(queue, ctx.task)}.")
         print("Next: run bkf merge wait; it returns when the turn is yours.")
@@ -395,8 +395,8 @@ def cmd_land(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) 
         merge_store.log(queue, now, ctx.task, "landed", f"interim: {landed}" if interim else landed)
         merge_store.promote(queue, now, ctx.lease)
         if interim:
-            _leave_queue_card(ctx.store, ctx.task)
-            print(f"Landed {entry['branch']} on {ctx.target} (interim). The card is working again and the entry "
+            _leave_queue_task(ctx.store, ctx.task)
+            print(f"Landed {entry['branch']} on {ctx.target} (interim). The task is working again and the entry "
                   "left the queue. The session may keep working on the same branch; before its next land, run "
                   f"bkf merge enter again, then bkf merge wait. On its turn, merge {ctx.target} into the branch, run "
                   "the checks, then bkf merge verify and bkf merge land (without --continue for the last land).")
@@ -421,8 +421,8 @@ def cmd_fail(args: argparse.Namespace, store: Path, environ: Mapping[str, str]) 
         merge_store.remove(queue, ctx.task)
         merge_store.log(queue, now, ctx.task, "failed", reason)
         merge_store.promote(queue, now, ctx.lease)
-        _update_card(ctx.store, ctx.task, lambda card: task_store.merge_failed(card, note=reason, now=None))
-        print(f"Failed {entry['branch']}: {reason}. The card is working with the merge-failed mark. "
+        _update_task(ctx.store, ctx.task, lambda card: task_store.merge_failed(card, note=reason, now=None))
+        print(f"Failed {entry['branch']}: {reason}. The task is working with the merge-failed mark. "
               "Fix the branch, commit, then bkf merge enter again (the back of the queue).")
         return EXIT_OK
 
@@ -442,7 +442,7 @@ def cmd_leave(args: argparse.Namespace, store: Path, environ: Mapping[str, str])
         merge_store.remove(queue, ctx.task)
         merge_store.log(queue, now, ctx.task, "left")
         merge_store.promote(queue, now, ctx.lease)
-        _leave_queue_card(ctx.store, ctx.task)
+        _leave_queue_task(ctx.store, ctx.task)
         print(f"Left the merge queue for {ctx.target}.")
         return EXIT_OK
 
@@ -491,7 +491,7 @@ def _status_queues(args: argparse.Namespace, store: Path, environ: Mapping[str, 
         try:
             return [merge_store.queue_path(store, task_store.read(store, args.task).repo)]
         except TaskError:
-            pass  # the card is gone: an entry may still wait for it, so look in every queue
+            pass  # the task is gone: an entry may still wait for it, so look in every queue
     return merge_store.queue_paths(store)
 
 

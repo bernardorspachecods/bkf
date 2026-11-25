@@ -51,7 +51,7 @@ class MergeFixture(unittest.TestCase):
         self.git(cwd, "commit", "-q", "-m", f"add {name}")
 
     def session(self, title: str, branch: str) -> tuple[str, Path]:
-        """A card for a session on its own branch and worktree, as `bkf task worktree` and `start` leave it."""
+        """A task for a session on its own branch and worktree, as `bkf task worktree` and `start` leave it."""
         worktree = self.root / "worktrees" / branch.replace("/", "-")
         self.git(self.repo, "worktree", "add", "-q", "-b", branch, str(worktree), "main")
         card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title=title)
@@ -124,7 +124,7 @@ class TwoSessionQueueTests(MergeFixture):
         self.assertEqual(self.queue()["entries"], [])
         landed = [event["task"] for event in self.queue()["events"] if event["event"] == "landed"]
         self.assertEqual(landed, [a, b])
-        self.assertEqual(self.card(a).status, "to-merge", "the card waits for bkf task close")
+        self.assertEqual(self.card(a).status, "to-merge", "the task waits for bkf task close")
 
     def test_enter_is_idempotent_and_wait_joins_a_task_that_is_not_queued(self) -> None:
         a, _ = self.session("alpha", "task/alpha")
@@ -147,7 +147,7 @@ class TwoSessionQueueTests(MergeFixture):
 
 
 class FailureAndLeaveTests(MergeFixture):
-    def test_a_failed_turn_passes_to_the_next_and_the_card_says_why(self) -> None:
+    def test_a_failed_turn_passes_to_the_next_and_the_task_says_why(self) -> None:
         a, wa = self.session("alpha", "task/alpha")
         b, _ = self.session("beta", "task/beta")
         self.commit(wa, "alpha.txt", "alpha")
@@ -166,7 +166,7 @@ class FailureAndLeaveTests(MergeFixture):
         self.assertEqual(self.card(a).attention, None, "entering again clears the merge-failed mark")
         self.assertEqual(self.states(), [(b, "turn"), (a, "waiting")])
 
-    def test_leave_gives_the_turn_on_and_the_card_goes_back_to_working(self) -> None:
+    def test_leave_gives_the_turn_on_and_the_task_goes_back_to_working(self) -> None:
         a, _ = self.session("alpha", "task/alpha")
         b, _ = self.session("beta", "task/beta")
         self.merge("enter", task=a)
@@ -248,12 +248,12 @@ class LandRefusalTests(MergeFixture):
 
     def test_refusals_that_need_no_queue_change(self) -> None:
         self.assertEqual(self.merge("enter")[0], 1, "no task id")
-        main_card = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="on main")
+        main_task = task_store.create(self.store, repo=task_store.repo_identity(self.repo), title="on main")
         task_store.update(
-            self.store, main_card.id,
+            self.store, main_task.id,
             lambda task: task_store.start(task, worktree={"path": str(self.repo), "branch": "main"}),
         )
-        code, _, err = self.merge("enter", task=main_card.id)
+        code, _, err = self.merge("enter", task=main_task.id)
         self.assertEqual(code, 1)
         self.assertIn("is the target", err)
         a, _ = self.session("alpha", "task/alpha")
@@ -325,7 +325,7 @@ class RecoveryTests(MergeFixture):
         landed = [event for event in self.queue()["events"] if event["event"] == "landed" and event["task"] == a]
         self.assertEqual(len(landed), 1)
 
-    def test_a_crashed_land_whose_branch_did_not_reach_the_target_fails_with_the_card_marked(self) -> None:
+    def test_a_crashed_land_whose_branch_did_not_reach_the_target_fails_with_the_task_marked(self) -> None:
         a, wa = self.session("alpha", "task/alpha")
         b, _ = self.session("beta", "task/beta")
         self.commit(wa, "alpha.txt", "alpha")
@@ -340,7 +340,7 @@ class RecoveryTests(MergeFixture):
         self.assertEqual((card.status, card.attention["reason"]), ("working", "merge-failed"))
         self.assertIn("the land did not finish", card.attention["note"])
 
-    def test_a_holder_whose_card_is_gone_loses_the_turn(self) -> None:
+    def test_a_holder_whose_task_is_gone_loses_the_turn(self) -> None:
         a, _ = self.session("alpha", "task/alpha")
         b, _ = self.session("beta", "task/beta")
         self.merge("enter", task=a)
@@ -467,7 +467,7 @@ class InterimLandTests(MergeFixture):
         self.assertEqual(self.merge("wait", "--timeout", "0", task=task)[0], 0)
         self.assertEqual(self.merge("verify", task=task)[0], 0)
 
-    def test_land_continue_puts_the_card_back_to_working_and_the_next_session_gets_the_turn(self) -> None:
+    def test_land_continue_puts_the_task_back_to_working_and_the_next_session_gets_the_turn(self) -> None:
         a, wa = self.session("alpha", "task/alpha")
         b, wb = self.session("beta", "task/beta")
         self.commit(wa, "alpha.txt", "alpha")
@@ -492,7 +492,7 @@ class InterimLandTests(MergeFixture):
         self.assertEqual(self.merge("verify", task=b)[0], 0)
         self.assertEqual(self.merge("land", task=b)[0], 0)
         self.assertEqual(self.git(self.repo, "show", "main:beta.txt"), "beta")
-        self.assertEqual(self.card(b).status, "to-merge", "b's final land keeps the plain card rule")
+        self.assertEqual(self.card(b).status, "to-merge", "b's final land keeps the plain task rule")
 
     def test_the_interim_message_has_no_cleanup_instruction_and_says_how_to_go_on(self) -> None:
         a, wa = self.session("alpha", "task/alpha")
@@ -505,7 +505,7 @@ class InterimLandTests(MergeFixture):
         self.assertIn("run bkf merge enter again", out)
         self.assertIn("without --continue", out)
 
-    def test_plain_land_is_unchanged_and_leaves_the_card_in_to_merge_with_the_cleanup_message(self) -> None:
+    def test_plain_land_is_unchanged_and_leaves_the_task_in_to_merge_with_the_cleanup_message(self) -> None:
         a, wa = self.session("alpha", "task/alpha")
         self.land_first(a, wa)
         code, out, err = self.merge("land", task=a)
@@ -530,7 +530,7 @@ class InterimLandTests(MergeFixture):
         self.assertEqual(self.card(a).status, "working")
 
         self.commit(wa, "second.txt", "second")
-        self.assertEqual(self.merge("enter", task=a)[0], 0, "re-entry from a working card")
+        self.assertEqual(self.merge("enter", task=a)[0], 0, "re-entry from a working task")
         self.assertEqual(self.card(a).status, "to-merge")
         self.assertEqual(self.merge("wait", "--timeout", "0", task=a)[0], 0)
         self.git(wa, "merge", "-q", "main", "-m", "merge main into alpha again")
@@ -610,7 +610,7 @@ class TakeOutTests(MergeFixture):
                 self.assertIn("do not re-enter on your own", err)
                 self.assertNotIn("run bkf merge enter", err)
 
-    def test_a_to_merge_card_outside_the_queue_may_start_and_one_inside_it_may_not(self) -> None:
+    def test_a_to_merge_task_outside_the_queue_may_start_and_one_inside_it_may_not(self) -> None:
         a, wa = self.session("alpha", "task/alpha")
         self.commit(wa, "alpha.txt", "alpha")
         self.merge("enter", task=a)
@@ -626,7 +626,7 @@ class TakeOutTests(MergeFixture):
         self.assertEqual(self.merge("leave", task=a)[0], 0)
         self.assertEqual(self.card(a).status, "working")
         self.merge("enter", task=a)
-        self.edit_queue(lambda queue: queue["entries"].clear())  # a card left in to-merge with no entry
+        self.edit_queue(lambda queue: queue["entries"].clear())  # a task left in to-merge with no entry
         self.assertEqual(self.card(a).status, "to-merge")
         with patch.dict(os.environ, environ, clear=False):
             with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
@@ -676,7 +676,7 @@ class RecoveryDropTests(MergeFixture):
         self.assertIn("You may run bkf merge enter again", err)
         self.assertNotIn("tell the owner", err)
 
-    def test_a_card_whose_branch_already_landed_is_not_told_to_enter_again(self) -> None:
+    def test_a_task_whose_branch_already_landed_is_not_told_to_enter_again(self) -> None:
         a, wa = self.session("alpha", "task/alpha")
         self.commit(wa, "alpha.txt", "alpha")
         self.merge("enter", task=a)

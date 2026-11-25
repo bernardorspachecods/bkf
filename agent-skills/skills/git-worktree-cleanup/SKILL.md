@@ -1,6 +1,6 @@
 ---
 name: git-worktree-cleanup
-description: Close out git worktrees and branches. `mine` (default) commits this session's changes, lands its branch on the default branch through the merge queue (bkf merge, never a rebase), then removes the session worktree (if any) and branch and closes its card. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup).
+description: Close out git worktrees and branches. `mine` (default) commits this session's changes, lands its branch on the default branch through the merge queue (bkf merge, never a rebase), then removes the session worktree (if any) and branch and closes its task. `all` deletes every worktree and local branch already merged into the default branch. Pull requests only when the user asks. Use only when the user asks to clean up or close worktrees or branches; do not use to commit changes alone (use git-status-cleanup).
 ---
 
 Apaga só o que já está no main ou o que o utilizador pediu para apagar.

@@ -76,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     worktree.add_argument("--base", metavar="REV", help="start a new branch from REV (default: HEAD of the repository)")
     worktree.add_argument("--json", action="store_true", help="print path, branch and created as one JSON object")
 
-    close = commands.add_parser("close", help="delete a task's card once its work has landed")
+    close = commands.add_parser("close", help="delete a task once its work has landed")
     close.add_argument("id", metavar="ID", nargs="?", help="task id (default: $BKF_TASK)")
 
     fail = commands.add_parser("fail", help="mark a task failed")
@@ -132,7 +132,7 @@ def _transition_result(store: Path, task_id: str, change: Any) -> Task:
 
 
 def _start(args: argparse.Namespace, store: Path) -> None:
-    """Start a card. A to-merge card starts only when it has no entry in the merge queue any more."""
+    """Start a task. A to-merge task starts only when it has no entry in the merge queue any more."""
     session, worktree = _session(args), _worktree(args)
     with task_store.locked(store):
         card = task_store.read(store, args.id)

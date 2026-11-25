@@ -1,4 +1,4 @@
-"""Open an interactive Claude or Codex session in tmux, with its task card: the one way skills start one."""
+"""Open an interactive Claude or Codex session in tmux, with its task: the one way skills start one."""
 
 from __future__ import annotations
 
@@ -38,14 +38,14 @@ LAUNCH_ONLY = (
     "delegated", "task", "no_task", "title", "kind", "parent", "no_parent", "body_file", "worktree",
     "no_attach", "size", "json",
 )
-CARD_ONLY = (
+TASK_ONLY = (
     ("--title", "title"), ("--kind", "kind"), ("--parent", "parent"),
     ("--no-parent", "no_parent"), ("--body-file", "body_file"),
 )
 
 
 class Refusal(Exception):
-    """A refusal before the task card exists: one line on standard error, exit 1."""
+    """A refusal before the task exists: one line on standard error, exit 1."""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="the first message, read from F (or - for standard input)")
     parser.add_argument("--model", metavar="M")
     parser.add_argument("--effort", metavar="E")
-    parser.add_argument("--reviewer", metavar="R", help="recorded on the card only; changes nothing in the command")
+    parser.add_argument("--reviewer", metavar="R", help="recorded on the task only; changes nothing in the command")
     parser.add_argument("--name", metavar="N", help="claude only: the session name")
     parser.add_argument("--permission-mode", dest="permission_mode", metavar="P", help="claude only")
     parser.add_argument("--remote-control", dest="remote_control", action="store_true", help="claude only")
@@ -64,17 +64,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--delegated", action="store_true", help="set BKF_DELEGATED=1 in the window")
 
     card = parser.add_mutually_exclusive_group()
-    card.add_argument("--task", metavar="ID", help="launch on this card (status todo or failed)")
-    card.add_argument("--no-task", dest="no_task", action="store_true", help="launch with no card")
-    parser.add_argument("--title", metavar="T", help="title of the new card")
-    parser.add_argument("--kind", choices=KINDS, help="kind of the new card (default: handoff)")
+    card.add_argument("--task", metavar="ID", help="launch on this task (status todo or failed)")
+    card.add_argument("--no-task", dest="no_task", action="store_true", help="launch with no task")
+    parser.add_argument("--title", metavar="T", help="title of the new task")
+    parser.add_argument("--kind", choices=KINDS, help="kind of the new task (default: handoff)")
     parent = parser.add_mutually_exclusive_group()
-    parent.add_argument("--parent", metavar="ID", help="parent of the new card (default: $BKF_TASK)")
-    parent.add_argument("--no-parent", dest="no_parent", action="store_true", help="the new card has no parent")
-    parser.add_argument("--body-file", dest="body_file", metavar="F", help="body of the new card, from F (or -)")
+    parent.add_argument("--parent", metavar="ID", help="parent of the new task (default: $BKF_TASK)")
+    parent.add_argument("--no-parent", dest="no_parent", action="store_true", help="the new task has no parent")
+    parser.add_argument("--body-file", dest="body_file", metavar="F", help="body of the new task, from F (or -)")
 
     parser.add_argument("--worktree", choices=WORKTREE_MODES,
-                        help="auto: a git worktree for the card (default for kind task); none: the --dir folder")
+                        help="auto: a git worktree for the task (default for kind task); none: the --dir folder")
     parser.add_argument("--size", type=_size, metavar="COLSxROWS", help="the size of a new tmux session")
     parser.add_argument("--no-attach", dest="no_attach", action="store_true", help="do not attach a terminal")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of the lines")
@@ -108,13 +108,13 @@ def _check(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
             if _given(getattr(args, name)):
                 parser.error(f"{flag} works only with claude")
     if args.task is not None or args.no_task:
-        given = [flag for flag, name in CARD_ONLY if _given(getattr(args, name))]
+        given = [flag for flag, name in TASK_ONLY if _given(getattr(args, name))]
         if given:
-            parser.error(f"{', '.join(given)} make a new card: not with --task or --no-task")
+            parser.error(f"{', '.join(given)} make a new task: not with --task or --no-task")
     if args.prompt_file == "-" and args.body_file == "-":
         parser.error("--prompt-file and --body-file cannot both read standard input")
     if args.worktree == "auto" and args.no_task:
-        parser.error("--worktree auto needs a task card")
+        parser.error("--worktree auto needs a task")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -157,10 +157,10 @@ def _launch(args: argparse.Namespace, store: Path) -> int:
         if existing.status not in LAUNCHABLE:
             raise Refusal(f"task {existing.id} is {existing.status}; a launch needs a todo or failed task")
 
-    # Step 2: the card.
+    # Step 2: the task.
     card: Task | None = existing
     if card is None and not args.no_task:
-        card = _create_card(args, store, directory, prompt_text, body)
+        card = _create_task(args, store, directory, prompt_text, body)
 
     worktree: dict[str, Any] | None = None
     try:
@@ -268,7 +268,7 @@ def _title(args: argparse.Namespace, prompt_text: str | None) -> str:
     return FALLBACK_TITLE
 
 
-def _create_card(args: argparse.Namespace, store: Path, directory: str,
+def _create_task(args: argparse.Namespace, store: Path, directory: str,
                  prompt_text: str | None, body: str) -> Task:
     parent = None if args.no_parent else (args.parent or os.environ.get(TASK_ENV) or None)
     try:
@@ -296,7 +296,7 @@ def _is_git_repository(path: str) -> bool:
 
 
 def _worktree(store: Path, card: Task) -> dict[str, Any] | None:
-    """The card's worktree: created or reused by task_worktree.prepare; none outside a git repository."""
+    """The task's worktree: created or reused by task_worktree.prepare; none outside a git repository."""
     if not _is_git_repository(card.repo):
         return None
     prepared = task_worktree.prepare(store, card.id)
@@ -311,7 +311,7 @@ def _prompt_path(store: Path, card: Task | None, args: argparse.Namespace, text:
         return str((store / card.id / PROMPT_NAME).absolute())
     if args.prompt_file != "-":
         return os.path.abspath(args.prompt_file)
-    # Standard input with no card: a temporary copy, kept after the launch.
+    # Standard input with no task: a temporary copy, kept after the launch.
     descriptor, path = tempfile.mkstemp(prefix="bkf-launch-", suffix=".md")
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -347,7 +347,7 @@ def _command(args: argparse.Namespace, prompt_path: str | None, session_id: str 
 
 
 def _failed(store: Path, task_id: str, error: BaseException) -> int:
-    """Record the failure on the card and print it; the card keeps its status."""
+    """Record the failure on the task and print it; the task keeps its status."""
     message = " ".join(str(error).split()) or "launch failed"
     try:
         task_store.update(

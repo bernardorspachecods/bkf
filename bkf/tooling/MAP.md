@@ -53,7 +53,7 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/bkf/tooling/bk
 - [updates.py](/bkf/tooling/updates.py) — Prints the format update documents needed by one or more BKF bundles.
 - [hook_events.py](/bkf/tooling/hook_events.py) — Handles the `bkf hooks run` events: snapshots and records session edits, checks their bundles when the session stops, gives the agent the resulting warnings with its next prompt, and dispatches the `log`, `guard`, `audit`, and `sources` hooks.
 - [session_number.py](/bkf/tooling/session_number.py) — Chooses the `<repo><N>` name (`bkf1`, `bkf2`) that the `tabname` hook gives an interactive Claude session on its first prompt.
-- [task_session.py](/bkf/tooling/task_session.py) — Links interactive Claude sessions to cards in the task store: creates and owns implicit session cards, safely backfills an explicit task's missing current UUID, and names implicit cards from their first prompt.
+- [task_session.py](/bkf/tooling/task_session.py) — Links interactive Claude sessions to tasks in the task store: creates and owns implicit session tasks, safely backfills an explicit task's missing current UUID, and names implicit tasks from their first prompt.
 - [bkf_hooks.py](/bkf/tooling/bkf_hooks.py) — Previews, installs, and reports the eleven hook groups (modes, orient, check, log, rules, task, guard, audit, tabname, sources, context) for Claude Code and Codex.
 - [context_hook.py](/bkf/tooling/context_hook.py) — Warns before context compaction and restores the session continuation note after compaction.
 - [default_rules.txt](/bkf/tooling/default_rules.txt) — Holds the default standing rules that `bkf hooks install --write` copies to `~/.agent-hooks/rules.md` when that file is missing.
@@ -67,10 +67,10 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/bkf/tooling/bk
 - [source_page.py](/bkf/tooling/source_page.py) — Fetches HTML and extracts source metadata and readable text.
 - [source_record.py](/bkf/tooling/source_record.py) — Defines source record ids, metadata, and claim validation.
 - [source_store.py](/bkf/tooling/source_store.py) — Provides the store API, catalog updates, and Git commits.
-- [bkf_launch.py](/bkf/tooling/bkf_launch.py) — Opens an interactive Claude or Codex session in tmux with its task card, worktree and prompt copy.
+- [bkf_launch.py](/bkf/tooling/bkf_launch.py) — Opens an interactive Claude or Codex session in tmux with its task, worktree and prompt copy.
 - [bkf_task.py](/bkf/tooling/bkf_task.py) — Handles the task command arguments and the exit statuses.
 - [task_store.py](/bkf/tooling/task_store.py) — Owns the machine-wide store of agent tasks: one folder per task, atomic locked writes, the task transitions, and the one-time migration of the legacy statuses.
-- [merge_store.py](/bkf/tooling/merge_store.py) — Holds the merge queue of a repository: its schema 1 file, the turn rules, and the recovery of a stale turn or a dormant waiter; changes no git state or card.
+- [merge_store.py](/bkf/tooling/merge_store.py) — Holds the merge queue of a repository: its schema 1 file, the turn rules, and the recovery of a stale turn or a dormant waiter; changes no git state or task.
 - [merge_git.py](/bkf/tooling/merge_git.py) — Reads the git state the merge queue checks (heads, cleanliness, ancestry, the target branch) and fast-forwards the target on land.
 - [bkf_merge.py](/bkf/tooling/bkf_merge.py) — Implements `bkf merge`: the queue commands, their exit statuses, and the status JSON the app reads.
 - [task_tmux.py](/bkf/tooling/task_tmux.py) — Opens a window for a task's shell command in tmux, iTerm2 or Terminal.app, grouped by repository, and names each repository's tmux session.

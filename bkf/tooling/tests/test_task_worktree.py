@@ -69,7 +69,7 @@ class WorktreeTests(unittest.TestCase):
                 status = exc.code
         return status, stdout.getvalue(), stderr.getvalue()
 
-    def test_creates_from_head_and_records_the_card(self) -> None:
+    def test_creates_from_head_and_records_the_task(self) -> None:
         task = self.new_task("Ecrã de início!")
         prepared = prepare(self.store, task.id)
         path = self.worktree_path(task)
@@ -98,7 +98,7 @@ class WorktreeTests(unittest.TestCase):
         self.assertFalse(self.worktree_path(task).exists())
         self.assertIsNone(task_store.read(self.store, task.id).worktree)
 
-    def test_card_linked_through_a_linked_worktree_lands_in_the_main_checkout(self) -> None:
+    def test_task_linked_through_a_linked_worktree_lands_in_the_main_checkout(self) -> None:
         linked = self.root / "linked"
         git(self.repo, "worktree", "add", "-q", "-b", "other", str(linked))
         status, output, error = self.run_task("new", "--repo", str(linked), "--title", "Linked")

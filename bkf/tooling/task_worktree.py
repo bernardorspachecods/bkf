@@ -40,7 +40,7 @@ def slug(title: str, task_id: str) -> str:
 
 
 def prepare(store: Path, task_id: str, *, base: str | None = None) -> Prepared:
-    """Create the task's worktree, or reuse it, and record it on the task card."""
+    """Create the task's worktree, or reuse it, and record it on the task."""
     task = task_store.read(store, task_id)
     if task.status not in PREPARABLE_STATUSES:
         raise WorktreeError(f"a worktree needs a todo, working or failed task, and {task.id} is {task.status}")

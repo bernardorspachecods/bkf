@@ -657,7 +657,7 @@ class TaskHookTest(unittest.TestCase):
 
 
 class TaskTurnHookTest(unittest.TestCase):
-    """The task hook on Stop and UserPromptSubmit: the card waits for the owner, and resumes when they reply."""
+    """The task hook on Stop and UserPromptSubmit: the task waits for the owner, and resumes when they reply."""
 
     NOTE = "waiting for your reply"
 
@@ -723,7 +723,7 @@ class TaskTurnHookTest(unittest.TestCase):
             self.assertEqual((code, output), (0, ""))
             self.assertEqual(task_store.read(self.store, task_id).to_json(), before, status)
 
-    def test_stop_leaves_unit_cards_alone(self) -> None:
+    def test_stop_leaves_unit_tasks_alone(self) -> None:
         task_id = self.make(kind="unit")
         before = task_store.read(self.store, task_id).to_json()
         self.fire("Stop", task_id)
@@ -757,7 +757,7 @@ class TaskTurnHookTest(unittest.TestCase):
         self.fire("UserPromptSubmit", task_id)
         self.assertIsNone(self.attention(task_id))
 
-    def test_stop_and_prompt_print_nothing_even_for_a_text_card(self) -> None:
+    def test_stop_and_prompt_print_nothing_even_for_a_text_task(self) -> None:
         task_id = self.make()
         for event in ("Stop", "UserPromptSubmit"):
             self.assertEqual(self.fire(event, task_id), (0, ""))
@@ -780,7 +780,7 @@ class TaskTurnHookTest(unittest.TestCase):
                 self.assertEqual(self.fire(event, task_id), (0, ""), (event, task_id))
         self.assertEqual(task_store.list_tasks(self.store).tasks, [])
 
-    def test_corrupt_card_is_swallowed_on_stop(self) -> None:
+    def test_corrupt_task_is_swallowed_on_stop(self) -> None:
         task_id = self.make()
         (self.store / task_id / "task.json").write_text("{not json", encoding="utf-8")
         self.assertEqual(self.fire("Stop", task_id), (0, ""))
@@ -977,13 +977,13 @@ class TaskAttentionEventsTest(unittest.TestCase):
             self.fire("UserPromptSubmit", task_id)
             self.assertIsNone(self.attention(task_id), note)
 
-    def test_mark_events_on_a_resumed_card_clear_at_the_first_tool_call(self) -> None:
+    def test_mark_events_on_a_resumed_task_clear_at_the_first_tool_call(self) -> None:
         task_id = self.make()
         self.fire("PermissionRequest", task_id, tool_name="Bash")
         self.fire("PostToolUse", task_id, tool_name="Bash")
         self.assertIsNone(self.attention(task_id))
 
-    def test_mark_events_leave_non_working_and_other_kind_cards_alone(self) -> None:
+    def test_mark_events_leave_non_working_and_other_kind_tasks_alone(self) -> None:
         cases = (
             ("to-merge", "task"), ("failed", "task"), ("working", "unit"),
         )
@@ -999,7 +999,7 @@ class TaskAttentionEventsTest(unittest.TestCase):
                 self.assertEqual(self.fire(event, task_id, **fields), (0, ""), (status, kind, event))
             self.assertEqual(task_store.read(self.store, task_id).to_json(), before, (status, kind))
 
-    def test_mark_events_print_nothing_for_a_text_card(self) -> None:
+    def test_mark_events_print_nothing_for_a_text_task(self) -> None:
         task_id = self.make()
         for event, fields in (
             ("PermissionRequest", {"tool_name": "Bash"}), ("PreToolUse", {"tool_name": "AskUserQuestion"}),
@@ -1012,7 +1012,7 @@ class TaskAttentionEventsTest(unittest.TestCase):
             def read(self, size: int = -1) -> str:
                 raise AssertionError("the hook read its input without BKF_TASK")
 
-        # An interactive session with no tmux pane is not eligible for a session card.
+        # An interactive session with no tmux pane is not eligible for a session task.
         environ = {**self.env, "CLAUDE_CODE_ENTRYPOINT": "cli"}
         environ.pop("TMUX_PANE", None)
         with contextlib.redirect_stdout(io.StringIO()) as output:

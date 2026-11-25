@@ -2,8 +2,8 @@
 
 One queue file per repository lives under the task store's `.merge` folder. Every change of it happens under
 the store's lock and bumps the store generation. The head entry in the turn state is the lock: only the head
-may land. A holder that lost its tmux window, its card or its lease, and a waiter that stopped polling, are
-recovered by `recover`, which the mutating commands run first. This module changes no git state and no card;
+may land. A holder that lost its tmux window, its task or its lease, and a waiter that stopped polling, are
+recovered by `recover`, which the mutating commands run first. This module changes no git state and no task;
 `bkf_merge` applies what `recover` reports.
 """
 
@@ -32,7 +32,7 @@ LEASE_DEFAULT_MINUTES = 60
 # The task hook renews the holder's lease at most this often, so a busy session does not write on every tool call.
 TOUCH_EVERY = timedelta(seconds=60)
 DORMANT_AFTER = timedelta(minutes=3)
-# The attention note a card gets when its place in the queue is lost.
+# The attention note a task gets when its place in the queue is lost.
 LOST_PLACE = "lost its place in the merge queue: {}"
 ENTRY_KEYS = (
     "task", "branch", "worktree", "entered", "seen", "state", "turn_since", "lease_until", "phase", "verified",
@@ -48,7 +48,7 @@ class MergeError(Exception):
 
 @dataclass(frozen=True)
 class Recovery:
-    """One entry the recovery removed: the event it recorded, the reason, and the card note (None: none)."""
+    """One entry the recovery removed: the event it recorded, the reason, and the task note (None: none)."""
 
     task: str
     event: str
@@ -57,9 +57,9 @@ class Recovery:
 
 
 class Probe(Protocol):
-    """What recovery and status ask about the outside world; the real one reads cards, tmux and git."""
+    """What recovery and status ask about the outside world; the real one reads tasks, tmux and git."""
 
-    def card_exists(self, task: str) -> bool: ...
+    def task_exists(self, task: str) -> bool: ...
 
     def window_alive(self, task: str) -> bool | None: ...
 
@@ -215,8 +215,8 @@ def _minutes(lease: timedelta) -> int:
 
 def holder_problem(entry: dict[str, Any], now: datetime, lease: timedelta, probe: Probe) -> str | None:
     """Why the turn holder cannot keep the turn, or None when it may."""
-    if not probe.card_exists(entry["task"]):
-        return "its card is gone"
+    if not probe.task_exists(entry["task"]):
+        return "its task is gone"
     if probe.window_alive(entry["task"]) is False:
         return "its tmux window is gone"
     if parse(entry["lease_until"]) <= now:
@@ -226,8 +226,8 @@ def holder_problem(entry: dict[str, Any], now: datetime, lease: timedelta, probe
 
 def waiter_problem(entry: dict[str, Any], now: datetime, probe: Probe) -> str | None:
     """Why a waiting entry is dropped, or None when it may stay."""
-    if not probe.card_exists(entry["task"]):
-        return "its card is gone"
+    if not probe.task_exists(entry["task"]):
+        return "its task is gone"
     if now - parse(entry["seen"]) > DORMANT_AFTER:
         return "it did not poll for the turn for 3 minutes"
     return None
@@ -238,7 +238,7 @@ def recover(queue: dict[str, Any], now: datetime, lease: timedelta, probe: Probe
 
     A holder whose recorded land is in phase landing is settled by its branch: an ancestor of the target means
     the land finished before it was written down; otherwise the land failed. Any other stale holder loses its
-    place, and so does a waiter that stopped polling or whose card is gone.
+    place, and so does a waiter that stopped polling or whose task is gone.
     """
     found: list[Recovery] = []
     head = holder(queue)

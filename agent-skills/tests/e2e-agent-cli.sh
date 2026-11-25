@@ -118,12 +118,12 @@ mkrepo() {
 }
 
 # A bkf task id found by its title (the newest one).
-card_by_title() {
+task_by_title() {
   bkf task list --json | python3 -c 'import json,sys
 found = [t for t in json.load(sys.stdin)["tasks"] if t["title"] == sys.argv[1]]
 print(found[-1]["id"] if found else "")' "$1"
 }
-# One field of a card: <card id> <dotted key>.
+# One field of a task: <task id> <dotted key>.
 field() {
   bkf task show "$1" --json | python3 -c 'import json,sys
 v = json.load(sys.stdin)
@@ -150,7 +150,7 @@ window_id_named() { t list-windows -t main -F '#{window_id} #{window_name}' | aw
 
 case_handoff() {
   begin "handoff from inside tmux"
-  local repo prompt out win card prefix
+  local repo prompt out win task_id prefix
   repo=$(mkrepo handoff)
   prompt=$work/handoff-prompt.md
   printf 'Handoff line one.\nLine two: "quoted" text, a $ sign that stays literal.\n' >"$prompt"
@@ -161,24 +161,24 @@ bkf task attention "$BKF_TASK" --set paused --note "handoff done"'
   win=$(spawn caller-handoff "$repo" "bkf launch claude --dir '$repo' --prompt-file '$prompt' --title 'handoff e2e' >'$out.stdout' 2>'$out.stderr'; echo \$? >'$out.rc'")
   wait_for 30 test -s "$out.rc"
   eq "$(cat "$out.rc" 2>/dev/null)" 0 "bkf launch from the window exits 0"
-  card=$(card_by_title 'handoff e2e')
-  check "the card exists" test -n "$card"
-  if [ -n "$card" ]; then
-    eq "$(head -1 "$out.stdout")" "$card" "the launch prints the card id first"
+  task_id=$(task_by_title 'handoff e2e')
+  check "the task exists" test -n "$task_id"
+  if [ -n "$task_id" ]; then
+    eq "$(head -1 "$out.stdout")" "$task_id" "the launch prints the task id first"
     wait_for 10 has_call
-    eq "$(field "$card" kind)" handoff "the card is a handoff"
-    eq "$(field "$card" status)" working "the card is working while the session runs"
-    eq "$(field "$card" session.tmux_window)" "$(window_id_named 'handoff e2e')" "the card names the window that runs it"
+    eq "$(field "$task_id" kind)" handoff "the task is a handoff"
+    eq "$(field "$task_id" status)" working "the task is working while the session runs"
+    eq "$(field "$task_id" session.tmux_window)" "$(window_id_named 'handoff e2e')" "the task names the window that runs it"
     eq "$(window_index 'handoff e2e')" "$(( $(window_index caller-handoff) + 1 ))" "the window is placed right after the caller"
     prefix=$(first_call)
     eq "$(cat "$prefix.prompt" 2>/dev/null)" "$(cat "$prompt")" "the agent got the whole prompt"
-    eq "$(env_field "$prefix" BKF_TASK)" "$card" "the agent runs with BKF_TASK set to the card"
+    eq "$(env_field "$prefix" BKF_TASK)" "$task_id" "the agent runs with BKF_TASK set to the task"
     eq "$(env_field "$prefix" BKF_DELEGATED)" unset "a handoff session is not delegated"
     eq "$(env_field "$prefix" pwd)" "$repo" "the agent starts in the folder it was given"
     touch "$work/release-handoff"
-    wait_for 20 attention_is "$card" paused
-    eq "$(field "$card" status)" working "the card stays working while it waits for its owner"
-    eq "$(field "$card" attention.note)" "handoff done" "the card keeps the note the agent gave"
+    wait_for 20 attention_is "$task_id" paused
+    eq "$(field "$task_id" status)" working "the task stays working while it waits for its owner"
+    eq "$(field "$task_id" attention.note)" "handoff done" "the task keeps the note the agent gave"
   fi
   unbehave claude
   end
@@ -196,10 +196,10 @@ case_handoff_parent() {
   spawn caller-parent "$repo" "bkf launch claude --dir '$repo' --prompt-file '$prompt' --title 'child e2e' >'$out.stdout' 2>'$out.stderr'; echo \$? >'$out.rc'" "BKF_TASK=$parent" >/dev/null
   wait_for 30 test -s "$out.rc"
   eq "$(cat "$out.rc" 2>/dev/null)" 0 "bkf launch from the window exits 0"
-  child=$(card_by_title 'child e2e')
-  check "the child card exists" test -n "$child"
+  child=$(task_by_title 'child e2e')
+  check "the child task exists" test -n "$child"
   if [ -n "$child" ]; then
-    eq "$(field "$child" parent)" "$parent" "the new card's parent is the card named by BKF_TASK"
+    eq "$(field "$child" parent)" "$parent" "the new task's parent is the task named by BKF_TASK"
   fi
   end
 }
@@ -215,22 +215,22 @@ case_hook() {
   o2=$(BKF_TASK=$unit bkf hooks run task); rc2=$?
   o3=$(BKF_TASK=$unknown bkf hooks run task); rc3=$?
   eq "$rc1$rc2$rc3" 000 "the hook exits 0 for every id"
-  case "$o1" in *"This session works on task $task (task): hook task"*) ;; *) WHY="${WHY:+$WHY; }the task card gets its session text (got '$o1')" ;; esac
-  eq "$o2" "" "a unit card gets no text (its owner moves it)"
+  case "$o1" in *"This session works on task $task (task): hook task"*) ;; *) WHY="${WHY:+$WHY; }the task gets its session text (got '$o1')" ;; esac
+  eq "$o2" "" "a unit task gets no text (its owner moves it)"
   eq "$o3" "" "an unknown id gets no text"
   end
 }
 
 case_app_style() {
   begin "app-style launch from outside tmux"
-  local repo card slug session window worktree expected_session json_out prefix
+  local repo task_id slug session window worktree expected_session json_out prefix
   repo=$(mkrepo app-style)
-  card=$(bkf task new --repo "$repo" --title 'App style task')
-  slug="app-style-task-${card: -4}"
+  task_id=$(bkf task new --repo "$repo" --title 'App style task')
+  slug="app-style-task-${task_id: -4}"
   clear_calls
   unbehave claude
   json_out=$work/app.json
-  env -u TMUX -u TMUX_PANE -u TERM_PROGRAM bkf launch claude --dir "$repo" --task "$card" --no-attach --json --size 120x40 \
+  env -u TMUX -u TMUX_PANE -u TERM_PROGRAM bkf launch claude --dir "$repo" --task "$task_id" --no-attach --json --size 120x40 \
     >"$json_out" 2>"$work/app.err"
   eq "$?" 0 "the launch exits 0 ($(cat "$work/app.err" | head -1))"
   session=$(json_field "$json_out" session)
@@ -242,7 +242,7 @@ print(slug + "-" + hashlib.sha1(repo.encode()).hexdigest()[:6])' "$repo")
   eq "$session" "$expected_session" "the session is <slug>-<hash6> of the repository"
   eq "$(bkf launch --session-name --dir "$repo")" "$session" "--session-name prints the same session"
   eq "$(t list-windows -t "=$session" 2>/dev/null | wc -l | tr -d ' ')" 1 "the session has exactly one window"
-  eq "$(json_field "$json_out" task)" "$card" "--json names the card"
+  eq "$(json_field "$json_out" task)" "$task_id" "--json names the task"
   eq "$(json_field "$json_out" worktree)" "$repo/.claude/worktrees/$slug" "the worktree is under the repository's .claude/worktrees"
   eq "$(json_field "$json_out" branch)" "task/$slug" "the branch is task/<slug>"
   check "the worktree exists" test -d "$repo/.claude/worktrees/$slug"
@@ -250,12 +250,12 @@ print(slug + "-" + hashlib.sha1(repo.encode()).hexdigest()[:6])' "$repo")
   prefix=$(first_call)
   worktree=$repo/.claude/worktrees/$slug
   eq "$(env_field "$prefix" pwd)" "$(cd "$worktree" 2>/dev/null && pwd -P)" "the agent runs in the task worktree"
-  eq "$(env_field "$prefix" BKF_TASK)" "$card" "the agent runs with BKF_TASK set to the card"
+  eq "$(env_field "$prefix" BKF_TASK)" "$task_id" "the agent runs with BKF_TASK set to the task"
   check "the worktree folder is excluded in the repository" bash -c \
     'grep -qx "/.claude/worktrees/" "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir)/info/exclude"' _ "$repo"
-  eq "$(field "$card" status)" working "the card is working"
-  eq "$(field "$card" session.tmux_session)" "$session" "the card names the session"
-  eq "$(field "$card" session.tmux_window)" "$window" "the card names the window"
+  eq "$(field "$task_id" status)" working "the task is working"
+  eq "$(field "$task_id" session.tmux_session)" "$session" "the task names the session"
+  eq "$(field "$task_id" session.tmux_window)" "$window" "the task names the window"
   end
 }
 
@@ -274,15 +274,15 @@ case_delegate() {
       bash "$bkf_root/agent-skills/skills/agentic-work/scripts/delegate-run.sh" edit-ok "$prompt" >"$work/delegate-ok.out" 2>&1
   )
   eq "$?" 0 "delegate-run exits 0 for a passing agent"
-  local ok_card
-  ok_card=$(cat "$ok_runs/task" 2>/dev/null)
-  check "the run folder names its card" test -n "$ok_card"
-  if [ -n "$ok_card" ]; then
-    eq "$(field "$ok_card" status)" working "the unit card stays working while it waits for its owner"
-    eq "$(field "$ok_card" attention.reason)" paused "the unit card waits for its owner: paused"
-    eq "$(field "$ok_card" attention.note)" "1 files changed" "the card notes the changed file count"
-    eq "$(field "$ok_card" kind)" unit "the card is a unit card"
-    case "$(field "$ok_card" worktree.path)" in */.claude/worktrees/*) ;; *) WHY="${WHY:+$WHY; }the worktree is under .claude/worktrees" ;; esac
+  local ok_task
+  ok_task=$(cat "$ok_runs/task" 2>/dev/null)
+  check "the run folder names its task" test -n "$ok_task"
+  if [ -n "$ok_task" ]; then
+    eq "$(field "$ok_task" status)" working "the unit task stays working while it waits for its owner"
+    eq "$(field "$ok_task" attention.reason)" paused "the unit task waits for its owner: paused"
+    eq "$(field "$ok_task" attention.note)" "1 files changed" "the task notes the changed file count"
+    eq "$(field "$ok_task" kind)" unit "the task is a unit task"
+    case "$(field "$ok_task" worktree.path)" in */.claude/worktrees/*) ;; *) WHY="${WHY:+$WHY; }the worktree is under .claude/worktrees" ;; esac
   fi
   (
     cd "$repo" && DELEGATE_RUNS_DIR=$work/delegate-runs FAKE_STATE=$work/state/delegate-fail \
@@ -290,64 +290,64 @@ case_delegate() {
       bash "$bkf_root/agent-skills/skills/agentic-work/scripts/delegate-run.sh" edit-fail "$prompt" >"$work/delegate-fail.out" 2>&1
   )
   eq "$?" 3 "delegate-run exits with the agent's status 3"
-  local fail_card
-  fail_card=$(cat "$fail_runs/task" 2>/dev/null)
-  check "the failed run folder names its card" test -n "$fail_card"
-  if [ -n "$fail_card" ]; then
-    eq "$(field "$fail_card" status)" failed "the card is failed"
-    eq "$(field "$fail_card" exit)" 3 "the card records exit 3"
+  local fail_task
+  fail_task=$(cat "$fail_runs/task" 2>/dev/null)
+  check "the failed run folder names its task" test -n "$fail_task"
+  if [ -n "$fail_task" ]; then
+    eq "$(field "$fail_task" status)" failed "the task is failed"
+    eq "$(field "$fail_task" exit)" 3 "the task records exit 3"
   fi
   end
 }
 
 case_merge_queue() {
   begin "merge queue"
-  local repo card_a card_b wt_a wt_b branch_a branch_b
+  local repo task_a task_b wt_a wt_b branch_a branch_b
   repo=$(mkrepo merge)
-  card_a=$(bkf task new --repo "$repo" --title 'merge a')
-  card_b=$(bkf task new --repo "$repo" --title 'merge b')
-  bkf task worktree "$card_a" >/dev/null && bkf task worktree "$card_b" >/dev/null
-  wt_a=$(field "$card_a" worktree.path); branch_a=$(field "$card_a" worktree.branch)
-  wt_b=$(field "$card_b" worktree.path); branch_b=$(field "$card_b" worktree.branch)
-  check "both cards have a worktree and a branch" test -n "$wt_a" -a -n "$branch_a" -a -n "$wt_b" -a -n "$branch_b"
-  bkf task start "$card_a" --worktree "$wt_a" --branch "$branch_a" >/dev/null
-  bkf task start "$card_b" --worktree "$wt_b" --branch "$branch_b" >/dev/null
+  task_a=$(bkf task new --repo "$repo" --title 'merge a')
+  task_b=$(bkf task new --repo "$repo" --title 'merge b')
+  bkf task worktree "$task_a" >/dev/null && bkf task worktree "$task_b" >/dev/null
+  wt_a=$(field "$task_a" worktree.path); branch_a=$(field "$task_a" worktree.branch)
+  wt_b=$(field "$task_b" worktree.path); branch_b=$(field "$task_b" worktree.branch)
+  check "both tasks have a worktree and a branch" test -n "$wt_a" -a -n "$branch_a" -a -n "$wt_b" -a -n "$branch_b"
+  bkf task start "$task_a" --worktree "$wt_a" --branch "$branch_a" >/dev/null
+  bkf task start "$task_b" --worktree "$wt_b" --branch "$branch_b" >/dev/null
   printf 'a\n' >"$wt_a/feature-a.txt"
   git -C "$wt_a" add feature-a.txt
   git -C "$wt_a" -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m a
   printf 'b\n' >"$wt_b/feature-b.txt"
   git -C "$wt_b" add feature-b.txt
   git -C "$wt_b" -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m b
-  (cd "$wt_a" && BKF_TASK=$card_a bkf merge enter >"$work/mq-a-enter.out" 2>&1)
+  (cd "$wt_a" && BKF_TASK=$task_a bkf merge enter >"$work/mq-a-enter.out" 2>&1)
   eq "$?" 0 "session a enters the queue ($(head -1 "$work/mq-a-enter.out"))"
-  (cd "$wt_b" && BKF_TASK=$card_b bkf merge enter >"$work/mq-b-enter.out" 2>&1)
+  (cd "$wt_b" && BKF_TASK=$task_b bkf merge enter >"$work/mq-b-enter.out" 2>&1)
   eq "$?" 0 "session b enters behind a"
-  eq "$(field "$card_a" status)" to-merge "the card of a is to-merge once queued"
-  (cd "$wt_b" && BKF_TASK=$card_b bkf merge wait --timeout 0 >/dev/null 2>&1)
+  eq "$(field "$task_a" status)" to-merge "the task of a is to-merge once queued"
+  (cd "$wt_b" && BKF_TASK=$task_b bkf merge wait --timeout 0 >/dev/null 2>&1)
   eq "$?" 75 "b does not get the turn while a holds it"
-  (cd "$wt_a" && BKF_TASK=$card_a bkf merge wait --timeout 5 >/dev/null 2>&1)
+  (cd "$wt_a" && BKF_TASK=$task_a bkf merge wait --timeout 5 >/dev/null 2>&1)
   eq "$?" 0 "a gets the turn at once"
-  (cd "$wt_a" && BKF_TASK=$card_a bkf merge verify >/dev/null 2>&1 && BKF_TASK=$card_a bkf merge land >"$work/mq-a-land.out" 2>&1)
+  (cd "$wt_a" && BKF_TASK=$task_a bkf merge verify >/dev/null 2>&1 && BKF_TASK=$task_a bkf merge land >"$work/mq-a-land.out" 2>&1)
   eq "$?" 0 "a verifies and lands ($(tail -1 "$work/mq-a-land.out"))"
-  (cd "$wt_b" && BKF_TASK=$card_b bkf merge wait --timeout 5 >/dev/null 2>&1)
+  (cd "$wt_b" && BKF_TASK=$task_b bkf merge wait --timeout 5 >/dev/null 2>&1)
   eq "$?" 0 "b gets the turn when a has landed"
-  (cd "$wt_b" && git merge -q main -m "merge main into b" && BKF_TASK=$card_b bkf merge verify >/dev/null 2>&1 \
-    && BKF_TASK=$card_b bkf merge land >"$work/mq-b-land.out" 2>&1)
+  (cd "$wt_b" && git merge -q main -m "merge main into b" && BKF_TASK=$task_b bkf merge verify >/dev/null 2>&1 \
+    && BKF_TASK=$task_b bkf merge land >"$work/mq-b-land.out" 2>&1)
   eq "$?" 0 "b merges main, verifies and lands"
   eq "$(git -C "$repo" show main:feature-a.txt 2>/dev/null)" a "a's change is on main"
   eq "$(git -C "$repo" show main:feature-b.txt 2>/dev/null)" b "b's change is on main"
-  eq "$(bkf merge status --json --task "$card_b" | python3 -c 'import json,sys; print(json.load(sys.stdin)["task"]["in_queue"])')" False \
+  eq "$(bkf merge status --json --task "$task_b" | python3 -c 'import json,sys; print(json.load(sys.stdin)["task"]["in_queue"])')" False \
     "b is no longer in the queue"
   eq "$(bkf merge status --repo "$repo" --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["queues"][0]["entries"]))')" 0 \
     "the queue is empty"
-  bkf task close "$card_a" >/dev/null && bkf task close "$card_b" >/dev/null
-  check "closing the cards deletes them" bash -c '[ -z "$(bkf task list --repo "$1")" ]' _ "$repo"
+  bkf task close "$task_a" >/dev/null && bkf task close "$task_b" >/dev/null
+  check "closing the tasks deletes them" bash -c '[ -z "$(bkf task list --repo "$1")" ]' _ "$repo"
   end
 }
 
 case_plan() {
   begin "plan run"
-  local repo plan_dir plan_runs run_card unit_card
+  local repo plan_dir plan_runs run_task unit_task
   repo=$(mkrepo plan)
   plan_dir=$work/plan
   mkdir -p "$plan_dir" "$work/guides" "$work/state/plan"
@@ -364,13 +364,13 @@ case_plan() {
       "$plan_dir/goal.md" "$plan_dir/plan.txt" >"$work/plan.out" 2>"$work/plan.err"
   )
   eq "$?" 0 "plan-run exits 0 ($(head -1 "$work/plan.err"))"
-  run_card=$(cat "$plan_runs/sample/task" 2>/dev/null)
-  unit_card=$(cat "$plan_runs/sample/01-unit/task" 2>/dev/null)
-  check "the run and unit cards exist" test -n "$run_card" -a -n "$unit_card"
-  if [ -n "$run_card" ] && [ -n "$unit_card" ]; then
-    eq "$(field "$run_card" status)" working "the run card stays working at the final report"
-    eq "$(field "$run_card" attention.reason)" paused "the run card waits for its owner: paused"
-    check "the passed unit's card is closed" bash -c '! bkf task show "$1" >/dev/null 2>&1' _ "$unit_card"
+  run_task=$(cat "$plan_runs/sample/task" 2>/dev/null)
+  unit_task=$(cat "$plan_runs/sample/01-unit/task" 2>/dev/null)
+  check "the run and unit tasks exist" test -n "$run_task" -a -n "$unit_task"
+  if [ -n "$run_task" ] && [ -n "$unit_task" ]; then
+    eq "$(field "$run_task" status)" working "the run task stays working at the final report"
+    eq "$(field "$run_task" attention.reason)" paused "the run task waits for its owner: paused"
+    check "the passed unit's task is closed" bash -c '! bkf task show "$1" >/dev/null 2>&1' _ "$unit_task"
   fi
   end
 }
