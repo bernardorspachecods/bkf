@@ -37,7 +37,7 @@ STOPWORDS = frozenset(
 WORD = re.compile(r"[^\W_]+", re.UNICODE)
 HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-INDEX_SCHEMA = 2
+INDEX_SCHEMA = 3
 _CACHE_NOTICE: str | None = None
 
 
@@ -469,6 +469,11 @@ def _open_index(path: Path) -> sqlite3.Connection:
             CREATE VIRTUAL TABLE section_tags USING fts5(tags, tokenize='porter unicode61');
         """)
         connection.execute(f"PRAGMA user_version = {INDEX_SCHEMA}")
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS passage_vectors ("
+        "model TEXT NOT NULL, text_sha256 TEXT NOT NULL, dimension INTEGER NOT NULL, vector BLOB NOT NULL, "
+        "PRIMARY KEY(model, text_sha256))"
+    )
     return connection
 
 
@@ -705,6 +710,137 @@ def rank_passages(
         indexed = _search(sections, terms, None, phrases, include_previews=False)
     ranked = [RankedPassage(section, -score) for section, score in indexed]
     return ranked if depth is None else ranked[:depth]
+
+
+def _embedder(model: str):
+    """Create fastembed lazily, keeping model files beside the search cache."""
+    from bkf_common import BKFInputError
+
+    try:
+        from fastembed import TextEmbedding
+    except ImportError as exc:
+        raise BKFInputError(
+            "vector search requires fastembed; install it with: "
+            "uv tool install --editable ./bkf/tooling --with fastembed --reinstall"
+        ) from exc
+    return TextEmbedding(model_name=model, cache_dir=str(_cache_directory() / "models"))
+
+
+def _embedded_text(section: Section) -> str:
+    if section.kind == "text":
+        return section.context[:300] + "\n" + section.body
+    return section.heading + "\n" + section.body
+
+
+def _normalise(vector) -> list[float]:
+    values = [float(value) for value in vector]
+    norm = sum(value * value for value in values) ** 0.5
+    if not values or not norm:
+        raise ValueError("embedder returned an empty or zero vector")
+    return [value / norm for value in values]
+
+
+def _vector_similarity(query: list[float], vectors: list[list[float]]) -> list[float]:
+    try:
+        import numpy as np
+    except ImportError:
+        return [sum(left * right for left, right in zip(query, vector)) for vector in vectors]
+    query_array = np.asarray(query, dtype=np.float64)
+    matrix = np.asarray(vectors, dtype=np.float64)
+    return [float(score) for score in matrix @ query_array]
+
+
+def _vector_cache(root: Path) -> sqlite3.Connection | None:
+    cache_dir = _cache_directory()
+    try:
+        if cache_dir.resolve().is_relative_to(root.resolve()):
+            return None
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        path = cache_dir / (hashlib.sha256(str(root.resolve()).encode()).hexdigest() + ".sqlite3")
+        connection = _open_index(path)
+        return connection
+    except (OSError, sqlite3.Error):
+        return None
+
+
+def vector_rank(
+    root: Path, question: str, *, scope: Path | None = None, heading: str | None = None,
+    tags: list[str] | None = None, passages: str = "all", depth: int | None = None,
+    on_document_error=None,
+) -> list[RankedPassage]:
+    """Rank filtered passages by cosine similarity, computing and caching missing vectors."""
+    if passages not in {"all", "sections", "text"}:
+        raise ValueError("passages must be all, sections, or text")
+    from bkf_common import BKFInputError, find_bundles, in_nested_bundle, is_bundle_root_map
+    from search_attached import embeddings_config
+
+    bundles = list(find_bundles(root))
+    if not bundles:
+        raise BKFInputError(f"no BKF bundle contains {root}")
+    # The caller supplies the outermost bundle root; its config owns the model.
+    config = embeddings_config(root)
+    embedder = _embedder(config.model)
+    vocabularies = _vocabularies(root, find_bundles)
+    sections = _collect_sections(root, find_bundles, is_bundle_root_map, in_nested_bundle,
+                                 vocabularies, scope, tags, on_document_error)
+    if passages != "all":
+        kind = "section" if passages == "sections" else "text"
+        sections = [section for section in sections if section.kind == kind]
+    if heading is not None:
+        wanted = heading.strip().casefold()
+        sections = [section for section in sections if section.kind == "section" and section.title.casefold() == wanted]
+    if not sections:
+        return []
+
+    embedded = [_embedded_text(section) for section in sections]
+    keys = [hashlib.sha256(text.encode("utf-8")).hexdigest() for text in embedded]
+    connection = _vector_cache(root)
+    import array
+    cached: dict[str, list[float]] = {}
+    if connection is not None:
+        try:
+            cached = {
+                key: list(array.array("f", blob))
+                for key, blob in connection.execute(
+                    "SELECT text_sha256, vector FROM passage_vectors WHERE model = ?", (config.model,)
+                )
+            }
+        except sqlite3.Error:
+            connection.close()
+            connection = None
+            cached = {}
+    missing_by_key = {key: value for key, value in zip(keys, embedded) if key not in cached}
+    missing = list(missing_by_key.items())
+    try:
+        if len(missing) > 200:
+            print(f"embedding {len(missing)} passages…", file=sys.stderr)
+        for start in range(0, len(missing), 128):
+            batch = missing[start:start + 128]
+            vectors = [_normalise(vector) for vector in embedder.embed([text for _, text in batch])]
+            if len(vectors) != len(batch):
+                raise ValueError("embedder returned the wrong number of passage vectors")
+            cached.update((key, vector) for (key, _), vector in zip(batch, vectors))
+            if connection is not None:
+                connection.executemany(
+                    "INSERT OR REPLACE INTO passage_vectors(model, text_sha256, dimension, vector) VALUES (?, ?, ?, ?)",
+                    ((config.model, key, len(vector), array.array("f", vector).tobytes())
+                     for (key, _), vector in zip(batch, vectors)),
+                )
+                connection.commit()
+        query_rows = list(embedder.query_embed([question]))
+        if len(query_rows) != 1:
+            raise ValueError("embedder returned the wrong number of query vectors")
+        query_vector = list(array.array("f", _normalise(query_rows[0])))
+        vectors = [cached[key] for key in keys]
+        if any(len(vector) != len(query_vector) for vector in vectors):
+            raise ValueError("embedder returned vectors with inconsistent dimensions")
+        scores = _vector_similarity(query_vector, vectors)
+        ranked = [RankedPassage(section, score) for section, score in zip(sections, scores)]
+        ranked.sort(key=lambda hit: (-hit.score, hit.section.path, hit.section.heading, hit.section.body[:80]))
+        return ranked if depth is None else ranked[:depth]
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 def group_documents(ranked: list[RankedPassage], *, limit: int, per_document: int = 2) -> list[DocumentHit]:

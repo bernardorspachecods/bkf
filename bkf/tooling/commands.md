@@ -717,9 +717,13 @@ sidecar files. Validation checks the configuration only; it does not check
 whether document patterns match files or whether sidecars exist.
 
 The top level is a mapping. It accepts `attached_text`, a list defaulting to
-`[]`, and `embeddings`, an optional mapping reserved for the future hybrid
-search mode. Unknown keys are errors. YAML duplicate keys and invalid YAML are
-errors.
+`[]`, and `embeddings`, an optional mapping. Unknown keys are errors. YAML
+duplicate keys and invalid YAML are errors.
+
+`embeddings` accepts `model`, a non-empty model name defaulting to
+`BAAI/bge-small-en-v1.5`, and `mode`, either `lexical` (the default) or
+`hybrid`. The model is selected from the outermost bundle root's configuration.
+`mode` sets the default for `--mode` when that search option is available.
 
 Each `attached_text` item is a mapping with these keys:
 

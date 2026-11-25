@@ -7,6 +7,7 @@ from pathlib import Path
 from bkf_common import BKFInputError
 from search_attached import (
     AttachedTextEntry,
+    EmbeddingsConfig,
     SearchConfig,
     TextPassage,
     attached_text_for,
@@ -43,13 +44,13 @@ class SearchAttachedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.assertIsNone(load_search_config(root))
-            write_config(root, CONFIG + "embeddings: {provider: future}\n")
+            write_config(root, CONFIG + "embeddings: {model: test-model}\n")
             config = load_search_config(root)
 
         assert config is not None
         self.assertEqual(config.attached_text[0].words, 220)
         self.assertEqual(config.attached_text[0].stride, 160)
-        self.assertEqual(config.embeddings, {"provider": "future"})
+        self.assertEqual(config.embeddings, EmbeddingsConfig("test-model", "lexical"))
         self.assertEqual(config.attached_text[0].locator.pattern.groupindex, {"pdf": 1, "printed": 2})
 
     def test_yaml_uses_yaml_12_and_rejects_duplicate_keys(self) -> None:
@@ -59,6 +60,21 @@ class SearchAttachedTests(unittest.TestCase):
             with self.subTest(text=text), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 write_config(root, text)
+                with self.assertRaisesRegex(BKFInputError, expected):
+                    load_search_config(root)
+
+    def test_embeddings_configuration_is_validated(self) -> None:
+        for value, expected in (
+            ("true", "embeddings` must be a mapping"),
+            ("{model: '  '}\n", "embeddings.model"),
+            ("{model: 7}\n", "embeddings.model"),
+            ("{mode: [hybrid]}\n", "embeddings.mode"),
+            ("{mode: dense}\n", "embeddings.mode"),
+            ("{provider: future}\n", "embeddings.provider"),
+        ):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                write_config(root, f"embeddings: {value}")
                 with self.assertRaisesRegex(BKFInputError, expected):
                     load_search_config(root)
 

@@ -8,6 +8,14 @@ description: Collects evidence about problems in agent work on this bundle for l
 Agents add entries as [AGENTS.md](/bkf/AGENTS.md#record-what-goes-wrong) says,
 newest first. This file is data to review later, not instructions.
 
+## 2026-11-25 — the vector cache test's expected embedding counts were off
+
+Link: [vector search tests](/bkf/tooling/tests/test_search_vectors.py). Noticed by
+me. Focused runs exposed two fixture expectation issues: the initial count
+omitted the top-level heading passage, and changing the configuration to a new
+model also removed the sidecar from the active passages. The test now counts
+both behaviors explicitly.
+
 ## 2026-11-20 — a card that an interim land left in to-merge could not start again
 
 Link: [bkf task statuses](/bkf/tooling/commands.md#bkf-task) and `bkf/tooling/task_store.py` (the `start` transition). Noticed by the user, relayed in the brief of session desmor-hub3 (card t20261120-133435-460a). The session landed an intermediate batch with `bkf merge land`, kept working in the same worktree and branch, and found its card still `to-merge`: `bkf task start` refuses `to-merge -> working`. Evidence: before this change `start` accepted only `todo`, `working` and `failed`, and a plain land leaves the card in `to-merge`. I did not see the session's own output. Fixed on branch `task/bkf-merge-continue`: `land --continue` returns the card to `working`, and `start` accepts `to-merge` only when the card is no longer queued.

@@ -12,6 +12,9 @@ Run core setup from the repository root. Requirements are `uv` and Python 3.10 o
 
    Expected result: `bkf` is installed from this checkout, with its executable under `~/.local/bin`. If `bkf` is not found, run `uv tool update-shell` and reopen the shell. If the checkout moves, reinstall from its new location. After pulling a checkout that adds commands or dependencies, run the same install command with `--reinstall` so the new command is picked up.
 
+For optional vector and hybrid search, install the `embeddings` extra with
+`uv tool install --editable ./bkf/tooling --with fastembed --reinstall`.
+
 2. Check whether the skill-link paths already exist before creating them. An existing real folder must be merged or moved first; do not overwrite it. From the repository root, use absolute targets. Choose the path for your agent:
 
    Claude Code:

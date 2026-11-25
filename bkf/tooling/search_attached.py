@@ -39,7 +39,13 @@ class AttachedTextEntry:
 @dataclass(frozen=True)
 class SearchConfig:
     attached_text: tuple[AttachedTextEntry, ...]
-    embeddings: dict | None
+    embeddings: EmbeddingsConfig | None
+
+
+@dataclass(frozen=True)
+class EmbeddingsConfig:
+    model: str = "BAAI/bge-small-en-v1.5"
+    mode: str = "lexical"
 
 
 @dataclass(frozen=True)
@@ -171,10 +177,24 @@ def load_search_config(bundle_root: Path) -> SearchConfig | None:
         if isinstance(stride, bool) or not isinstance(stride, int) or not 0 < stride <= words:
             raise _fail(f"{prefix}.chunk.stride", "must be an integer with 0 < stride <= words")
         entries.append(AttachedTextEntry(documents, text_path, locator, words, stride))
-    embeddings = data.get("embeddings")
-    if embeddings is not None and not isinstance(embeddings, dict):
-        raise _fail("embeddings", "must be a mapping")
+    embeddings = None
+    if "embeddings" in data:
+        raw_embeddings = _mapping(data["embeddings"], "embeddings")
+        _unknown_keys(raw_embeddings, {"model", "mode"}, "embeddings")
+        model = raw_embeddings.get("model", "BAAI/bge-small-en-v1.5")
+        if not isinstance(model, str) or not model.strip():
+            raise _fail("embeddings.model", "must be a non-empty string")
+        mode = raw_embeddings.get("mode", "lexical")
+        if not isinstance(mode, str) or mode not in {"lexical", "hybrid"}:
+            raise _fail("embeddings.mode", "must be `lexical` or `hybrid`")
+        embeddings = EmbeddingsConfig(model.strip(), mode)
     return SearchConfig(tuple(entries), embeddings)
+
+
+def embeddings_config(root: Path) -> EmbeddingsConfig:
+    """Return the configured embeddings model for a bundle, or its defaults."""
+    config = load_search_config(root)
+    return config.embeddings if config is not None and config.embeddings is not None else EmbeddingsConfig()
 
 
 def _glob_regex(pattern: str) -> re.Pattern[str]:
