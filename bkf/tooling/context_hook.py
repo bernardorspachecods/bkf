@@ -9,9 +9,11 @@ from pathlib import Path
 
 import hook_events
 
-DEFAULT_WARN_PERCENT = 40
+DEFAULT_WARN_PERCENT = 45
 DEFAULT_COMPACT_PERCENT = 55
 DEFAULT_WINDOW_TOKENS = 1_000_000
+# The final warning comes this many points before compaction, when the note must match the current state.
+FINAL_MARGIN_PERCENT = 3
 TITLE_TAIL_BYTES = hook_events.TITLE_TAIL_BYTES
 
 
@@ -101,6 +103,7 @@ def handle(data: dict, home: Path | None = None) -> dict | None:
     session_id = data.get("session_id", "")
     state_dir = home / ".agent-hooks" / "state"
     warned = hook_events._state(session_id, "context-warned", state_dir)
+    final = hook_events._state(session_id, "context-final", state_dir)
 
     if event == "SessionStart":
         if data.get("source") != "compact":
@@ -129,6 +132,7 @@ def handle(data: dict, home: Path | None = None) -> dict | None:
         elif warned.exists():
             output = {"systemMessage": "bkf context: compacted without a continuation message"}
         warned.unlink(missing_ok=True)
+        final.unlink(missing_ok=True)
         hook_events._prune(state_dir)
         return output
 
@@ -142,17 +146,32 @@ def handle(data: dict, home: Path | None = None) -> dict | None:
         return None
     config = load_config(home)
     percent = usage["input_tokens"] / config["window_tokens"] * 100
-    if percent < config["warn_percent"] or warned.exists():
+    final_percent = config["compact_percent"] - FINAL_MARGIN_PERCENT
+    if percent < config["warn_percent"]:
         return None
     continuation = _context_path(home, session_id)
-    message = (
-        f"Context is at {round(percent)}% of the window. This session will be compacted automatically at "
-        f"about {config['compact_percent']}%. At the next safe point (not in the middle of an edit), read "
-        "~/.claude/skills/before-context-loss/SKILL.md and follow its automatic mode: write to documents what the work "
-        f"needs to continue, then write the continuation message to {continuation} (absolute path), overwriting it if "
-        "the work changes later. Then carry on with the task; do not ask the user to compact."
-    )
-    warned.parent.mkdir(parents=True, exist_ok=True)
-    warned.write_text("warned\n", encoding="utf-8")
-    hook_events._prune(warned.parent)
+    if not warned.exists():
+        message = (
+            f"BKF context hook: context is at {round(percent)}% of the window. This session will be compacted "
+            f"automatically at about {config['compact_percent']}%. At the next safe point (not in the middle of an edit), "
+            "read ~/.claude/skills/before-context-loss/SKILL.md and follow its automatic mode: write to documents what "
+            f"the work needs to continue, then write the continuation message to {continuation} (absolute path). A "
+            "second warning comes just before compaction to bring it up to date. Then carry on with the task; do not "
+            "ask the user to compact."
+        )
+        marks = [warned, final] if percent >= final_percent else [warned]
+    elif percent >= final_percent and not final.exists():
+        message = (
+            f"BKF context hook: context is at {round(percent)}% of the window; compaction at about "
+            f"{config['compact_percent']}% is a few turns away. At the next safe point, rewrite the continuation "
+            f"message at {continuation} so it matches the current state: what is done, what is in progress, and the "
+            "next step, pointing to the documents that hold the details. Then carry on with the task."
+        )
+        marks = [final]
+    else:
+        return None
+    for mark in marks:
+        mark.parent.mkdir(parents=True, exist_ok=True)
+        mark.write_text("warned\n", encoding="utf-8")
+    hook_events._prune(state_dir)
     return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": message}}

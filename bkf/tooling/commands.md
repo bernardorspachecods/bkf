@@ -609,12 +609,15 @@ group targets Claude Code only. A tool whose folder is missing is skipped.
 
 - **context** registers Claude Code `PostToolUse`, `UserPromptSubmit` and
   `SessionStart` hooks. At the configured warning percentage it tells the
-  agent to write a continuation note in `~/.agent-hooks/continue/`. After
+  agent to write a continuation note in `~/.agent-hooks/continue/`. Three
+  points before the compaction percentage it warns once more, telling the
+  agent to rewrite the note so it matches the current state; when one call
+  crosses both percentages, only the first warning is sent. After
   compaction, the next session start resumes from that note and moves it to
   the `continue/used/` archive. If the note is missing after a warning, it
   sends a `systemMessage`. Subagent tool calls are ignored. `--context-warn PCT`,
   `--context-compact PCT` and `--context-window TOKENS` set the warning and
-  compaction percentages and the context window; defaults are 40, 55 and
+  compaction percentages and the context window; defaults are 45, 55 and
   1000000 (the 1M window of Opus and Sonnet). Percentages must be 1–99, warn must be below compact, and the window
   must be at least 1000. These values are merged into
   `~/.agent-hooks/context.json`. The group sets `autoCompactEnabled: true`,
