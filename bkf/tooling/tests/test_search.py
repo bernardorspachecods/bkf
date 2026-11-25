@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+import os
 import subprocess
 import sys
 import tempfile
@@ -12,6 +14,9 @@ TOOLING = Path(__file__).resolve().parents[1]
 CLI = TOOLING / "bkf_cli.py"
 sys.path.insert(0, str(TOOLING))
 import search
+
+_SEARCH_CACHE = tempfile.TemporaryDirectory()
+os.environ["BKF_SEARCH_CACHE"] = _SEARCH_CACHE.name
 
 
 def map_text(*, root: bool = False) -> str:
@@ -39,6 +44,7 @@ def run(root: Path, *arguments: str, cwd: Path = TOOLING) -> subprocess.Complete
         check=False,
         capture_output=True,
         text=True,
+        env={**os.environ, "BKF_SEARCH_CACHE": _SEARCH_CACHE.name},
     )
 
 
@@ -280,12 +286,123 @@ Last content.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             make_bundle(root)
-            with patch.object(search, "_collect_sections", side_effect=RuntimeError("failed to read")):
+            with patch.object(search, "_persistent_search", side_effect=RuntimeError("failed to read")):
                 with patch("sys.stderr", new_callable=lambda: _TextStream()) as stderr:
                     result = search.main(["topic", "--cwd", str(root)])
 
         self.assertEqual(result, 1)
         self.assertIn("bkf search: failed to read", stderr.output)
+
+
+class PersistentIndexTests(unittest.TestCase):
+    def make_root(self, root: Path) -> Path:
+        make_bundle(root)
+        (root / "guide.md").write_text(document("Guide", "oldneedle"), encoding="utf-8")
+        return root
+
+    def test_document_edit_and_removal_refresh_hits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_root(Path(directory))
+            self.assertIn("/guide.md", run(root, "oldneedle").stdout)
+            (root / "guide.md").write_text(document("Guide", "newneedle and longer"), encoding="utf-8")
+            self.assertIn("/guide.md", run(root, "newneedle").stdout)
+            self.assertEqual(run(root, "oldneedle").stdout, "no sections match\n")
+            (root / "guide.md").unlink()
+            self.assertEqual(run(root, "newneedle").stdout, "no sections match\n")
+
+    def test_sidecar_add_edit_remove_and_config_edit_refresh_hits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_root(Path(directory))
+            (root / "search.yaml").write_text(
+                "attached_text:\n  - documents: '*.md'\n    text: '{stem}.txt'\n", encoding="utf-8"
+            )
+            self.assertEqual(run(root, "sidecarfirst").stdout, "no sections match\n")
+            (root / "guide.txt").write_text("sidecarfirst", encoding="utf-8")
+            self.assertIn("/guide.md", run(root, "sidecarfirst").stdout)
+            (root / "guide.txt").write_text("sidecarsecond", encoding="utf-8")
+            self.assertIn("/guide.md", run(root, "sidecarsecond").stdout)
+            self.assertEqual(run(root, "sidecarfirst").stdout, "no sections match\n")
+            (root / "search.yaml").write_text(
+                "attached_text:\n  - documents: '*.md'\n    text: 'alternate.txt'\n", encoding="utf-8"
+            )
+            (root / "alternate.txt").write_text("configchanged", encoding="utf-8")
+            self.assertIn("/guide.md", run(root, "configchanged").stdout)
+            (root / "alternate.txt").unlink()
+            self.assertEqual(run(root, "configchanged").stdout, "no sections match\n")
+
+    def test_unchanged_call_parses_no_member_document(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_root(Path(directory))
+            (root / "untracked.md").write_text("plain text", encoding="utf-8")
+            (root / "feedback.md").write_text(document("Feedback", "plain", profile="feedback"), encoding="utf-8")
+            self.assertTrue(any(hit.path == "/guide.md" for hit, _ in search.search_bundle(root, "oldneedle", limit=5)))
+            from bkf_common import parse_markdown
+            parsed_paths = []
+
+            def record_parse(path):
+                parsed_paths.append(Path(path))
+                return parse_markdown(path)
+
+            with patch("bkf_common.parse_markdown", side_effect=record_parse):
+                self.assertTrue(any(hit.path == "/guide.md" for hit, _ in search.search_bundle(root, "oldneedle", limit=5)))
+            self.assertTrue(all(path.name == "MAP.md" for path in parsed_paths), parsed_paths)
+
+    def test_changed_documents_are_indexed_after_one_membership_walk(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_root(Path(directory))
+            search.search_bundle(root, "oldneedle", limit=5)
+            (root / "guide.md").write_text(document("Guide", "changedneedle"), encoding="utf-8")
+            with patch.object(search, "_candidate_documents", wraps=search._candidate_documents) as candidates:
+                hits = search.search_bundle(root, "changedneedle", limit=5)
+            self.assertEqual(candidates.call_count, 1)
+            self.assertTrue(any(hit.path == "/guide.md" for hit, _ in hits))
+
+    def test_corrupt_cache_is_rebuilt_and_unavailable_cache_falls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_root(Path(directory))
+            cache_root = Path(_SEARCH_CACHE.name)
+            cache_path = cache_root / (search.hashlib.sha256(str(root.resolve()).encode()).hexdigest() + ".sqlite3")
+            cache_path.write_bytes(b"not a sqlite database")
+            self.assertIn("/guide.md", run(root, "oldneedle").stdout)
+            self.assertIn(b"SQLite", cache_path.read_bytes()[:200])
+            with tempfile.NamedTemporaryFile() as occupied:
+                result = subprocess.run(
+                    [sys.executable, str(CLI), "search", "oldneedle", "--cwd", str(root)],
+                    check=False, capture_output=True, text=True,
+                    env={**os.environ, "BKF_SEARCH_CACHE": occupied.name},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("/guide.md", result.stdout)
+                self.assertEqual(result.stderr, "")
+                result = subprocess.run(
+                    [sys.executable, str(CLI), "search", "oldneedle", "--cwd", str(root), "--debug"],
+                    check=False, capture_output=True, text=True,
+                    env={**os.environ, "BKF_SEARCH_CACHE": occupied.name},
+                )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("/guide.md", result.stdout)
+            self.assertIn("using memory", result.stderr)
+            self.assertEqual(len(result.stderr.splitlines()), 1)
+
+    def test_broken_frontmatter_is_reported_again_on_second_call(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_root(Path(directory))
+            (root / "guide.md").write_text("---\n: [ broken\n---\nneedle\n", encoding="utf-8")
+            for _ in range(2):
+                result = run(root, "needle")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("guide.md", result.stderr)
+
+    def test_two_processes_can_build_the_same_index(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.make_root(Path(directory))
+            def invoke() -> subprocess.CompletedProcess[str]:
+                return run(root, "oldneedle")
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: invoke(), range(2)))
+        for result in results:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("/guide.md", result.stdout)
 
 
 VOCABULARY = """\
@@ -508,11 +625,19 @@ class FilterTests(unittest.TestCase):
             from_subdirectory = subprocess.run(
                 [sys.executable, str(CLI), "search", "needle", "--path", ".", "--cwd", str(root / "sub"), "--limit", "20"],
                 check=False, capture_output=True, text=True,
+                env={**os.environ, "BKF_SEARCH_CACHE": _SEARCH_CACHE.name},
             )
 
         self.assertEqual(set(paths(directory_result)), {"/sub/inner.md"})
         self.assertEqual(set(paths(file_result)), {"/outer.md"})
         self.assertEqual(set(paths(from_subdirectory)), {"/sub/inner.md"})
+
+    def test_path_dot_at_bundle_root_keeps_all_members(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make(root)
+            result = run(root, "needle", "--path", ".", "--limit", "20")
+        self.assertEqual(set(paths(result)), {"/outer.md", "/sub/inner.md", "/sub2.md"})
 
     def test_path_outside_the_bundle_is_a_usage_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -539,6 +664,14 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(paths(deep), ["/outer.md"])
         self.assertIn("§ Outer > Rules > Deep", deep.stdout)
         self.assertEqual(trail.stdout, "no sections match\n")
+
+    def test_heading_filter_casefolds_unicode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+            (root / "guide.md").write_text(document("Überblick", "needle"), encoding="utf-8")
+            result = run(root, "needle", "--heading", "überblick")
+        self.assertEqual(paths(result), ["/guide.md"])
 
     def test_tag_filter_requires_all_tags(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -648,7 +648,12 @@ one-time review of new hooks, so run `/hooks` in Codex after the first install.
 [--tag TAG]... [--debug]` searches sections in
 the outermost bundle containing the selected directory, including nested
 bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
-The index is rebuilt in memory for each call.
+Search uses a persistent SQLite index outside the repository: `$BKF_SEARCH_CACHE`
+when set, otherwise `${XDG_CACHE_HOME:-~/.cache}/bkf/search/`, with one file
+per resolved bundle root. Each call re-indexes only documents whose Markdown,
+attached text sidecar, or `search.yaml` changed. If the cache cannot be used,
+search falls back to an in-memory index for that call; `--debug` prints one
+cache diagnostic to stderr.
 
 The index includes tracked BKF documents and every `AGENTS.md`. It excludes
 `MAP.md`, feedback and ideas profiles, untracked files, the bundle-root

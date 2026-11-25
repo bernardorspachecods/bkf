@@ -61,7 +61,7 @@ To add a command, give it an entry in `COMMANDS` in [bkf_cli.py](/bkf/tooling/bk
 - [bkf_cli.py](/bkf/tooling/bkf_cli.py) — Dispatches the installed `bkf` command to the focused tooling modules.
 - [pyproject.toml](/bkf/tooling/pyproject.toml) — Declares the installable BKF tooling package, dependencies, and `bkf` command entry point.
 - [orient.py](/bkf/tooling/orient.py) — Prints the map chain and validation health for session-start orientation.
-- [search.py](/bkf/tooling/search.py) — Searches indexed BKF document sections with an in-memory FTS5 index.
+- [search.py](/bkf/tooling/search.py) — Maintains the persistent per-bundle SQLite FTS5 search index and falls back to an in-memory index when the cache is unavailable.
 - [search_attached.py](/bkf/tooling/search_attached.py) — Loads attached-text search configuration and cuts sidecars into located passages.
 - [bkf_sources.py](/bkf/tooling/bkf_sources.py) — Handles the sources command arguments and exit statuses.
 - [source_hooks.py](/bkf/tooling/source_hooks.py) — Looks up and captures sources during Claude Code web tool calls.

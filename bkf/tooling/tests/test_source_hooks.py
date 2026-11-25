@@ -37,7 +37,9 @@ class SourceHooksTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve() / "store"
-        environment = patch.dict(os.environ, {"BKF_SOURCES_DIR": str(self.root)})
+        environment = patch.dict(os.environ, {
+            "BKF_SOURCES_DIR": str(self.root), "BKF_SEARCH_CACHE": str(Path(temporary.name) / "search-cache"),
+        })
         environment.start()
         self.addCleanup(environment.stop)
         init_store()
