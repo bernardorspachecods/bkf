@@ -221,7 +221,7 @@ def list_tasks(store: Path) -> TaskList:
 
 
 def _attach_legacy_session_ids(store: Path, tasks: list[Task]) -> None:
-    """Expose an old link only when it is the sole UUID for a card without a recorded current UUID."""
+    """Expose an old link only when it is the sole UUID for a task without a recorded current UUID."""
     folder = Path(store) / SESSIONS_FOLDER
     try:
         files = list(folder.glob("*.json"))
@@ -324,8 +324,8 @@ def start(
 ) -> None:
     """Begin a run on the task. A working task may begin again (a rerun): that clears its attention.
 
-    A to-merge card may begin too, as a safety net for a card that a session left in to-merge after landing.
-    The command refuses it while the card still holds an entry in the merge queue (bkf_task does that check).
+    A to-merge task may begin too, as a safety net for a task that a session left in to-merge after landing.
+    The command refuses it while the task still holds an entry in the merge queue (bkf_task does that check).
     """
     _require(task, ("todo", "working", "failed", "to-merge"), "working")
     task.status = "working"
