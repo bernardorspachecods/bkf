@@ -134,16 +134,18 @@ def recall(docs: list[str], relevance: dict[str, int], *, k: int, minimum_grade:
     return sum(path in docs[:k] for path in relevant) / len(relevant)
 
 
-def _available_modes(root: Path) -> list[str]:
-    config = load_search_config(root)
-    modes = ["lexical"]
+def _fastembed_available() -> bool:
     try:
         from fastembed import TextEmbedding  # noqa: F401
     except ImportError:
-        fastembed_available = False
-    else:
-        fastembed_available = True
-    if fastembed_available and config is not None and config.embeddings is not None:
+        return False
+    return True
+
+
+def _available_modes(root: Path) -> list[str]:
+    config = load_search_config(root)
+    modes = ["lexical"]
+    if _fastembed_available() and config is not None and config.embeddings is not None:
         modes.extend(("vector", "hybrid"))
     return modes
 
@@ -231,14 +233,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"bkf search-eval: --path is outside the bundle: {args.path}", file=sys.stderr)
                 return 2
         modes = list(dict.fromkeys(args.mode)) if args.mode else _available_modes(root)
-        available = _available_modes(root)
-        unavailable = [mode for mode in modes if mode not in available]
-        if unavailable:
+        requested_embedding_mode = next((mode for mode in modes if mode in ("vector", "hybrid")), None)
+        if requested_embedding_mode is not None and not _fastembed_available():
             message = (
-                "vector and hybrid search require fastembed and an embeddings section in the outermost "
-                "search.yaml; install with: uv tool install --editable ./bkf/tooling --with fastembed --reinstall"
+                "vector and hybrid search require fastembed; install with: "
+                "uv tool install --editable ./bkf/tooling --with fastembed --reinstall"
             )
-            raise RuntimeError(f"mode {unavailable[0]!r} cannot run: {message}")
+            raise RuntimeError(f"mode {requested_embedding_mode!r} cannot run: {message}")
         methods = _run(root, questions, qrels, modes=modes, weights=weights, k=args.k,
                        recall_grade=args.recall_grade, scope=scope, passages=args.passages)
     except InputError as exc:

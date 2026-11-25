@@ -746,7 +746,8 @@ stderr warning, while qrels ids without a question are an input error.
 
 By default the command evaluates lexical mode, adding vector and hybrid when
 `fastembed` is installed and the outermost bundle's `search.yaml` has an
-`embeddings` section. Explicit modes that cannot run exit `1` with the
+`embeddings` section. Explicit vector or hybrid modes run when `fastembed` is
+installed, even without that section; otherwise they exit `1` with the
 installation command. `--heading-weight` defaults to `20` and may be repeated
 to compare lexical or hybrid ranking weights; vector is run only once because
 the weight does not affect it. Metrics are means across questions with qrels;

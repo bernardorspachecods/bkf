@@ -120,6 +120,35 @@ class SearchEvalTests(unittest.TestCase):
                                                "--heading-weight", "30"]), 0)
         self.assertEqual(rank.call_count, 1)
 
+    def test_default_modes_without_embeddings_stay_lexical(self) -> None:
+        with patch.object(search_eval, "_fastembed_available", return_value=True):
+            self.assertEqual(search_eval._available_modes(self.root), ["lexical"])
+
+    def test_explicit_hybrid_runs_without_embeddings_when_fastembed_is_available(self) -> None:
+        self.write_inputs("id\tquestion\nq1\tquestion\n", {"q1": {}})
+        output = io.StringIO()
+        with patch.object(search_eval, "_fastembed_available", return_value=True), \
+                patch.object(search_eval.search, "rank_passages", return_value=[]) as rank, \
+                redirect_stdout(output), redirect_stderr(io.StringIO()):
+            result = search_eval.main([str(self.questions), str(self.qrels), "--cwd", str(self.root),
+                                       "--mode", "hybrid"])
+        self.assertEqual(result, 0)
+        self.assertIn("hybrid", output.getvalue())
+        rank.assert_called_once()
+        self.assertEqual(rank.call_args.kwargs["mode"], "hybrid")
+
+    def test_explicit_hybrid_without_fastembed_exits_with_install_line(self) -> None:
+        self.write_inputs("id\tquestion\nq1\tquestion\n", {"q1": {}})
+        error = io.StringIO()
+        with patch.object(search_eval, "_fastembed_available", return_value=False), \
+                redirect_stdout(io.StringIO()), redirect_stderr(error):
+            result = search_eval.main([str(self.questions), str(self.qrels), "--cwd", str(self.root),
+                                       "--mode", "hybrid"])
+        self.assertEqual(result, 1)
+        self.assertEqual(error.getvalue(),
+                         "bkf search-eval: mode 'hybrid' cannot run: vector and hybrid search require fastembed; "
+                         "install with: uv tool install --editable ./bkf/tooling --with fastembed --reinstall\n")
+
 
 if __name__ == "__main__":
     unittest.main()
