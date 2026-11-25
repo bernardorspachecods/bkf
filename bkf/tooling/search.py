@@ -65,6 +65,7 @@ class Section:
 class RankedPassage:
     section: Section
     score: float
+    query: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,8 @@ class DocumentHit:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bkf search", description=__doc__)
-    parser.add_argument("query", nargs="+", help="question or topic to search for")
+    parser.add_argument("query", nargs="*", help="question or topic to search for")
+    parser.add_argument("--query", dest="queries", action="append", help="search this sub-query; repeat to add more")
     parser.add_argument("--cwd", type=Path, help="directory in the bundle (defaults to current directory)")
     parser.add_argument("--limit", type=int, default=5, help="maximum number of hits (default: 5)")
     parser.add_argument("--path", type=Path, help="only documents under this directory, or this file")
@@ -908,6 +910,45 @@ def group_documents(ranked: list[RankedPassage], *, limit: int, per_document: in
             for path, rows in list(grouped.items())[:limit]]
 
 
+def fuse_document_rankings(
+    rankings: list[tuple[str, list[DocumentHit], dict[tuple, int]]], *, limit: int,
+) -> list[DocumentHit]:
+    """Fuse query document rankings and select their best distinct passages."""
+    documents: dict[str, list] = {}
+    for query_index, (question, hits, passage_ranks) in enumerate(rankings):
+        for rank, hit in enumerate(hits):
+            row = documents.setdefault(hit.path, [hit.title, 0.0, (query_index, rank), {}])
+            row[1] += 1 / (60 + rank)
+            row[2] = min(row[2], (query_index, rank))
+            for passage in hit.passages:
+                key = _passage_key(passage)
+                candidate = row[3].get(key)
+                order = (passage_ranks.get(key, rank), query_index)
+                if candidate is None or order < candidate[0]:
+                    row[3][key] = (order, replace(passage, query=question))
+
+    ordered = sorted(documents.items(), key=lambda item: (-item[1][1], item[1][2]))[:limit]
+    fused: list[DocumentHit] = []
+    for path, (title, score, _, candidates) in ordered:
+        passages: list[RankedPassage] = []
+        for _, passage in sorted(candidates.values(), key=lambda candidate: candidate[0]):
+            section = passage.section
+            if section.kind == "text" and section.start is not None and section.end is not None and any(
+                prior.section.kind == "text"
+                and prior.section.start is not None
+                and prior.section.end is not None
+                and section.start < prior.section.end
+                and prior.section.start < section.end
+                for prior in passages
+            ):
+                continue
+            passages.append(passage)
+            if len(passages) == 2:
+                break
+        fused.append(DocumentHit(path, title, score, tuple(passages)))
+    return fused
+
+
 def _preview_sections(
     sections: list[Section], question: str, phrases: list[str] | None = None,
 ) -> list[Section]:
@@ -1001,8 +1042,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit < 1:
         print("bkf search: --limit must be at least 1", file=sys.stderr)
         return 1
-    question = " ".join(args.query)
-    if not _query_terms(question):
+    questions = ([" ".join(args.query)] if args.query else []) + (args.queries or [])
+    questions = [question for question in questions if _query_terms(question)]
+    if not questions:
         print("query has no searchable words", file=sys.stdout)
         return 2
 
@@ -1020,13 +1062,46 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"bkf search: --path is outside the bundle: {args.path}", file=sys.stderr)
                 return 2
         mode = args.mode or embeddings_config(root).mode
-        ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
-                               passages=args.passages, mode=mode)
-        hits = group_documents(ranked, limit=args.limit)
+        if len(questions) == 1:
+            question = questions[0]
+            ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
+                                   passages=args.passages, mode=mode)
+            hits = group_documents(ranked, limit=args.limit)
+        else:
+            rankings = []
+            for question in questions:
+                ranked = rank_passages(root, question, scope=scope, heading=args.heading, tags=args.tag,
+                                       passages=args.passages, mode=mode)
+                grouped = group_documents(ranked, limit=max(15, 3 * args.limit), per_document=2)
+                passage_ranks = {_passage_key(hit): rank for rank, hit in enumerate(ranked)}
+                rankings.append((question, grouped, passage_ranks))
+            hits = fuse_document_rankings(rankings, limit=args.limit)
         if not args.full:
             from bkf_common import find_bundles
-            phrases = _expansions(question, _vocabularies(root, find_bundles))
-            hits = prepare_previews(hits, question, phrases=phrases)
+            vocabularies = _vocabularies(root, find_bundles)
+            if len(questions) == 1:
+                question = questions[0]
+                phrases = _expansions(question, vocabularies)
+                hits = prepare_previews(hits, question, phrases=phrases)
+            else:
+                previewed_sections = {}
+                for question in questions:
+                    selected = [
+                        replace(hit, passages=tuple(passage for passage in hit.passages
+                                                    if passage.query == question))
+                        for hit in hits
+                    ]
+                    selected = [hit for hit in selected if hit.passages]
+                    previewed = prepare_previews(
+                        selected, question, phrases=_expansions(question, vocabularies)
+                    )
+                    for hit in previewed:
+                        for passage in hit.passages:
+                            previewed_sections[(question, _passage_key(passage))] = passage.section
+                hits = [replace(hit, passages=tuple(
+                    replace(passage, section=previewed_sections[(passage.query, _passage_key(passage))])
+                    for passage in hit.passages
+                )) for hit in hits]
         if args.debug and _CACHE_NOTICE:
             print(f"bkf search: cache unavailable; using memory ({_CACHE_NOTICE})", file=sys.stderr)
         reconfigure = getattr(sys.stdout, "reconfigure", None)
@@ -1047,6 +1122,7 @@ def main(argv: list[str] | None = None) -> int:
                         "start": row.section.start, "end": row.section.end,
                         "preview": _full_text(row.section) if args.full else (row.section.preview or _start_of(row.section.body)),
                         "score": row.score,
+                        **({"query": row.query} if len(questions) > 1 else {}),
                     } for row in hit.passages],
                 })
             sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")

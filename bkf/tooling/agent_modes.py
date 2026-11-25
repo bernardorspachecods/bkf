@@ -76,7 +76,7 @@ GH_READ = {
     "run": {"view", "list"},
     "release": {"view", "list"},
 }
-BKF_READ = {"validate", "search", "orient"}
+BKF_READ = {"validate", "search", "search-eval", "orient"}
 MUTATING_TOOLS = {"Edit", "Write", "NotebookEdit", "apply_patch", "MultiEdit"}
 
 HARMLESS_REDIRECT = re.compile(r"\d*>>?\s*/dev/null|&>\s*/dev/null|\d*>&\d+|\d*<\s*\S+")

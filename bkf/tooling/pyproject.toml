@@ -48,6 +48,7 @@ py-modules = [
     "session_number",
     "updates",
     "search",
+    "search_eval",
     "search_attached",
     "source_hooks",
     "source_page",

@@ -23,6 +23,7 @@ tags: [bkf, tooling, installation, validation, map-inventory]
 | Orient an agent at session start | [bkf orient](#bkf-orient) |
 | Install, check, or understand the hooks | [bkf hooks](#bkf-hooks) |
 | Search the documents | [bkf search](#bkf-search) |
+| Evaluate search rankings against questions and relevance judgments | [bkf search-eval](#bkf-search-eval) |
 | Register, reopen, close, or check researched sources | [bkf sources](#bkf-sources) |
 | Record, read, or change agent tasks | [bkf task](#bkf-task) |
 | Edit a task's title or prompt | [bkf task edit](#bkf-task-edit) |
@@ -649,11 +650,20 @@ one-time review of new hooks, so run `/hooks` in Codex after the first install.
 
 ## bkf search
 
-`bkf search QUERY... [--cwd PATH] [--limit N] [--path PATH] [--heading TEXT]
+`bkf search [QUERY...] [--query TEXT]... [--cwd PATH] [--limit N] [--path PATH] [--heading TEXT]
 [--tag TAG]... [--passages all|sections|text] [--mode lexical|vector|hybrid]
 [--json] [--full] [--debug]` searches passages in
 the outermost bundle containing the selected directory, including nested
 bundles. `--cwd` defaults to the current directory; `--limit` defaults to 5.
+Repeat `--query TEXT` to search several sub-queries in one call. Positional
+words, when present, form the first sub-query; otherwise the first `--query`
+starts the list. Each sub-query uses the selected mode and filters, then
+document rankings are fused with Reciprocal Rank Fusion. The results show each
+document's two best distinct passages across the sub-queries, and JSON passages
+include the `query` that found them. An agent can break a vague question into a
+few specific sub-queries. Sub-queries with no searchable words are ignored; if
+all are empty, search exits `2`. With one searchable sub-query, output is
+unchanged.
 Lexical mode finds exact words and phrases; vector mode ranks by meaning, and
 hybrid mode combines lexical and vector rankings with Reciprocal Rank Fusion.
 Use hybrid for questions and lexical for exact lookups of a claim, phrase, or
@@ -722,6 +732,29 @@ Agents should search before writing or moving a rule to see where it already
 lives. Exit `0` means results or no matches; `2` means the query has no
 searchable words or `--path` is outside the bundle; `1` reports a search failure. `--debug` adds a traceback to
 failures.
+
+## bkf search-eval
+
+`bkf search-eval QUESTIONS QRELS [--cwd PATH] [--mode MODE]... [--k N]
+[--recall-grade G] [--path PATH] [--passages all|sections|text]
+[--heading-weight W]... [--json]` evaluates document rankings with nDCG@5
+and recall@k. `QUESTIONS` is a TSV with `id` and `question` columns; `QRELS`
+is a JSON object mapping question ids to `/`-rooted document paths and
+non-negative grades. A grade may also be `{ "grade": N, "locators": [...] }`;
+locators are accepted but ignored. Questions without qrels are skipped with a
+stderr warning, while qrels ids without a question are an input error.
+
+By default the command evaluates lexical mode, adding vector and hybrid when
+`fastembed` is installed and the outermost bundle's `search.yaml` has an
+`embeddings` section. Explicit modes that cannot run exit `1` with the
+installation command. `--heading-weight` defaults to `20` and may be repeated
+to compare lexical or hybrid ranking weights; vector is run only once because
+the weight does not affect it. Metrics are means across questions with qrels;
+nDCG uses gain `2^grade - 1`, and recall counts documents at or above
+`--recall-grade` (default `2`). Questions with no relevant documents are
+excluded from recall. `--k` defaults to `8`. Text output includes aggregate
+metrics and each question's nDCG; `--json` prints those same metrics as JSON.
+Malformed input exits `2`; search failures exit `1`.
 
 ### search.yaml
 

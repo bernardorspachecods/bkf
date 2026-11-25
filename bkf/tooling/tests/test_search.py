@@ -117,6 +117,41 @@ class PreviewTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def test_multi_query_document_rrf_and_passage_query_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_bundle(root)
+
+            def passage(path: str, title: str, body: str, score: float) -> search.RankedPassage:
+                return search.RankedPassage(
+                    search.Section(path, title, "", body, title, document_title=title), score
+                )
+
+            rankings = {
+                "alpha": [passage("/a.md", "A", "alpha passage", 3),
+                          passage("/c.md", "C", "shared alpha passage", 2)],
+                "beta": [passage("/b.md", "B", "beta passage", 3),
+                         passage("/c.md", "C", "shared beta passage", 2)],
+            }
+            with patch.object(search, "rank_passages", side_effect=lambda _root, query, **_kwargs: rankings[query]):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    result = search.main(["--query", "alpha", "--query", "beta", "--json", "--cwd", str(root)])
+
+        self.assertEqual(result, 0)
+        payload = __import__("json").loads(output.getvalue())
+        self.assertEqual(payload[0]["path"], "/c.md")
+        self.assertAlmostEqual(payload[0]["score"], 1 / 61 + 1 / 61)
+        self.assertEqual([row["query"] for row in payload[0]["passages"]], ["alpha", "beta"])
+        self.assertEqual([row["preview"] for row in payload[0]["passages"]],
+                         ["shared alpha passage", "shared beta passage"])
+
+    def test_multi_query_uses_positional_query_first_and_ignores_empty_subqueries(self) -> None:
+        args = search.build_parser().parse_args(["first", "words", "--query", "the and of", "--query", "last"])
+        questions = ([" ".join(args.query)] if args.query else []) + (args.queries or [])
+        self.assertEqual([question for question in questions if search._query_terms(question)],
+                         ["first words", "last"])
+
     def test_group_documents_skips_overlapping_text_passages(self) -> None:
         ranked = [
             search.RankedPassage(search.Section("/guide.md", "Page 1", "", "first", "Page 1",

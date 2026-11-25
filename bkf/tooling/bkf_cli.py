@@ -57,6 +57,12 @@ COMMANDS = {
         "before writing or moving a rule, to see where it already lives",
         "session start and lookup",
     ),
+    "search-eval": (
+        "search_eval",
+        "Evaluate search rankings against questions and relevance judgments",
+        "to compare search modes or heading weights on a labeled question set",
+        "session start and lookup",
+    ),
     "sources": (
         "bkf_sources",
         "Register and maintain researched sources",
